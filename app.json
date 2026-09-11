@@ -1,42 +1,41 @@
 {
   "expo": {
-    "name": "my-app",
-    "slug": "my-app",
+    "name": "Empire of Bits: Sea Battle",
+    "slug": "empire-of-bits-seabattle",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
-    "userInterfaceStyle": "automatic",
-    "ios": {
-      "icon": "./assets/expo.icon"
-    },
+    "orientation": "landscape",
+    "userInterfaceStyle": "light",
+    "scheme": "empireofbits",
+    "icon": "./assets/images/brand/app-icon.png",
     "android": {
+      "package": "com.empireofbits.seabattle",
+      "softwareKeyboardLayoutMode": "pan",
+      "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false
-    },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+        "foregroundImage": "./assets/images/brand/adaptive-icon-fg.png",
+        "backgroundColor": "#FBFCFE"
+      }
     },
     "plugins": [
       "expo-router",
+      "expo-font",
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#6B4527",
+          "resizeMode": "contain"
         }
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     }
   }
 }
