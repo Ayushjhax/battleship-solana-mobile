@@ -17,6 +17,7 @@ import {
   validatePlacement,
 } from '../engine/placement';
 import { createRng } from '../engine/rng';
+import type { Difficulty } from '../engine/ai';
 import {
   FUEL_BUDGET,
   type ArsenalItem,
@@ -49,7 +50,10 @@ interface PlacementData {
   readonly fuelSpent: number;
   readonly fuelBudget: number;
   readonly mode: PlacementMode;
+  readonly difficulty: Difficulty;
   readonly ruleset: MatchMode;
+  readonly playerOneName: string;
+  readonly playerTwoName: string;
   readonly validationReason: string | null;
   readonly pendingArsenalId: string | null;
   readonly hotseatPlayer: 1 | 2;
@@ -62,6 +66,8 @@ interface PlacementData {
 
 interface PlacementActions {
   initialize: (mode: PlacementMode, seed: number, ruleset?: MatchMode) => void;
+  setDifficulty: (difficulty: Difficulty) => void;
+  setHotseatNames: (playerOneName: string, playerTwoName: string) => void;
   setRuleset: (ruleset: MatchMode) => void;
   autoPlace: (seed: number) => void;
   clearFleet: () => void;
@@ -95,7 +101,10 @@ export const usePlacement = create<PlacementState>((set, get) => ({
   fuelSpent: 0,
   fuelBudget: FUEL_BUDGET,
   mode: 'ai',
+  difficulty: 'normal',
   ruleset: 'advanced',
+  playerOneName: 'Player 1',
+  playerTwoName: 'Player 2',
   validationReason: null,
   pendingArsenalId: null,
   hotseatPlayer: 1,
@@ -111,6 +120,7 @@ export const usePlacement = create<PlacementState>((set, get) => ({
       arsenal: [],
       fuelSpent: 0,
       mode,
+      difficulty: 'normal',
       ruleset,
       validationReason: null,
       pendingArsenalId: null,
@@ -120,6 +130,14 @@ export const usePlacement = create<PlacementState>((set, get) => ({
       playerOneArsenal: null,
       playerTwoArsenal: null,
       handoffVisible: false,
+    }),
+
+  setDifficulty: (difficulty) => set({ difficulty }),
+
+  setHotseatNames: (playerOneName, playerTwoName) =>
+    set({
+      playerOneName: playerOneName.trim() || 'Player 1',
+      playerTwoName: playerTwoName.trim() || 'Player 2',
     }),
 
   setRuleset: (ruleset) => {

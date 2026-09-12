@@ -1,6 +1,6 @@
 /**
  * The live match on this device. Holds the authoritative MatchState (offline
- * modes) or the last server state (online, P13), and `shown` — the view the
+ * modes) or the last server view (online, P13), and `shown` — the view the
  * screen renders, advanced one event at a time by the EventPlayer.
  *
  * The screen never inspects `match` to decide what to draw. It draws `shown`.
@@ -8,13 +8,20 @@
  * Mode plumbing: 'ai' drives the opponent with src/engine/ai.ts on a
  * 900-1400 ms "thinking" delay; 'hotseat' swaps the viewer between turns
  * behind a pass-the-device curtain (P14 dresses it up); 'online' is fed by
- * P13's server messages. All three feed the same EventPlayer.
+ * src/net/match-client.ts. All of them feed the same EventPlayer.
+ *
+ * Online: there is no `match` here at all — the server owns both boards and
+ * this store only ever sees projectView() output (`onlineView`). Input
+ * guards read `shown` (phase, turn), which is in sync with the truth
+ * whenever `animating` is false, in every mode. The optimistic shot (P13):
+ * `act()` enqueues the SHOT_FIRED shell at once and sends the action; the
+ * outcome is only ever what the server's events say. `pending` locks input
+ * until they land, and `pendingShotAt` is the "…" on the target cell once
+ * the shell has landed with nothing to show yet.
  */
-import { chooseMove, type Difficulty } from '@engine/ai';
+import type { Difficulty } from '@engine/ai';
 import { coordKey } from '@engine/board';
-import { createMatch, projectView, reduce } from '@engine/match';
-import { autoPlaceFleet } from '@engine/placement';
-import { createRng } from '@engine/rng';
+import { projectView } from '@engine/match';
 import {
   TURN_SECONDS,
   type ArsenalItem,
@@ -31,6 +38,9 @@ import { create } from 'zustand';
 
 import { EventPlayer, type PlayEvent } from '@/fx/EventPlayer';
 import { applyEvent, applyReveal } from '@/fx/applyEvent';
+import { LocalMatch, setLocalAiThinkTime } from '@/features/offline/LocalMatch';
+import { useMatchClient } from '@/net/match-client';
+import { useProfile } from '@/state/profile';
 
 export type BattleMode = 'ai' | 'hotseat' | 'online' | 'tutorial';
 
@@ -52,26 +62,34 @@ export interface BattleSetup {
   readonly one: Combatant;
   readonly two: Combatant;
   readonly difficulty?: Difficulty;
+  /** Online: the server's match id (the Realtime emote channel key). */
+  readonly matchId?: string;
 }
 
 export const AIM_MS = 260;
-let AI_THINK_MIN_MS = 900;
-let AI_THINK_SPREAD_MS = 500;
 
 /** Test/dev hook: make the AI think faster (or slower). */
 export function setAiThinkTime(minMs: number, spreadMs: number): void {
-  AI_THINK_MIN_MS = minMs;
-  AI_THINK_SPREAD_MS = spreadMs;
+  setLocalAiThinkTime(minMs, spreadMs);
 }
 
 interface BattleData {
   mode: BattleMode;
   ruleset: MatchMode;
+  /** Offline modes only. Online, the server owns it and this stays null. */
   match: MatchState | null;
+  /** Every mode. Server-created matches have uuid ids; local ones "local-…". */
+  matchId: string | null;
+  /** The device owner's player id. Hot-seat rewards are judged for this player. */
+  ownerId: string;
+  /** Unique idempotency key for a locally awarded result. */
+  resultId: string | null;
   /** Whose eyes we look through. Swaps in hotseat. */
   me: string;
   combatants: Record<string, Combatant>;
   shown: PlayerView | null;
+  /** Online: the last authoritative view from the server, reconciled into `shown` when idle. */
+  onlineView: PlayerView | null;
   animating: boolean;
   /** Countdown for the current turn. */
   seconds: number;
@@ -79,6 +97,10 @@ interface BattleData {
   snapTurn: boolean;
   /** Where the crosshair is converging before a shot. */
   aiming: Coord | null;
+  /** Online: an action is in flight; input stays locked until the server answers. */
+  pending: boolean;
+  /** Online: our shell is away (or landed) and no verdict yet — the "…" cell. */
+  pendingShotAt: Coord | null;
   /** Hotseat: waiting for the device to be passed. */
   curtain: boolean;
   /** GAME_OVER has played out; the screen may route to the result. */
@@ -118,13 +140,19 @@ const EMPTY: BattleData = {
   mode: 'ai',
   ruleset: 'classic',
   match: null,
+  matchId: null,
+  ownerId: '',
+  resultId: null,
   me: '',
   combatants: {},
   shown: null,
+  onlineView: null,
   animating: false,
   seconds: TURN_SECONDS,
   snapTurn: false,
   aiming: null,
+  pending: false,
+  pendingShotAt: null,
   curtain: false,
   finished: false,
   difficulty: 'normal',
@@ -135,16 +163,16 @@ const EMPTY: BattleData = {
   targeting: null,
 };
 
-let aiTimer: ReturnType<typeof setTimeout> | null = null;
 let aimTimer: ReturnType<typeof setTimeout> | null = null;
 let emoteTimer: ReturnType<typeof setTimeout> | null = null;
 let lastWasMine = false;
+let onlineUnsubscribe: (() => void) | null = null;
+let localMatch: LocalMatch | null = null;
 
 function clearTimers(): void {
-  if (aiTimer) clearTimeout(aiTimer);
   if (aimTimer) clearTimeout(aimTimer);
   if (emoteTimer) clearTimeout(emoteTimer);
-  aiTimer = aimTimer = emoteTimer = null;
+  aimTimer = emoteTimer = null;
 }
 
 /** Headless effects: commit only. The screen swaps in the animated ones. */
@@ -171,22 +199,32 @@ export function commitReveal(actorId: string, cell: Coord): void {
   useBattle.setState({ shown: applyReveal(shown, actorId, cell) });
 }
 
-export function markFinished(): void {
+function finishLocalResult(): void {
+  const state = useBattle.getState();
+  if (
+    !state.finished &&
+    (state.mode === 'ai' || state.mode === 'hotseat') &&
+    state.resultId &&
+    state.ownerId &&
+    state.shown?.winner
+  ) {
+    useProfile.getState().queueResult({
+      id: state.resultId,
+      mode: state.mode,
+      won: state.shown.winner === state.ownerId,
+      completedAt: new Date().toISOString(),
+    });
+  }
   useBattle.setState({ finished: true });
+}
+
+export function markFinished(): void {
+  finishLocalResult();
 }
 
 function opponentOf(state: BattleData, id: string): string {
   const ids = Object.keys(state.combatants);
   return ids[0] === id ? (ids[1] as string) : (ids[0] as string);
-}
-
-/** A random unknown enemy cell — the offline timeout shot. */
-function randomLegalCell(view: PlayerView, seed: number): Coord | null {
-  const unknown: Coord[] = [];
-  for (let r = 0; r < 10; r++)
-    for (let c = 0; c < 10; c++) if (!view.enemy.marks[coordKey({ r, c })]) unknown.push({ r, c });
-  if (unknown.length === 0) return null;
-  return createRng(seed).pick(unknown);
 }
 
 function withShotEvent(action: MatchAction, events: readonly MatchEvent[]): PlayEvent[] {
@@ -200,46 +238,23 @@ function withShotEvent(action: MatchAction, events: readonly MatchEvent[]): Play
 /** After the queue drains: resync the view, then hand the turn to whoever drives it. */
 function onIdle(): void {
   const s = useBattle.getState();
-  if (!s.match) return;
-  const shown = projectView(s.match, s.me);
-  useBattle.setState({ shown });
-  if (s.match.phase === 'over') {
-    // The queue drained after the GAME_OVER hold: the screen may route now.
-    useBattle.setState({ finished: true });
+  if (s.mode === 'online') {
+    // The server's next message drives the loop; we only settle the view.
+    reconcileOnlineView();
     return;
   }
-  if (s.match.turn === s.me) return;
-
-  if (s.mode === 'ai') scheduleAi();
-  else if (s.mode === 'hotseat') useBattle.setState({ curtain: true });
-  // online: the server's next message drives the loop (P13)
-}
-
-function scheduleAi(): void {
-  const s = useBattle.getState();
-  if (!s.match || s.match.phase !== 'playing' || s.match.turn === s.me) return;
-  if (aiTimer) clearTimeout(aiTimer);
-  const rng = createRng(s.match.seed * 31 + s.match.moves);
-  const delay = AI_THINK_MIN_MS + rng.int(AI_THINK_SPREAD_MS + 1);
-  aiTimer = setTimeout(() => {
-    aiTimer = null;
-    const now = useBattle.getState();
-    if (
-      !now.match ||
-      now.match.phase !== 'playing' ||
-      now.match.turn === now.me ||
-      battlePlayer.busy
-    )
-      return;
-    const ai = now.match.turn;
-    const view = projectView(now.match, ai);
-    const action = chooseMove(
-      view,
-      now.difficulty,
-      createRng(now.match.seed * 17 + now.match.moves),
-    );
-    now.act(action);
-  }, delay);
+  const match = localMatch?.state ?? s.match;
+  if (!match) return;
+  const shown = projectView(match, s.me);
+  useBattle.setState({ shown, arsenalOpen: false, targeting: null });
+  if (match.phase === 'over') {
+    // The queue drained after the GAME_OVER hold: the screen may route now.
+    finishLocalResult();
+    return;
+  }
+  if (match.turn === s.me) return;
+  if (s.mode === 'hotseat') useBattle.setState({ curtain: true });
+  localMatch?.driveAi();
 }
 
 battlePlayer.onBusy((busy) => {
@@ -247,40 +262,131 @@ battlePlayer.onBusy((busy) => {
   if (!busy) onIdle();
 });
 
+// ---------------------------------------------------------------------------
+// Online — src/net/match-client.ts feeds the same EventPlayer
+// ---------------------------------------------------------------------------
+
+/** Snap `shown` to the server's last view. Only ever called when the queue is idle. */
+function reconcileOnlineView(): void {
+  const s = useBattle.getState();
+  if (s.mode !== 'online' || !s.onlineView) return;
+  const view = s.onlineView;
+  const acted = !s.shown || s.shown.moves !== view.moves || s.shown.phase !== view.phase;
+  const patch: Partial<BattleData> = { shown: view };
+  if (acted) {
+    patch.arsenalOpen = false;
+    patch.targeting = null;
+  }
+  if (view.phase === 'over') patch.finished = true;
+  useBattle.setState(patch);
+}
+
+function receiveOnlineView(view: PlayerView): void {
+  useBattle.setState({ onlineView: view });
+  if (!battlePlayer.busy) reconcileOnlineView();
+}
+
+/** A live batch from the server — the animation script, straight into the queue. */
+function receiveOnlineEvents(events: readonly MatchEvent[]): void {
+  const s = useBattle.getState();
+  if (s.mode !== 'online' || events.length === 0) return;
+  const first = events[0] as MatchEvent;
+  // Our own shot already flew when we sent it (act). The opponent's gets its
+  // shell here, so both boards read the same way: arc, then verdict.
+  const shotLike = first.type === 'HIT' || first.type === 'MISS' || first.type === 'MINE_TRIGGERED';
+  const prefix: PlayEvent[] =
+    shotLike && first.playerId !== s.me
+      ? [{ type: 'SHOT_FIRED', playerId: first.playerId, at: first.at }]
+      : [];
+  useBattle.setState({ pending: false, pendingShotAt: null, lastEvents: events });
+  battlePlayer.enqueue([...prefix, ...events]);
+}
+
+function onOnlineError(error: { code: string; message: string } | null): void {
+  const s = useBattle.getState();
+  if (s.mode !== 'online') return;
+  if (s.pending) {
+    // The server said no (or couldn't say yes). Nothing was applied on either
+    // side; unlock and let the player try again. The next state resyncs us.
+    console.warn(
+      `[battle] action refused by the server: ${error?.code ?? '?'} ${error?.message ?? ''}`,
+    );
+    useBattle.setState({ pending: false, pendingShotAt: null });
+  }
+}
+
+function wireOnline(): void {
+  unwireOnline();
+  onlineUnsubscribe = useMatchClient.subscribe((next, prev) => {
+    if (prev.status === 'reconnecting' && next.status === 'active') {
+      // Resynced: whatever we had in flight is either applied or lost. The
+      // fresh view (below) is the truth; drop the optimistic leftovers.
+      useBattle.setState({ pending: false, pendingShotAt: null });
+      battlePlayer.skip();
+    }
+    if (next.eventsNonce !== prev.eventsNonce) receiveOnlineEvents(next.takePendingEvents());
+    if (next.view !== prev.view && next.view) receiveOnlineView(next.view);
+    if (next.errorNonce !== prev.errorNonce) onOnlineError(next.lastError);
+  });
+  // Anything that landed before the battle screen mounted.
+  const mc = useMatchClient.getState();
+  if (mc.pendingEvents.length > 0) receiveOnlineEvents(mc.takePendingEvents());
+  if (mc.view) receiveOnlineView(mc.view);
+}
+
+function unwireOnline(): void {
+  if (onlineUnsubscribe) onlineUnsubscribe();
+  onlineUnsubscribe = null;
+}
+
+// ---------------------------------------------------------------------------
+
 export const useBattle = create<BattleState>((set, get) => ({
   ...EMPTY,
 
   start: (setup) => {
     clearTimers();
+    unwireOnline();
+    localMatch?.dispose();
+    localMatch = null;
     battlePlayer.clear();
     lastWasMine = false;
 
-    let match = createMatch({
-      id: `local-${setup.seed}`,
-      mode: setup.ruleset,
-      seed: setup.seed,
-      playerIds: [setup.one.id, setup.two.id],
-    });
-    for (const side of [setup.one, setup.two]) {
-      const rng = createRng(setup.seed + side.id.length);
-      let r = reduce(match, {
-        type: 'SUBMIT_LAYOUT',
-        playerId: side.id,
-        ships: side.ships,
-        arsenal: side.arsenal,
+    if (setup.mode === 'online') {
+      set({
+        ...EMPTY,
+        mode: 'online',
+        ruleset: setup.ruleset,
+        matchId: setup.matchId ?? null,
+        ownerId: setup.one.id,
+        me: setup.one.id,
+        combatants: { [setup.one.id]: setup.one, [setup.two.id]: setup.two },
+        seconds: TURN_SECONDS,
       });
-      if (r.events.some((e) => e.type === 'REJECTED')) {
-        console.warn(`[battle] layout for ${side.id} rejected, auto-placing:`, r.events);
-        r = reduce(match, {
-          type: 'SUBMIT_LAYOUT',
-          playerId: side.id,
-          ships: autoPlaceFleet(rng),
-          arsenal: [],
-        });
-      }
-      match = r.state;
+      wireOnline();
+      return;
     }
-    if (match.phase !== 'playing') throw new Error('battle could not start');
+
+    const localMode =
+      setup.mode === 'hotseat' ? 'hotseat' : setup.mode === 'tutorial' ? 'tutorial' : 'ai';
+    const local = new LocalMatch({
+      mode: localMode,
+      ruleset: setup.ruleset,
+      seed: setup.seed,
+      one: setup.one,
+      two: setup.two,
+      difficulty: setup.difficulty ?? 'normal',
+      onResolved: (action, result) => {
+        useBattle.setState({
+          match: result.state,
+          lastAction: action,
+          lastEvents: result.events,
+        });
+        battlePlayer.enqueue(withShotEvent(action, result.events));
+      },
+    });
+    localMatch = local;
+    const match = local.state;
 
     const me = setup.mode === 'hotseat' ? match.turn : setup.one.id;
     set({
@@ -288,20 +394,24 @@ export const useBattle = create<BattleState>((set, get) => ({
       mode: setup.mode,
       ruleset: setup.ruleset,
       match,
+      matchId: match.id,
+      ownerId: setup.one.id,
+      resultId: `${match.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
       me,
       combatants: { [setup.one.id]: setup.one, [setup.two.id]: setup.two },
       shown: projectView(match, me),
       difficulty: setup.difficulty ?? 'normal',
       seconds: TURN_SECONDS,
+      curtain: setup.mode === 'hotseat',
     });
-    if (setup.mode === 'ai' && match.turn !== me) scheduleAi();
+    local.driveAi();
   },
 
   aim: (at) => {
     const s = get();
-    if (!s.match || !s.shown) return;
-    if (s.animating || s.aiming || s.curtain || s.finished) return;
-    if (s.match.phase !== 'playing' || s.match.turn !== s.me) return;
+    if (!s.shown || (s.mode !== 'online' && !s.match)) return;
+    if (s.animating || s.aiming || s.curtain || s.finished || s.pending) return;
+    if (s.shown.phase !== 'playing' || s.shown.turn !== s.me) return;
     if (s.targeting) {
       // A weapon is armed: the tap is its target. Rows for torpedo kinds.
       const { itemId, kind } = s.targeting;
@@ -325,32 +435,51 @@ export const useBattle = create<BattleState>((set, get) => ({
 
   fire: (at) => {
     const s = get();
-    if (!s.match || s.animating || s.match.phase !== 'playing' || s.match.turn !== s.me) return;
+    if (!s.shown || (s.mode !== 'online' && !s.match)) return;
+    if (s.animating || s.pending || s.shown.phase !== 'playing' || s.shown.turn !== s.me) return;
     get().act({ type: 'FIRE', playerId: s.me, at });
   },
 
   act: (action) => {
     const s = get();
-    if (!s.match || s.match.phase !== 'playing') return;
-    const r = reduce(s.match, action);
-    if (r.events.some((e) => e.type === 'REJECTED')) return;
-    set({ match: r.state, lastAction: action, lastEvents: r.events });
-    battlePlayer.enqueue(withShotEvent(action, r.events));
+    if (s.mode === 'online') {
+      if (!s.shown || s.shown.phase !== 'playing' || s.pending) return;
+      const client = useMatchClient.getState();
+      if (action.type === 'FIRE') {
+        // Optimistic: the shell flies now. The verdict is the server's alone.
+        set({ pending: true, pendingShotAt: action.at, lastAction: action });
+        battlePlayer.enqueue([{ type: 'SHOT_FIRED', playerId: s.me, at: action.at }]);
+        client.fire(action.at);
+      } else if (action.type === 'USE_ARSENAL') {
+        set({ pending: true, lastAction: action });
+        client.useArsenal(action.itemId, { at: action.at, row: action.row });
+      } else if (action.type === 'RESIGN') {
+        client.resign();
+      }
+      return;
+    }
+    localMatch?.dispatch(action);
   },
 
   tick: () => {
     const s = get();
+    if (s.mode === 'online') {
+      // The server's clock, counted from when its `turn` message landed here
+      // (phone clocks drift; the 2 s latency grace is deliberately not shown).
+      const at = useMatchClient.getState().turnReceivedAt;
+      if (!s.shown || s.shown.phase !== 'playing' || at === null) return;
+      const seconds = Math.max(0, TURN_SECONDS - Math.floor((Date.now() - at) / 1000));
+      if (seconds !== s.seconds) set({ seconds });
+      return;
+    }
     if (!s.match || s.match.phase !== 'playing' || s.animating || s.curtain || s.aiming) return;
     if (s.seconds > 1) {
       set({ seconds: s.seconds - 1 });
       return;
     }
     set({ seconds: 0 });
-    if (s.mode === 'online' || s.mode === 'tutorial') return; // the server / the script decides
-    if (s.match.turn !== s.me) return; // the AI never lets the clock run out
-    const view = s.shown ?? projectView(s.match, s.me);
-    const at = randomLegalCell(view, s.match.seed + s.match.moves * 7);
-    if (at) get().fire(at);
+    if (s.mode === 'tutorial' || s.match.turn !== s.me) return;
+    get().act({ type: 'TIMEOUT', playerId: s.me });
   },
 
   skip: () => battlePlayer.skip(),
@@ -362,7 +491,22 @@ export const useBattle = create<BattleState>((set, get) => ({
     set({ curtain: false, me, shown: projectView(s.match, me), seconds: TURN_SECONDS });
   },
 
-  setArsenalOpen: (open) => set({ arsenalOpen: open }),
+  setArsenalOpen: (open) => {
+    const state = get();
+    if (
+      open &&
+      (state.ruleset !== 'advanced' ||
+        !state.shown ||
+        state.shown.phase !== 'playing' ||
+        state.shown.turn !== state.me ||
+        state.animating ||
+        state.pending ||
+        state.curtain ||
+        state.finished)
+    )
+      return;
+    set({ arsenalOpen: open, ...(open ? { targeting: null } : {}) });
+  },
 
   selectArsenal: (itemId) => {
     if (itemId === null) {
@@ -371,7 +515,23 @@ export const useBattle = create<BattleState>((set, get) => ({
     }
     const s = get();
     const item = s.shown?.you.board.arsenal.find((i) => i.id === itemId);
-    if (!item || item.used || item.destroyed || item.at !== undefined) return;
+    if (
+      s.ruleset !== 'advanced' ||
+      !s.shown ||
+      s.shown.phase !== 'playing' ||
+      s.shown.turn !== s.me ||
+      s.animating ||
+      s.pending ||
+      s.curtain ||
+      s.finished ||
+      !item ||
+      item.used ||
+      item.destroyed ||
+      item.kind === 'aaGun' ||
+      item.kind === 'mine'
+    ) {
+      return;
+    }
     set({ targeting: { itemId, kind: item.kind }, arsenalOpen: false });
   },
 
@@ -383,6 +543,9 @@ export const useBattle = create<BattleState>((set, get) => ({
 
   reset: () => {
     clearTimers();
+    unwireOnline();
+    localMatch?.dispose();
+    localMatch = null;
     battlePlayer.clear();
     set({ ...EMPTY });
   },
@@ -390,6 +553,6 @@ export const useBattle = create<BattleState>((set, get) => ({
 
 /** The opponent of the current viewer, for the HUD. */
 export function selectOpponent(state: BattleState): Combatant | null {
-  if (!state.match) return null;
+  if (Object.keys(state.combatants).length < 2) return null;
   return state.combatants[opponentOf(state, state.me)] ?? null;
 }

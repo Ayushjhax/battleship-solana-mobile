@@ -16,7 +16,8 @@ export interface CurrencyChipProps {
   style?: ViewStyle;
 }
 
-const GOLD = '#C99A2E';
+export const COIN_GOLD = '#C99A2E';
+const GOLD = COIN_GOLD;
 const TEAL = '#2E7D6B';
 
 function format(n: number): string {

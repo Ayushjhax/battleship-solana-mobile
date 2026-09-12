@@ -166,6 +166,8 @@ export type MatchEvent =
       kind: 'torpedoBomber' | 'doubleTorpedoBomber' | 'bomber' | 'atomicBomber';
       rows: readonly number[];
       at?: Coord;
+      /** Present when an AA gun will intercept this run. */
+      interceptAt?: Coord;
     }
   | {
       type: 'BOMB_DROPPED';
@@ -174,12 +176,19 @@ export type MatchEvent =
       at: Coord;
       index: number;
       total: number;
+      resolves: boolean;
     }
   | { type: 'AIRCRAFT_DOWNED'; playerId: string; kind: ArsenalKind; gunAt: Coord }
   | { type: 'TORPEDO_TRAVEL'; playerId: string; path: readonly Coord[]; hitAt: Coord | null }
   | { type: 'TORPEDO_RUN'; playerId: string; path: readonly Coord[]; hitAt: Coord | null }
   | { type: 'SUBMARINE_SURFACED'; playerId: string; at: Coord }
-  | { type: 'NUKE_FLASH'; playerId: string; at: Coord; cells: readonly Coord[] }
+  | {
+      type: 'NUKE_FLASH';
+      playerId: string;
+      at: Coord;
+      cells: readonly Coord[];
+      resolvedCells: readonly Coord[];
+    }
   | { type: 'RADAR_RESULT'; playerId: string; at: Coord; count: number }
   | { type: 'TURN_CHANGED'; turn: string }
   | { type: 'TIMEOUT'; playerId: string; consecutive: number }

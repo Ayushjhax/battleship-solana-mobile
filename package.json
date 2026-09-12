@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "server": "cd server && npm run dev",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check:bundle": "node scripts/check-bundle-secrets.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/bitter": "^0.4.2",
@@ -18,11 +19,13 @@
     "expo": "~57.0.21",
     "expo-asset": "~57.0.16",
     "expo-audio": "~57.0.4",
+    "expo-build-properties": "~57.0.17",
     "expo-constants": "~57.0.17",
     "expo-font": "~57.0.3",
     "expo-haptics": "~57.0.2",
     "expo-image": "~57.0.4",
     "expo-linking": "~57.0.9",
+    "expo-network": "~57.0.2",
     "expo-router": "~57.0.20",
     "expo-screen-orientation": "~57.0.2",
     "expo-splash-screen": "~57.0.8",
@@ -47,6 +50,7 @@
     "eslint": "^10.10.0",
     "prettier": "^3.9.6",
     "typescript": "~6.0.3",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "ws": "^8.21.3"
   }
 }

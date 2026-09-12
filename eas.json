@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 24.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://qhmsmehludqrpkkycdss.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_3uTCBN-Tk2ImcwFtp65BGQ_hPNuTfyj",
+        "EXPO_PUBLIC_WS_URL": "wss://seabattle-match-server.onrender.com/ws"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://qhmsmehludqrpkkycdss.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_3uTCBN-Tk2ImcwFtp65BGQ_hPNuTfyj",
+        "EXPO_PUBLIC_WS_URL": "wss://seabattle-match-server.onrender.com/ws"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

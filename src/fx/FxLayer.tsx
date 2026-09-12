@@ -13,6 +13,7 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withDelay,
+  withRepeat,
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
@@ -700,7 +701,13 @@ const Intercept = memo(function Intercept({ intercept }: { intercept: InterceptM
   );
 });
 
-const WhiteFlash = memo(function WhiteFlash({ nonce, at }: { nonce: number; at: BoardPoint | null }) {
+const WhiteFlash = memo(function WhiteFlash({
+  nonce,
+  at,
+}: {
+  nonce: number;
+  at: BoardPoint | null;
+}) {
   const reduceMotion = useReducedMotion();
   const opacity = useSharedValue(0);
   useEffect(() => {
@@ -734,6 +741,34 @@ const WhiteFlash = memo(function WhiteFlash({ nonce, at }: { nonce: number; at: 
 // FxLayer
 // ---------------------------------------------------------------------------
 
+/**
+ * Online only: the shell has landed and the server hasn't answered yet. A
+ * small ink "…" on the target cell — never a guessed hit or miss (P13).
+ * Pulses gently so a slow round trip reads as waiting, not as frozen.
+ */
+const PendingMark = memo(function PendingMark({ at }: { at: CrosshairModel }) {
+  const reduceMotion = useReducedMotion();
+  const opacity = useSharedValue(0.35);
+  useEffect(() => {
+    opacity.value = reduceMotion
+      ? 1
+      : withRepeat(withSequence(withTiming(1, { duration: 420 }), withTiming(0.35, { duration: 420 })), -1, false);
+  }, [opacity, reduceMotion]);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.pendingMark,
+        { left: at.centre.x - CELL / 2, top: at.centre.y - CELL / 2 },
+        style,
+      ]}
+    >
+      <Text style={styles.pendingText}>…</Text>
+    </Animated.View>
+  );
+});
+
 export function FxLayer() {
   const shells = useFx((s) => s.shells);
   const bursts = useFx((s) => s.bursts);
@@ -744,6 +779,7 @@ export function FxLayer() {
   const radars = useFx((s) => s.radars);
   const intercepts = useFx((s) => s.intercepts);
   const crosshair = useFx((s) => s.crosshair);
+  const pendingShot = useFx((s) => s.pendingShot);
   const flashNonce = useFx((s) => s.flashNonce);
   const whiteFlashNonce = useFx((s) => s.whiteFlashNonce);
   const whiteFlashAt = useFx((s) => s.whiteFlashAt);
@@ -776,6 +812,7 @@ export function FxLayer() {
         <Burst key={burst.id} burst={burst} />
       ))}
       {crosshair ? <Crosshair crosshair={crosshair} /> : null}
+      {pendingShot ? <PendingMark at={pendingShot} /> : null}
     </View>
   );
 }
@@ -784,6 +821,20 @@ const styles = StyleSheet.create({
   canvas: { position: 'absolute', left: 0, top: 0, width: CANVAS_W, height: CANVAS_H },
   shell: { position: 'absolute', left: 0, top: 0, width: SHELL_SIZE, height: SHELL_SIZE },
   arrow: { position: 'absolute', left: 0, top: 0, width: ARROW, height: ARROW },
+  pendingMark: {
+    position: 'absolute',
+    width: CELL,
+    height: CELL,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingText: {
+    color: color.ink,
+    fontFamily: font.display,
+    fontSize: typeScale.md,
+    lineHeight: typeScale.md,
+    marginTop: -6,
+  },
   aircraft: { position: 'absolute', left: 0, top: 0, width: PLANE_W, height: PLANE_H },
   smokeTrail: { position: 'absolute', left: 2, top: 0, width: 30, height: PLANE_H },
   bomb: { position: 'absolute', left: 0, top: 0, width: 14, height: 21 },

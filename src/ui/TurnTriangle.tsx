@@ -31,8 +31,9 @@ export interface TurnTriangleProps {
   seconds?: number;
   /** Flip without the 180 ms rotation. */
   snap?: boolean;
-  /** Height in design units; width follows at 0.8. */
+  /** Height in design units; width follows at 0.8 unless `width` is given. */
   size?: number;
+  width?: number;
   seedKey?: string;
   style?: ViewStyle;
 }
@@ -46,12 +47,13 @@ export function TurnTriangle({
   seconds,
   snap = false,
   size = 48,
+  width,
   seedKey = 'turn',
   style,
 }: TurnTriangleProps) {
   const { roughPolygon } = useRough();
   const h = size;
-  const w = Math.round(size * 0.8);
+  const w = width ?? Math.round(size * 0.8);
   const pad = 3;
 
   // Always drawn pointing right; the container rotates for 'left'.

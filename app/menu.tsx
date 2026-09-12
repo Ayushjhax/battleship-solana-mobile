@@ -13,7 +13,7 @@ import { rankProgress } from '@engine/ranks';
 import Constants from 'expo-constants';
 import { useRouter, type Href } from 'expo-router';
 import { useEffect, type ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -22,6 +22,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { DemoMenu, useVersionTaps } from '@/features/demo/DemoMenu';
 import { useOnlineCount } from '@/net/presence';
 import { useProfile } from '@/state/profile';
 import { AVATARS } from '@/ui/assets';
@@ -50,7 +51,7 @@ const ACTIONS: readonly Action[] = [
     tone: 'confirm',
   },
   { label: 'Play offline', href: '/placement?mode=ai' as Href },
-  { label: 'Two players', href: '/placement?mode=hotseat' as Href },
+  { label: 'Two players', href: '/hotseat' as Href },
   { label: 'How to play', href: '/tutorial' },
   { label: 'Leaderboard', href: '/leaderboard' },
   { label: 'Port city', href: '/city' },
@@ -78,6 +79,7 @@ export default function MenuScreen() {
   const onlineCount = useOnlineCount();
   const progress = rankProgress(profile.rankPoints);
   const version = Constants.expoConfig?.version ?? '0.0.0';
+  const onVersionTap = useVersionTaps();
 
   return (
     <Scale>
@@ -134,7 +136,16 @@ export default function MenuScreen() {
         />
       </View>
 
-      <Text style={styles.version}>v{version}</Text>
+      {/* Five taps here open the demo menu (P17) — a plain Pressable, no visible affordance. */}
+      <Pressable
+        style={styles.version}
+        onPress={onVersionTap}
+        hitSlop={12}
+        accessibilityLabel={`Version ${version}`}
+      >
+        <Text style={styles.versionText}>v{version}</Text>
+      </Pressable>
+      <DemoMenu />
     </Scale>
   );
 }
@@ -173,12 +184,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: space.xs,
   },
-  version: {
-    position: 'absolute',
-    right: space.md,
-    bottom: space.sm,
-    color: color.inkSoft,
-    fontFamily: font.body,
-    fontSize: typeScale.xxs,
-  },
+  version: { position: 'absolute', right: space.md, bottom: space.sm },
+  versionText: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xxs },
 });

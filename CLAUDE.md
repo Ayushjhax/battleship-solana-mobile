@@ -150,6 +150,19 @@ that looks like a rectangle from a UI kit.
   localStorage shim). Every screen reads it from there — never from Supabase directly. The
   network only ever writes into the store.
 - Rank maths (`rankFor`, `rankProgress`, `REWARD`) is engine code: `src/engine/ranks.ts`.
+- **Supabase** lives in `supabase/migrations/` (numbered, idempotent — see
+  `supabase/README.md`). The network boundary is `src/net/api.ts`: every call returns a
+  `Result`, every response is zod-validated, queries are typed by
+  `src/net/database.types.ts`. Clients may write only `name`, `avatar_id`, `avatar_color`,
+  `country_code`, `has_completed_tutorial` on their own row — a trigger rejects any score
+  write that carries a user JWT. Scores are the match server's (secret key,
+  `server/src/db.ts`). Realtime channels are always `{ private: true }`:
+  `lobby:{mode}` presence, `match:{id}` broadcast for emotes only.
+- `src/net/profileSync.ts` (best-effort, never awaited by the game) sits on `api.ts`; the
+  pure merge rules live in `src/net/profileMerge.ts`. The boot shows `/progress` only when
+  a played-on local profile and a played-on cloud row differ.
+- Text entry is `src/ui/InkKeyboard.tsx` over a rendered string — no TextInput, the OS
+  keyboard never appears.
 - Sound effects go through `playSfx('key')` in `src/audio/sfx.ts`; sources are `null` until
   the files land, and a missing effect is a silent no-op.
 - The boot (`app/index.tsx` + `src/features/boot/BootSequence.tsx`) is the only
@@ -157,6 +170,92 @@ that looks like a rectangle from a UI kit.
   from the local profile and the anonymous sign-in runs fire-and-forget under a 2.5 s cap.
   `menu` and `(onboarding)/name` use `slide_from_right` so the boot sheet can slide out
   under them; every other route fades.
+
+### Online play (`src/net/match-client.ts`, `app/(game)/searching.tsx`)
+
+- **The wire protocol is frozen in `server/src/protocol.ts`; `src/net/protocol.ts` is its
+  hand-kept mirror.** The app cannot import the server package (separate package.json,
+  Metro bundles only its own root), so the two are kept in lockstep by hand — add a message
+  type, never repurpose one. Every inbound frame is zod-validated in `decodeServerMessage()`
+  and dropped with a warning if it fails. PlayerView is validated deeply; MatchEvent loosely
+  (`{type: string}` + passthrough) because the engine's event union keeps growing and
+  `applyEvent` already has a default case.
+- **Game state comes from the socket only.** Supabase Realtime `match:{id}` is emotes —
+  `chat.ts` ref-counts the channel with a hand-over grace, so searching.tsx warms it up during
+  the reveal and battle.tsx takes it over; `lobby:{mode}` presence is the online count. Never
+  mix the two.
+- The flow is place first, then queue: placement → `/searching` (`queue`) → `matched` →
+  `ready` with the placement store's fleet, immediately → arena reveal 2 s → `/battle`.
+  The server's 90 s layout deadline is the *opponent's* problem; ours is already in.
+- `useMatchClient` is a module-level singleton that survives the route change. `status`
+  is one enum for the whole lifecycle (`idle → connecting → queued → matched → active →
+  over`, with `reconnecting` and `failed` on the side); `opponentDisconnected` is separate
+  because it can flip without the seq moving.
+- **Reconnect is a hard resync, never an animated replay.** The server replays the whole
+  event log on attach; the client absorbs it (seq bookkeeping only) and snaps to the fresh
+  `state`. Only events after that are animated. Backoff 500 ms → 8 s ±25 %, resume by
+  `matchId`; outside a match it gives up after 4 tries, inside it keeps going until the
+  server's 45 s grace is gone. Action `seq` is wall-clock ms so it stays monotonic across an
+  app restart (the server dedupes retried actions by seq per seat). A token that can't be
+  refreshed while offline is a retry, not a failure. Liveness: in a match the client sends the
+  protocol `ping` every 10 s and declares 20 s of silence a dead socket (Android keeps a dead
+  socket "open" long past the server's grace); `nudge()` — both screens call it on
+  AppState `active` — pings at once and skips any backoff wait.
+- **Never predict a shot outcome.** Online `act()` enqueues SHOT_FIRED (the 340 ms shell)
+  and sends; `pending` locks input until the server's events land; `pendingShotAt` is the
+  ink "…" on the cell once the shell has landed with no verdict (`FxLayer`'s
+  `PendingMark`). The opponent's shots get a SHOT_FIRED prefix on arrival so both boards
+  read arc-then-verdict.
+- Online there is no `match` in the battle store — input guards read `shown.phase` /
+  `shown.turn`, which is in sync with the truth whenever `animating` is false, in every
+  mode. `matchId` is its own field (the emote channel key); `onlineView` is reconciled into
+  `shown` only when the EventPlayer is idle, exactly where offline calls `projectView()`.
+- Connection UI lives in `src/features/battle/ConnectionOverlay.tsx`: spinner, Captain
+  bubbles with countdowns, and a failed panel whose copy comes from `failureCopy()` —
+  plain and specific, never "something went wrong".
+- `src/net/__tests__/match-client.test.ts` drives the real client over real sockets against
+  a fake server that runs the real engine (kill/restart, resume, dedup, app-restart). Keep
+  it green whenever the protocol or the reconnect path changes.
+
+### Results, the ladder and the city (`app/(game)/result.tsx`, `app/leaderboard.tsx`, `app/city.tsx`)
+
+- **A match is settled in ONE transaction, by the server**: `public.apply_match_result`
+  (0008) closes the matches row and moves both profiles' `rank_points`, `coins`,
+  `battles_played`, `battles_won` atomically, idempotently (a retry returns false and moves
+  nothing), never the bot's row. `room.ts finish()` calls it once with `REWARD` from
+  `src/engine/ranks.ts` — the SQL never hard-codes 25/50/5/10. Offline results go through
+  `apply_offline_result` (0007) the same way.
+- Clients never write score columns to Supabase. The result screen mirrors an online
+  match's `over.rewards` into the profile store once (`recordOnlineResult`, keyed by matchId
+  in `settledMatchIds`) so the menu reads right at once; "before" is always "after minus
+  the reward". Rank-up = `rankFor(before) !== rankFor(after)`; `ranks.test.ts` pins the
+  engine ladder to `0003_ranks.sql` so the two can't drift.
+- **The leaderboard finds "you" by position, never by id.** The view (0004/0006) exposes
+  no id and is never altered — `create or replace view` can only append and would break
+  re-running older migrations, which `verify-offline.mjs` checks. `my_leaderboard_row()`
+  returns the caller's 1-based place in the same ordering: `<= 100` brackets that row,
+  beyond pins it under the list. 400 ms budget: both calls in parallel, last page cached
+  in memory, ledger rules are hairlines (Rough is for the brackets and the frame).
+- The city is one static screen: `UI_ART.cityPort` under a plain RNGH pinch + pan whose
+  clamp runs on the UI thread (1x..3x, image edge never inside the canvas), three
+  dashed slots with a "Coming soon" ribbon, the Captain's welcome once
+  (`profile.hasVisitedCity`). There is no building system — don't start one.
+
+### Shipping and the demo (`eas.json`, `src/state/demo.ts`, `src/features/demo/`, `docs/DEMO.md`)
+
+- **Five taps on the menu's version string open the demo menu.** It never writes to the
+  profile or the server: "Force a win" / "Force a rank-up" pass `forced=pb,pa,cb,ca` to the
+  result route, "Scripted match" is `/demo-battle` on the fixed fleets in `demoMatch.ts`
+  (legal boards, the presenter simply knows them — `demoMatch.test.ts` proves the script),
+  "Offline" is the hard toggle below.
+- **Hard offline is one flag, gated in four places**: `connectivity.ts` (hasInternet /
+  subscribe), `api.ts guard()`, `match-client.ts connect()`, and the two Realtime hooks.
+  Any new network path must consult `isForcedOffline()` too. It persists across restarts.
+- `npm run check:bundle` exports the Android bundle and fails if the server secret appears
+  by value or by shape (`sb_secret_` + base64url). Only `EXPO_PUBLIC_*` may be inlined.
+- `eas.json` `preview` = APK, R8-minified (expo-build-properties), public env baked in;
+  `EXPO_PUBLIC_WS_URL` there must be the deployed `wss://` host. `server/scripts/seed-demo.ts`
+  seeds a crew, history and your rank through the secret key (idempotent).
 
 ## 5. Landscape only, Android target, no crypto ever
 
@@ -189,7 +288,7 @@ docs/           brief, prompt pack, asset guide
 | `npm start` | Metro, scan with Expo Go |
 | `npm run android` | Metro, open on a connected device |
 | `npm run typecheck` | `tsc --noEmit`, must stay clean |
-| `npm test` | vitest, engine only |
+| `npm test` | vitest: engine, placement store, match client (real sockets vs a fake server) |
 | `npm run lint` | eslint (flat config; `--ext` no longer exists in eslint 10) |
 | `npm run server` | the match server on `:8080` |
 

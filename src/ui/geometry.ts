@@ -317,3 +317,55 @@ export function tabOutline(w: number, h: number, scallop = 12, amp = 4): Point[]
   }
   return pts;
 }
+
+// ---------------------------------------------------------------------------
+// Result screen: the laurel wreath
+// ---------------------------------------------------------------------------
+
+export interface LaurelLeaf {
+  /** A pointed-oval leaf outline, ready for roughPolygon. */
+  readonly points: Point[];
+}
+
+/**
+ * One branch of a laurel wreath: a stem curving up the side of an `h`-tall
+ * box, with `count` pointed-oval leaves alternating either side of it.
+ * `side` mirrors the branch. Returns the stem polyline plus the leaves so the
+ * two can be stroked with different weights.
+ */
+export function laurelBranch(
+  side: 'left' | 'right',
+  h: number,
+  count = 7,
+): { stem: Point[]; leaves: LaurelLeaf[] } {
+  const dir = side === 'left' ? 1 : -1;
+  const w = h * 0.34;
+  const cx = side === 'left' ? w : 0;
+  const stem: Point[] = [];
+  const steps = 12;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const y = h - t * h;
+    const x = cx - dir * Math.sin(t * Math.PI * 0.9) * w * 0.8;
+    stem.push([x, y]);
+  }
+  const leaves: LaurelLeaf[] = [];
+  for (let i = 0; i < count; i++) {
+    const t = (i + 0.7) / (count + 0.6);
+    const y = h - t * h;
+    const x = cx - dir * Math.sin(t * Math.PI * 0.9) * w * 0.8;
+    // Leaves point outward and up, shrinking toward the tip of the branch.
+    const len = h * (0.16 - t * 0.05);
+    const wid = len * 0.42;
+    const angle = -Math.PI / 2 - dir * (0.95 - t * 0.35) * (i % 2 === 0 ? 1 : 0.45);
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const px = -uy;
+    const py = ux;
+    const tip: Point = [x + ux * len, y + uy * len];
+    const midA: Point = [x + ux * len * 0.5 + px * wid, y + uy * len * 0.5 + py * wid];
+    const midB: Point = [x + ux * len * 0.5 - px * wid, y + uy * len * 0.5 - py * wid];
+    leaves.push({ points: [[x, y], midA, tip, midB] });
+  }
+  return { stem, leaves };
+}

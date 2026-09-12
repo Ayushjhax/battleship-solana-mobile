@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2023"],
+    "lib": [
+      "ES2023"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
@@ -11,10 +13,19 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "verbatimModuleSyntax": false,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "paths": {
-      "@engine/*": ["../src/engine/*"]
+      "@engine/*": [
+        "../src/engine/*"
+      ]
     }
   },
-  "include": ["src/**/*.ts", "../src/engine/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "../src/engine/**/*.ts",
+    "../src/net/database.types.ts"
+  ]
 }

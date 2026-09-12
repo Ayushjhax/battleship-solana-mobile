@@ -3,15 +3,22 @@ import * as Haptics from 'expo-haptics';
 
 import { useProfile } from '@/state/profile';
 
-export type HapticStrength = 'light' | 'medium' | 'heavy';
+export type HapticId =
+  'buttonPress' | 'shipPlaced' | 'miss' | 'hit' | 'sink' | 'mine' | 'rankUp' | 'invalidAction';
 
-const STYLE = {
-  light: Haptics.ImpactFeedbackStyle.Light,
-  medium: Haptics.ImpactFeedbackStyle.Medium,
-  heavy: Haptics.ImpactFeedbackStyle.Heavy,
-} as const;
-
-export function haptic(strength: HapticStrength): void {
+export function haptic(id: HapticId): void {
   if (!useProfile.getState().hapticsOn) return;
-  Haptics.impactAsync(STYLE[strength]).catch(() => {});
+  const work =
+    id === 'rankUp'
+      ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+      : id === 'invalidAction'
+        ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+        : Haptics.impactAsync(
+            id === 'sink' || id === 'mine'
+              ? Haptics.ImpactFeedbackStyle.Heavy
+              : id === 'hit' || id === 'shipPlaced'
+                ? Haptics.ImpactFeedbackStyle.Medium
+                : Haptics.ImpactFeedbackStyle.Light,
+          );
+  void work.catch(() => {});
 }

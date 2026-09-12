@@ -2,16 +2,16 @@
  * Small square icon buttons drawn with the pen: settings gear, sound toggle.
  * Same press feel as InkButton — seed + 1 while pressed, light haptic.
  */
-import * as Haptics from 'expo-haptics';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
 import Svg from 'react-native-svg';
 
+import { haptic } from '@/audio/haptics';
 import { useScale } from './Scale';
 import { color } from './tokens';
 import { RoughShape, hashString, useRough, type PathInfo, type Point } from './useRough';
 
-export type InkIcon = 'settings' | 'sound-on' | 'sound-off' | 'home' | 'chat';
+export type InkIcon = 'settings' | 'sound-on' | 'sound-off' | 'home' | 'chat' | 'close' | 'back';
 
 export interface InkIconButtonProps {
   icon: InkIcon;
@@ -31,7 +31,7 @@ export function InkIconButton({
   style,
 }: InkIconButtonProps) {
   const { scale } = useScale();
-  const { roughCircle, roughLine, roughPolygon, roughPath } = useRough();
+  const { roughCircle, roughLine, roughPolygon, roughPath, roughRect } = useRough();
   const [pressed, setPressed] = useState(false);
 
   const s = Math.max(size, Math.ceil(MIN_REAL_PX / scale));
@@ -40,7 +40,55 @@ export function InkIconButton({
   const stroke = { stroke: color.ink, strokeWidth: 1.5 } as const;
 
   const layers: (readonly PathInfo[])[] = [];
-  if (icon === 'home') {
+  if (icon === 'close') {
+    // The red X in a small box — the modal's corner button.
+    layers.push(
+      roughRect(c - s * 0.3, c - s * 0.3, s * 0.6, s * 0.6, {
+        seed,
+        stroke: color.inkRed,
+        strokeWidth: 1.4,
+      }),
+    );
+    layers.push(
+      roughLine(c - s * 0.17, c - s * 0.17, c + s * 0.17, c + s * 0.17, {
+        seed: seed + 1,
+        stroke: color.inkRed,
+        strokeWidth: 2.2,
+      }),
+    );
+    layers.push(
+      roughLine(c + s * 0.17, c - s * 0.17, c - s * 0.17, c + s * 0.17, {
+        seed: seed + 2,
+        stroke: color.inkRed,
+        strokeWidth: 2.2,
+      }),
+    );
+  } else if (icon === 'back') {
+    // A curling return arrow, like the placement screen's corner button.
+    const pts: Point[] = [];
+    for (let k = 0; k <= 8; k++) {
+      const a = -Math.PI * 0.9 + (Math.PI * 1.3 * k) / 8;
+      pts.push([c + s * 0.05 + Math.cos(a) * s * 0.22, c + Math.sin(a) * s * 0.22]);
+    }
+    layers.push(roughPath(pts, { seed, stroke: color.ink, strokeWidth: 2 }));
+    const tip = pts[0] as Point;
+    layers.push(
+      roughPolygon(
+        [
+          [tip[0] - s * 0.1, tip[1] - s * 0.02],
+          [tip[0] + s * 0.06, tip[1] - s * 0.12],
+          [tip[0] + s * 0.06, tip[1] + s * 0.1],
+        ],
+        {
+          seed: seed + 1,
+          stroke: color.ink,
+          strokeWidth: 1.2,
+          fill: color.ink,
+          fillStyle: 'solid',
+        },
+      ),
+    );
+  } else if (icon === 'home') {
     // A house: roof, walls, door — the way the reference draws it in red.
     const red = { stroke: color.inkRed, strokeWidth: 1.6 } as const;
     layers.push(
@@ -186,7 +234,7 @@ export function InkIconButton({
 
   const onPressIn = useCallback(() => {
     setPressed(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    haptic('buttonPress');
   }, []);
   const onPressOut = useCallback(() => setPressed(false), []);
 

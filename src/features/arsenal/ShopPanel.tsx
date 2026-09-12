@@ -27,7 +27,7 @@ const PANEL_H = 226;
 const CARD_W = 205;
 const CARD_H = 62;
 
-const NAMES: Record<ArsenalKind, string> = {
+export const ARSENAL_NAMES: Record<ArsenalKind, string> = {
   torpedoBomber: 'Torpedo Bomber',
   doubleTorpedoBomber: 'Double Torpedo Bomber',
   bomber: 'Bomber',
@@ -309,7 +309,7 @@ function ShopCard({
   const atCap = count >= spec.max;
   const affordable = remaining >= spec.cost;
   const disabledByFuel = !atCap && !affordable;
-  const label = NAMES[kind];
+  const label = ARSENAL_NAMES[kind];
 
   const buy = () => {
     if (atCap) return;
@@ -418,7 +418,7 @@ function InfoPopover({ kind, onClose }: { kind: ArsenalKind; onClose: () => void
   return (
     <View style={styles.popover}>
       <InkPanel w={290} h={196} seedKey={`arsenal-info-${kind}`} padding={space.sm}>
-        <Text style={styles.popoverTitle}>{NAMES[kind]}</Text>
+        <Text style={styles.popoverTitle}>{ARSENAL_NAMES[kind]}</Text>
         <View style={styles.diagram}>
           <EffectDiagram kind={kind} />
         </View>

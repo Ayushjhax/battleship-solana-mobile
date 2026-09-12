@@ -55,7 +55,8 @@ export interface DualBoardsProps {
   children?: ReactNode;
 }
 
-const TRIANGLE_SIZE = 44;
+const TRIANGLE_SIZE = 62;
+const TRIANGLE_W = 34;
 
 export function DualBoards({
   own,
@@ -74,7 +75,7 @@ export function DualBoards({
   children,
 }: DualBoardsProps) {
   const origins = boardOrigins(top);
-  const triW = Math.round(TRIANGLE_SIZE * 0.8);
+  const triW = TRIANGLE_W;
   return (
     <Animated.View style={[styles.canvas, boardStyle]} pointerEvents="box-none">
       <GridBoard
@@ -121,6 +122,7 @@ export function DualBoards({
           seconds={seconds}
           snap={snapTurn}
           size={TRIANGLE_SIZE}
+          width={TRIANGLE_W}
           seedKey="battle"
         />
       </View>

@@ -1,8 +1,8 @@
 import { emptyBoard } from '@engine/board';
+import type { Difficulty } from '@engine/ai';
 import { validateSubmission } from '@engine/match';
 import { validateArsenalPlacement } from '@engine/placement';
 import type { ArsenalItem, Orientation } from '@engine/types';
-import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   forwardRef,
@@ -32,13 +32,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { G } from 'react-native-svg';
 
+import { haptic } from '@/audio/haptics';
 import { playSfx } from '@/audio/sfx';
 import { GridBoard } from '@/board/GridBoard';
 import { BOARD_SIZE, CELL } from '@/board/layout';
 import { ShipSprite, shipSpriteSize } from '@/board/ShipSprite';
 import { ArsenalInkSprite, ShopPanel } from '@/features/arsenal/ShopPanel';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
-import { useProfile } from '@/state/profile';
 import {
   buildPlacementPreview,
   usePlacement,
@@ -90,18 +90,15 @@ function parseRuleset(value: string | string[] | undefined): 'classic' | 'advanc
 }
 
 function lightHaptic() {
-  if (!useProfile.getState().hapticsOn) return;
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  haptic('buttonPress');
 }
 
 function mediumHaptic() {
-  if (!useProfile.getState().hapticsOn) return;
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  haptic('shipPlaced');
 }
 
 function warningHaptic() {
-  if (!useProfile.getState().hapticsOn) return;
-  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+  haptic('invalidAction');
 }
 
 interface PreviewHandle {
@@ -440,8 +437,7 @@ const DraggableShip = memo(function DraggableShip({
 
   const unplace = useCallback(() => {
     if (placed) {
-      const result = usePlacement.getState().remove(shipId);
-      if (result.ok) mediumHaptic();
+      usePlacement.getState().remove(shipId);
     }
     resetVisuals();
   }, [placed, resetVisuals, shipId]);
@@ -460,7 +456,6 @@ const DraggableShip = memo(function DraggableShip({
     if (!placed) return;
     const result = usePlacement.getState().rotate(shipId);
     if (result.ok) {
-      mediumHaptic();
       playSfx(SHIP_PLACE_SOURCE);
       previewRef.current?.show(null);
       return;
@@ -736,8 +731,7 @@ const DraggableArsenal = memo(function DraggableArsenal({
   }, []);
 
   const sell = useCallback(() => {
-    const result = usePlacement.getState().sellArsenal(item.id);
-    if (result.ok) mediumHaptic();
+    usePlacement.getState().sellArsenal(item.id);
   }, [item.id]);
 
   const pan = Gesture.Pan()
@@ -857,14 +851,42 @@ function PulsingBattleButton({ enabled, onPress }: { enabled: boolean; onPress: 
   );
 }
 
-function HandoffCurtain({ player, onReady }: { player: 1 | 2; onReady: () => void }) {
+const DIFFICULTIES: readonly { value: Difficulty; label: string }[] = [
+  { value: 'easy', label: 'Easy' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'hard', label: 'Hard' },
+];
+
+function DifficultyPicker({ value }: { value: Difficulty }) {
   return (
-    <View style={styles.handoff}>
-      <Paper variant="panel" w={CANVAS_W} h={CANVAS_H} seedKey="hotseat-handoff" />
+    <View style={styles.difficultyPicker} accessibilityRole="radiogroup">
+      <Text style={styles.difficultyLabel}>AI:</Text>
+      {DIFFICULTIES.map((option) => (
+        <InkButton
+          key={option.value}
+          label={option.label}
+          tone={value === option.value ? 'confirm' : 'ink'}
+          size="sm"
+          w={74}
+          h={40}
+          seedKey={`difficulty-${option.value}`}
+          accessibilityRole="radio"
+          accessibilityState={{ checked: value === option.value }}
+          onPress={() => usePlacement.getState().setDifficulty(option.value)}
+        />
+      ))}
+    </View>
+  );
+}
+
+function HandoffCurtain({ name, onReady }: { name: string; onReady: () => void }) {
+  return (
+    <View style={styles.handoff} accessibilityViewIsModal>
+      <Paper variant="full" />
       <View style={styles.handoffCopy}>
         <Text style={styles.handoffEyebrow}>Pass the device</Text>
-        <Text style={styles.handoffTitle}>Player {player}&apos;s fleet</Text>
-        <Text style={styles.handoffBody}>Keep the other captain&apos;s waters secret.</Text>
+        <Text style={styles.handoffTitle}>{name}&apos;s turn</Text>
+        <Text style={styles.handoffBody}>Tap Ready when only {name} can see the screen.</Text>
         <InkButton label="Ready" tone="confirm" size="lg" w={150} onPress={onReady} />
       </View>
     </View>
@@ -892,9 +914,11 @@ function PlacementCanvas() {
   const fuelSpent = usePlacement((state) => state.fuelSpent);
   const fuelBudget = usePlacement((state) => state.fuelBudget);
   const ruleset = usePlacement((state) => state.ruleset);
+  const difficulty = usePlacement((state) => state.difficulty);
   const pendingArsenalId = usePlacement((state) => state.pendingArsenalId);
   const hotseatPlayer = usePlacement((state) => state.hotseatPlayer);
   const handoffVisible = usePlacement((state) => state.handoffVisible);
+  const playerTwoName = usePlacement((state) => state.playerTwoName);
 
   useEffect(() => {
     usePlacement.getState().initialize(mode, sessionSeed.current, requestedRuleset);
@@ -902,12 +926,12 @@ function PlacementCanvas() {
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!usePlacement.getState().pendingArsenalId) return false;
-      usePlacement.getState().cancelPendingArsenal();
+      if (usePlacement.getState().pendingArsenalId) usePlacement.getState().cancelPendingArsenal();
+      else router.back();
       return true;
     });
     return () => subscription.remove();
-  }, []);
+  }, [router]);
 
   const boardX = ruleset === 'classic' ? CLASSIC_BOARD_X : ADVANCED_BOARD_X;
   const trayX = ruleset === 'classic' ? CLASSIC_BOARD_X - 32 : TRAY_X;
@@ -926,13 +950,11 @@ function PlacementCanvas() {
 
   const shuffle = useCallback(() => {
     usePlacement.getState().autoPlace(shuffleSeed.current++);
-    mediumHaptic();
     previewRef.current?.show(null);
   }, []);
 
   const reset = useCallback(() => {
     usePlacement.getState().clearFleet();
-    lightHaptic();
     previewRef.current?.show(null);
   }, []);
 
@@ -987,6 +1009,7 @@ function PlacementCanvas() {
       {ruleset === 'advanced' ? (
         <FuelGauge spent={fuelSpent} budget={fuelBudget} shakeNonce={fuelShakeNonce} />
       ) : null}
+      {mode === 'ai' ? <DifficultyPicker value={difficulty} /> : null}
 
       <View
         pointerEvents="none"
@@ -1056,7 +1079,7 @@ function PlacementCanvas() {
 
       {handoffVisible ? (
         <HandoffCurtain
-          player={hotseatPlayer}
+          name={hotseatPlayer === 2 ? playerTwoName : 'Player 1'}
           onReady={() => usePlacement.getState().dismissHandoff()}
         />
       ) : null}
@@ -1070,6 +1093,19 @@ export default function PlacementScreen() {
 
 const styles = StyleSheet.create({
   backButton: { position: 'absolute', left: 8, top: 0 },
+  difficultyPicker: {
+    position: 'absolute',
+    left: 84,
+    top: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  difficultyLabel: {
+    color: color.ink,
+    fontFamily: font.label,
+    fontSize: typeScale.xs,
+  },
   fuelGauge: {
     position: 'absolute',
     right: 12,

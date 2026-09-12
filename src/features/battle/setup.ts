@@ -6,11 +6,14 @@ import { validateArsenalPlacement } from '@engine/placement';
 import { autoPlaceFleet } from '@engine/placement';
 import { createRng, type Rng } from '@engine/rng';
 import type { ArsenalItem, Board, Coord, MatchMode, Ship } from '@engine/types';
+import type { Difficulty } from '@engine/ai';
 
+import { useMatchClient } from '@/net/match-client';
 import type { BattleMode, BattleSetup, Combatant } from '@/state/battle';
 
 export interface PlacementSnapshot {
   readonly mode: BattleMode;
+  readonly difficulty: Difficulty;
   readonly ruleset: MatchMode;
   readonly ships: readonly Ship[];
   readonly arsenal: readonly ArsenalItem[];
@@ -18,6 +21,8 @@ export interface PlacementSnapshot {
   readonly playerTwoShips: readonly Ship[] | null;
   readonly playerOneArsenal: readonly ArsenalItem[] | null;
   readonly playerTwoArsenal: readonly ArsenalItem[] | null;
+  readonly playerOneName: string;
+  readonly playerTwoName: string;
 }
 
 export interface ProfileSnapshot {
@@ -57,7 +62,9 @@ export function buildBattleSetup(
   const rng = createRng(seed);
   const mode: BattleMode = placement.mode === 'online' ? 'ai' : placement.mode;
   if (placement.mode === 'online')
-    console.warn('[battle] online play lands in P13; playing the AI instead');
+    console.warn(
+      '[battle] online setup requested without a match — see buildOnlineSetup; playing the AI',
+    );
 
   const myShips = (placement.mode === 'hotseat' ? placement.playerOneShips : placement.ships) ?? [];
   const myArsenal =
@@ -66,7 +73,7 @@ export function buildBattleSetup(
 
   const one: Combatant = {
     id: 'p1',
-    name: placement.mode === 'hotseat' ? 'Player 1' : profile.name || 'Player',
+    name: placement.mode === 'hotseat' ? placement.playerOneName : profile.name || 'Player',
     points: profile.rankPoints,
     avatarId: profile.avatarId,
     avatarColor: profile.avatarColor,
@@ -80,7 +87,7 @@ export function buildBattleSetup(
     const ships = placement.playerTwoShips ?? [];
     two = {
       id: 'p2',
-      name: 'Player 2',
+      name: placement.playerTwoName,
       points: 0,
       avatarId: 2,
       avatarColor: '#8A5A2B',
@@ -102,5 +109,37 @@ export function buildBattleSetup(
     };
   }
 
-  return { mode, ruleset: placement.ruleset, seed, one, two, difficulty: 'normal' };
+  return { mode, ruleset: placement.ruleset, seed, one, two, difficulty: placement.difficulty };
+}
+
+/**
+ * Online: both combatants come from the server's `matched` message, never
+ * from placement. The opponent's ships are — by design — unknown here; the
+ * empty arrays are placeholders the offline `start()` path never reads
+ * (see src/state/battle.ts). Null until `matched` has arrived.
+ */
+export function buildOnlineSetup(profile: ProfileSnapshot): BattleSetup | null {
+  const mc = useMatchClient.getState();
+  if (!mc.matchId || !mc.you || !mc.opponent || !mc.mode) return null;
+  const one: Combatant = {
+    id: mc.you.id,
+    name: profile.name || mc.you.name,
+    points: profile.rankPoints || mc.you.rankPoints,
+    avatarId: profile.avatarId || mc.you.avatarId,
+    avatarColor: profile.avatarColor || mc.you.avatarColor,
+    countryCode: profile.countryCode || mc.you.countryCode || '??',
+    ships: [],
+    arsenal: [],
+  };
+  const two: Combatant = {
+    id: mc.opponent.id,
+    name: mc.opponent.name,
+    points: mc.opponent.rankPoints,
+    avatarId: mc.opponent.avatarId,
+    avatarColor: mc.opponent.avatarColor,
+    countryCode: mc.opponent.countryCode ?? '??',
+    ships: [],
+    arsenal: [],
+  };
+  return { mode: 'online', ruleset: mc.mode, seed: 0, one, two, matchId: mc.matchId };
 }

@@ -14,6 +14,8 @@ import 'expo-sqlite/localStorage/install';
 
 import { createClient } from '@supabase/supabase-js';
 
+import type { Database } from './database.types';
+
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const publishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
 
@@ -28,13 +30,15 @@ if (!isSupabaseConfigured) {
   );
 }
 
-export const supabase = createClient(
+export const supabase = createClient<Database>(
   isSupabaseConfigured ? url : 'http://localhost:54321',
   isSupabaseConfigured ? publishableKey : 'unset-publishable-key',
   {
     auth: {
       storage: localStorage,
-      autoRefreshToken: true,
+      // Refresh explicitly in online flows. An eager refresh timer would make
+      // an HTTP attempt while the showcase device is in airplane mode.
+      autoRefreshToken: false,
       persistSession: true,
       detectSessionInUrl: false,
     },

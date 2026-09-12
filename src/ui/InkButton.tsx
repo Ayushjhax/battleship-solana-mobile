@@ -8,11 +8,19 @@
  * it feels like the pen pressed harder. Light haptic on press-in. Never smaller
  * than 44 x 44 real pixels after scaling.
  */
-import * as Haptics from 'expo-haptics';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type AccessibilityRole,
+  type AccessibilityState,
+  type ViewStyle,
+} from 'react-native';
 import Svg from 'react-native-svg';
 
+import { haptic } from '@/audio/haptics';
 import { useScale } from './Scale';
 import { color, font, space, type as typeScale } from './tokens';
 import { RoughShape, hashString, useRough } from './useRough';
@@ -31,6 +39,9 @@ export interface InkButtonProps {
   /** Stable key for the wobble. Defaults to the label. */
   seedKey?: string;
   style?: ViewStyle;
+  accessibilityLabel?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityState?: AccessibilityState;
 }
 
 const FONT_SIZE = {
@@ -56,6 +67,9 @@ export function InkButton({
   size = 'md',
   seedKey,
   style,
+  accessibilityLabel,
+  accessibilityRole = 'button',
+  accessibilityState,
 }: InkButtonProps) {
   const { scale } = useScale();
   const { roughRect } = useRough();
@@ -84,7 +98,7 @@ export function InkButton({
 
   const onPressIn = useCallback(() => {
     setPressed(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    haptic('buttonPress');
   }, []);
   const onPressOut = useCallback(() => setPressed(false), []);
 
@@ -94,8 +108,9 @@ export function InkButton({
       onPressIn={onPressIn}
       onPressOut={onPressOut}
       disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+      accessibilityState={{ ...accessibilityState, disabled }}
       style={[{ width, height, opacity: disabled ? 0.45 : 1 }, style]}
     >
       <Svg

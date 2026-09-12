@@ -15,22 +15,50 @@ import { useReducedMotion } from 'react-native-reanimated';
 
 import { playSfx } from '@/audio/sfx';
 import { BOOT_TIMELINE, BootSequence, type BootMode } from '@/features/boot/BootSequence';
-import { ensureSessionForBoot } from '@/net/auth';
+import { BOOT_NETWORK_TIMEOUT_MS, ensureSession, withTimeout } from '@/net/auth';
+import {
+  cloudAsLocal,
+  cloudHasProgress,
+  profilesConflict,
+  pullCloudProfile,
+  type CloudProfile,
+} from '@/net/profileSync';
+import { useCloud } from '@/state/cloud';
 import { useProfile, waitForProfileHydration } from '@/state/profile';
 import { Scale } from '@/ui/Scale';
 
-type Target = '/menu' | '/name';
+type Target = '/menu' | '/name' | '/progress';
 
-/** Resolves the route from the LOCAL profile; the session is best-effort. */
+/**
+ * Decides the route. The local profile is the default; the network is
+ * best-effort under one cap: sign in, pull the cloud row, and only if a
+ * played-on cloud profile differs from a played-on local one show the
+ * progress chooser. A reinstall (empty local, cloud has progress) adopts the
+ * cloud silently.
+ */
 async function runBootWork(): Promise<Target> {
   await waitForProfileHydration();
 
-  // Fire-and-forget with its own timeout: the menu reacts when userId lands.
-  void ensureSessionForBoot().then((userId) => {
-    if (userId) useProfile.getState().setUserId(userId);
-  });
+  const cloud = await withTimeout<CloudProfile | null>(
+    (async () => {
+      const userId = await ensureSession();
+      if (!userId) return null;
+      useProfile.getState().setUserId(userId);
+      const row = await pullCloudProfile(userId);
+      useCloud.getState().setProfile(row);
+      return row;
+    })(),
+    BOOT_NETWORK_TIMEOUT_MS,
+    null,
+  );
 
-  return useProfile.getState().name.trim() ? '/menu' : '/name';
+  const local = useProfile.getState();
+  if (cloud && profilesConflict(local, cloud)) return '/progress';
+  if (cloud && cloudHasProgress(cloud) && local.name.trim().length === 0) {
+    local.mergeRemote(cloudAsLocal(cloud));
+    return '/menu';
+  }
+  return local.name.trim() ? '/menu' : '/name';
 }
 
 export default function Boot() {

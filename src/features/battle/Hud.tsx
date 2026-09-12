@@ -24,6 +24,7 @@ import { AVATARS, EMOTES, type Asset } from '@/ui/assets';
 import { chevronPoints, shieldPoints, tabOutline } from '@/ui/geometry';
 import { InkButton } from '@/ui/InkButton';
 import { InkPanel } from '@/ui/InkPanel';
+import { Paper } from '@/ui/Paper';
 import { color, font, space, type as typeScale } from '@/ui/tokens';
 import { RoughShape, hashString, roughCircle, roughPolygon, roughRect } from '@/ui/useRough';
 
@@ -235,6 +236,50 @@ export function ShieldChip({ seedKey }: { seedKey: string }) {
   );
 }
 
+/** The square emblem left of your shield in IMG_9770: a four-blade pinwheel in a rough frame. */
+export function EmblemChip({ seedKey }: { seedKey: string }) {
+  const w = 26;
+  const h = 22;
+  const seed = hashString(`emblem-${seedKey}`);
+  const frame = roughRect(1, 1, w - 2, h - 2, {
+    seed,
+    strokeWidth: 1.2,
+    fill: color.paper,
+    fillStyle: 'solid',
+  });
+  const cx = w / 2;
+  const cy = h / 2;
+  const r = 7;
+  const blades = [0, 1, 2, 3].map((i) => {
+    const a = (i * Math.PI) / 2;
+    const b = a + Math.PI / 2;
+    const pts: [number, number][] = [
+      [cx, cy],
+      [cx + r * Math.cos(a), cy + r * Math.sin(a)],
+      [cx + r * 0.8 * Math.cos(a + Math.PI / 4), cy + r * 0.8 * Math.sin(a + Math.PI / 4)],
+      [cx + r * 0.35 * Math.cos(b), cy + r * 0.35 * Math.sin(b)],
+    ];
+    return roughPolygon(pts, {
+      seed: seed + 1 + i,
+      stroke: color.ink,
+      strokeWidth: 0.9,
+      fill: color.ink,
+      fillStyle: 'solid',
+      roughness: 0.7,
+    });
+  });
+  return (
+    <View style={{ width: w, height: h }}>
+      <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={StyleSheet.absoluteFill}>
+        <RoughShape paths={frame} />
+        {blades.map((p, i) => (
+          <RoughShape key={i} paths={p} />
+        ))}
+      </Svg>
+    </View>
+  );
+}
+
 export function FlagChip({ code, seedKey }: { code: string; seedKey: string }) {
   const w = 30;
   const h = 20;
@@ -332,9 +377,15 @@ export function Curtain({
   children?: ReactNode;
 }) {
   return (
-    <View style={[StyleSheet.absoluteFill, styles.curtain]}>
+    <View
+      style={[StyleSheet.absoluteFill, styles.curtain]}
+      accessibilityViewIsModal
+      importantForAccessibility="yes"
+    >
+      <Paper variant="full" />
       <InkPanel w={300} h={132} seedKey="curtain" padding={space.md}>
         <View style={styles.centre}>
+          <Text style={styles.curtainEyebrow}>Pass the device</Text>
           <Text
             style={{
               color: color.ink,
@@ -343,7 +394,7 @@ export function Curtain({
               textAlign: 'center',
             }}
           >
-            Pass the device to {name}
+            {name}&apos;s turn
           </Text>
           <Text
             style={{
@@ -354,7 +405,7 @@ export function Curtain({
               textAlign: 'center',
             }}
           >
-            No peeking at the other fleet.
+            Tap Ready when only {name} can see the screen.
           </Text>
           <View style={{ height: space.sm }} />
           <InkButton label="Ready" tone="confirm" seedKey="curtain-ready" onPress={onReady} />
@@ -377,5 +428,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  curtain: { backgroundColor: color.desk, alignItems: 'center', justifyContent: 'center' },
+  curtain: {
+    zIndex: 100,
+    backgroundColor: color.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  curtainEyebrow: {
+    color: color.inkRed,
+    fontFamily: font.label,
+    fontSize: typeScale.xs,
+    marginBottom: 2,
+  },
 });

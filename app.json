@@ -14,7 +14,10 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/brand/adaptive-icon-fg.png",
         "backgroundColor": "#FBFCFE"
-      }
+      },
+      "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -29,13 +32,32 @@
       [
         "expo-splash-screen",
         {
+          "image": "./assets/images/brand/logo.png",
+          "imageWidth": 240,
           "backgroundColor": "#6B4527",
           "resizeMode": "contain"
+        }
+      ],
+      "expo-build-properties",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a5ad1304-4b72-4923-9481-f5fc0bf3f9ee"
+      }
+    },
+    "owner": "ayushjhax"
   }
 }

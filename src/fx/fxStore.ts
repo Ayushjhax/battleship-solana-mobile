@@ -84,6 +84,8 @@ interface FxData {
   radars: readonly RadarFx[];
   intercepts: readonly InterceptFx[];
   crosshair: Crosshair | null;
+  /** Online only: our shell has landed but the server hasn't said hit or miss yet. */
+  pendingShot: Crosshair | null;
   flashNonce: number;
   whiteFlashNonce: number;
   whiteFlashAt: Point | null;
@@ -110,6 +112,7 @@ interface FxActions {
   revealIntercept: (id: number) => void;
   removeIntercept: (id: number) => void;
   setCrosshair: (crosshair: Crosshair | null) => void;
+  setPendingShot: (pendingShot: Crosshair | null) => void;
   flash: () => void;
   whiteFlash: (at: Point) => void;
   shake: () => void;
@@ -129,6 +132,7 @@ export const useFx = create<FxData & FxActions>((set) => ({
   radars: [],
   intercepts: [],
   crosshair: null,
+  pendingShot: null,
   flashNonce: 0,
   whiteFlashNonce: 0,
   whiteFlashAt: null,
@@ -198,6 +202,7 @@ export const useFx = create<FxData & FxActions>((set) => ({
   removeIntercept: (id) =>
     set((s) => ({ intercepts: s.intercepts.filter((intercept) => intercept.id !== id) })),
   setCrosshair: (crosshair) => set({ crosshair }),
+  setPendingShot: (pendingShot) => set({ pendingShot }),
   flash: () => set((s) => ({ flashNonce: s.flashNonce + 1 })),
   whiteFlash: (at) => set((s) => ({ whiteFlashNonce: s.whiteFlashNonce + 1, whiteFlashAt: at })),
   shake: () => set((s) => ({ shakeNonce: s.shakeNonce + 1 })),
@@ -214,5 +219,6 @@ export const useFx = create<FxData & FxActions>((set) => ({
       radars: [],
       intercepts: [],
       crosshair: null,
+      pendingShot: null,
     }),
 }));

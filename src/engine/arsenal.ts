@@ -219,8 +219,21 @@ function aircraftLaunch(
   kind: 'torpedoBomber' | 'doubleTorpedoBomber' | 'bomber' | 'atomicBomber',
   rows: readonly number[],
   at?: Coord,
+  interceptAt?: Coord,
 ): MatchEvent {
-  return { type: 'AIRCRAFT_LAUNCHED', playerId, kind, rows, ...(at ? { at } : {}) };
+  return {
+    type: 'AIRCRAFT_LAUNCHED',
+    playerId,
+    kind,
+    rows,
+    ...(at ? { at } : {}),
+    ...(interceptAt ? { interceptAt } : {}),
+  };
+}
+
+function interceptedAt(outcome: ArsenalOutcome | null): Coord | undefined {
+  const event = outcome?.events.find((candidate) => candidate.type === 'AIRCRAFT_DOWNED');
+  return event?.type === 'AIRCRAFT_DOWNED' ? event.gunAt : undefined;
 }
 
 function finish(
@@ -254,8 +267,14 @@ export function torpedoBomber(
 ): ArsenalOutcome {
   if (!validRow(row)) return rejected(state, 'row out of bounds');
   const wb = openBoard(state.players[defenderIndex(state, attackerId)].board);
-  const launched = aircraftLaunch(attackerId, 'torpedoBomber', [row]);
   const downed = intercept(state, attackerId, wb, 'torpedoBomber', [row]);
+  const launched = aircraftLaunch(
+    attackerId,
+    'torpedoBomber',
+    [row],
+    undefined,
+    interceptedAt(downed),
+  );
   if (downed) return { ...downed, events: [launched, ...downed.events] };
   const tally: Tally = { events: [launched], hits: 0, mine: false };
   torpedo(wb, attackerId, rowPath(row), tally);
@@ -271,8 +290,14 @@ export function doubleTorpedoBomber(
   if (!validRow(row)) return rejected(state, 'row out of bounds');
   const rows = doubleTorpedoRows(row);
   const wb = openBoard(state.players[defenderIndex(state, attackerId)].board);
-  const launched = aircraftLaunch(attackerId, 'doubleTorpedoBomber', rows);
   const downed = intercept(state, attackerId, wb, 'doubleTorpedoBomber', rows);
+  const launched = aircraftLaunch(
+    attackerId,
+    'doubleTorpedoBomber',
+    rows,
+    undefined,
+    interceptedAt(downed),
+  );
   if (downed) return { ...downed, events: [launched, ...downed.events] };
   const tally: Tally = { events: [launched], hits: 0, mine: false };
   for (const r of rows) torpedo(wb, attackerId, rowPath(r), tally);
@@ -289,8 +314,8 @@ export function bomber(
   const cells = bomberFootprint(at);
   const wb = openBoard(state.players[defenderIndex(state, attackerId)].board);
   const rows = [...new Set(cells.map((c) => c.r))];
-  const launched = aircraftLaunch(attackerId, 'bomber', rows, at);
   const downed = intercept(state, attackerId, wb, 'bomber', rows);
+  const launched = aircraftLaunch(attackerId, 'bomber', rows, at, interceptedAt(downed));
   if (downed) return { ...downed, events: [launched, ...downed.events] };
   const drops: MatchEvent[] = cells.map((cell, index) => ({
     type: 'BOMB_DROPPED',
@@ -299,6 +324,7 @@ export function bomber(
     at: cell,
     index,
     total: cells.length,
+    resolves: !wb.marks[coordKey(cell)],
   }));
   const tally: Tally = { events: [launched, ...drops], hits: 0, mine: false };
   drop(wb, attackerId, cells, tally);
@@ -317,8 +343,8 @@ export function atomicBomber(
   );
   const wb = openBoard(state.players[defenderIndex(state, attackerId)].board);
   const rows = [...new Set(cells.map((c) => c.r))];
-  const launched = aircraftLaunch(attackerId, 'atomicBomber', rows, at);
   const downed = intercept(state, attackerId, wb, 'atomicBomber', rows);
+  const launched = aircraftLaunch(attackerId, 'atomicBomber', rows, at, interceptedAt(downed));
   if (downed) return { ...downed, events: [launched, ...downed.events] };
   const tally: Tally = {
     events: [
@@ -330,8 +356,15 @@ export function atomicBomber(
         at,
         index: 0,
         total: 1,
+        resolves: cells.some((cell) => !wb.marks[coordKey(cell)]),
       },
-      { type: 'NUKE_FLASH', playerId: attackerId, at, cells },
+      {
+        type: 'NUKE_FLASH',
+        playerId: attackerId,
+        at,
+        cells,
+        resolvedCells: cells.filter((cell) => !wb.marks[coordKey(cell)]),
+      },
     ],
     hits: 0,
     mine: false,
