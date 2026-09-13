@@ -62,7 +62,8 @@ import { Scale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
 
 const ORIGINS = boardOrigins(BATTLE_BOARD_TOP);
-const HUD_Y = 44;
+// Rank line + 22-unit name line end at 74, clear of the board frame at BATTLE_BOARD_TOP (78).
+const HUD_Y = 36;
 
 /** Sunk enemy ships come back as cells; rebuild a Ship for the wreck sprite. */
 function wrecksOf(
@@ -100,7 +101,9 @@ function ResignDialog({
 }) {
   return (
     <View style={styles.resignOverlay} accessibilityViewIsModal>
-      <Paper variant="full" />
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Paper variant="full" />
+      </View>
       <InkPanel w={310} h={146} seedKey="resign-confirm" padding={space.md}>
         <View style={styles.resignContent}>
           <Text style={styles.resignTitle}>Resign the match?</Text>
@@ -455,7 +458,12 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
           <ShieldChip seedKey="me" />
         </View>
         <View style={{ position: 'absolute', left: 220, top: HUD_Y }}>
-          <PlayerBlock name={mine?.name ?? 'Player'} points={mine?.points ?? 0} align="left" />
+          <PlayerBlock
+            name={mine?.name ?? 'Player'}
+            points={mine?.points ?? 0}
+            align="left"
+            maxWidth={116}
+          />
         </View>
         <View style={{ position: 'absolute', left: 340, top: HUD_Y }}>
           <PointsBlock points={mine?.points ?? 0} align="left" />
@@ -465,7 +473,12 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
           <PointsBlock points={opponent?.points ?? 0} align="left" />
         </View>
         <View style={{ position: 'absolute', right: CANVAS_W - 586, top: HUD_Y }}>
-          <PlayerBlock name={opponent?.name ?? '—'} points={opponent?.points ?? 0} align="right" />
+          <PlayerBlock
+            name={opponent?.name ?? '—'}
+            points={opponent?.points ?? 0}
+            align="right"
+            maxWidth={100}
+          />
         </View>
         <View
           style={{ position: 'absolute', left: 590, top: HUD_Y + 4, flexDirection: 'row', gap: 6 }}

@@ -158,14 +158,18 @@ export function PlayerBlock({
   name,
   points,
   align,
+  maxWidth,
 }: {
   name: string;
   points: number;
   align: 'left' | 'right';
+  /** Names are up to 14 characters; long ones step down a size before they ellipsise. */
+  maxWidth?: number;
 }) {
   const textAlign = align;
+  const nameSize = name.length <= 8 ? typeScale.md : name.length <= 11 ? typeScale.sm : typeScale.xs;
   return (
-    <View style={{ alignItems: align === 'left' ? 'flex-start' : 'flex-end' }}>
+    <View style={{ alignItems: align === 'left' ? 'flex-start' : 'flex-end', maxWidth }}>
       <Text
         numberOfLines={1}
         style={{ color: color.deskDark, fontFamily: font.label, fontSize: typeScale.xs, textAlign }}
@@ -177,8 +181,8 @@ export function PlayerBlock({
         style={{
           color: color.ink,
           fontFamily: font.display,
-          fontSize: typeScale.md,
-          lineHeight: 24,
+          fontSize: nameSize,
+          lineHeight: 22,
           textAlign,
         }}
       >
@@ -199,7 +203,7 @@ export function PointsBlock({ points, align }: { points: number; align: 'left' |
           color: color.inkRed,
           fontFamily: font.display,
           fontSize: typeScale.md,
-          lineHeight: 24,
+          lineHeight: 22,
         }}
       >
         {points}
@@ -382,7 +386,9 @@ export function Curtain({
       accessibilityViewIsModal
       importantForAccessibility="yes"
     >
-      <Paper variant="full" />
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Paper variant="full" />
+      </View>
       <InkPanel w={300} h={132} seedKey="curtain" padding={space.md}>
         <View style={styles.centre}>
           <Text style={styles.curtainEyebrow}>Pass the device</Text>

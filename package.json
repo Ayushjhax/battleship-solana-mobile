@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "server": "cd server && npm run dev",
     "lint": "eslint .",
-    "check:bundle": "node scripts/check-bundle-secrets.mjs"
+    "check:bundle": "node scripts/check-bundle-secrets.mjs",
+    "assets": "bash scripts/ink-assets.sh"
   },
   "dependencies": {
     "@expo-google-fonts/bitter": "^0.4.2",

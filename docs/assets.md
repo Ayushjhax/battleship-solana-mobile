@@ -44,6 +44,13 @@ assets/
 
 This is the section you'll come back to. Filename must match **exactly** — the prompts reference these paths.
 
+**After dropping files, run `npm run assets`.** It reads `assets/images/`, converts every
+line-art PNG into a black alpha mask under `assets/ink/` (that is what the app requires —
+a drawing with white fill tinted directly turns into a solid violet shape), mirrors the
+three flight planes to face right, and builds the app icon, adaptive icon and splash from
+`ship-battleship.png`. Commit `assets/ink/` too. Needs ImageMagick 7 (`brew install imagemagick`).
+The 4.1 format rules below still apply to what you drop — the script only makes them robust.
+
 ### Images — 34 files
 
 | Drop at this exact path | Size (px) | Used by |

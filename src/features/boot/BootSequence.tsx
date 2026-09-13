@@ -222,7 +222,7 @@ export function BootSequence({ mode }: BootSequenceProps) {
         </Svg>
       </Animated.View>
       <Animated.View style={[styles.logo, logoStyle]}>
-        <LogoMark w={LOGO_W} h={LOGO_H} />
+        <LogoMark w={LOGO_W} h={LOGO_H} subtitle="Sea Battle" />
       </Animated.View>
     </Animated.View>
   );

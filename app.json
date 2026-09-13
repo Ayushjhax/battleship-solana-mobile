@@ -6,13 +6,13 @@
     "orientation": "landscape",
     "userInterfaceStyle": "light",
     "scheme": "empireofbits",
-    "icon": "./assets/images/brand/app-icon.png",
+    "icon": "./assets/ink/brand/icon.png",
     "android": {
       "package": "com.empireofbits.seabattle",
       "softwareKeyboardLayoutMode": "pan",
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/brand/adaptive-icon-fg.png",
+        "foregroundImage": "./assets/ink/brand/adaptive-icon.png",
         "backgroundColor": "#FBFCFE"
       },
       "permissions": [
@@ -32,7 +32,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/brand/logo.png",
+          "image": "./assets/ink/brand/splash.png",
           "imageWidth": 240,
           "backgroundColor": "#6B4527",
           "resizeMode": "contain"

@@ -15,7 +15,7 @@ export interface TitleRibbonProps {
   /** Total width including the ribbon ends, design units. */
   w?: number;
   h?: number;
-  size?: 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg';
   seedKey?: string;
   style?: ViewStyle;
 }
@@ -88,7 +88,7 @@ export function TitleRibbon({
           style={{
             color: color.ink,
             fontFamily: font.display,
-            fontSize: size === 'lg' ? typeScale.lg : typeScale.md,
+            fontSize: size === 'lg' ? typeScale.lg : size === 'md' ? typeScale.md : typeScale.sm,
           }}
         >
           {title}

@@ -70,7 +70,8 @@ const PAGE_Y = 58;
 const PAGE_W = CANVAS_W - PAGE_X * 2;
 const PAGE_H = CANVAS_H - PAGE_Y - 14;
 const ROW_H = 30;
-const COL = { rank: 10, avatar: 52, flag: 92, name: 134, wins: 470, points: 548 } as const;
+// The list is PAGE_W - 32 = 588 wide; the two 60-wide numeric cells end flush at 588.
+const COL = { rank: 10, avatar: 52, flag: 92, name: 134, wins: 450, points: 528 } as const;
 
 function Bracket({ side }: { side: 'left' | 'right' }) {
   const { roughPath } = useRough();
@@ -225,8 +226,8 @@ export default function LeaderboardScreen() {
         <View style={styles.header}>
           <Text style={[styles.headCell, { left: COL.rank }]}>#</Text>
           <Text style={[styles.headCell, { left: COL.name }]}>Captain</Text>
-          <Text style={[styles.headCell, { left: COL.wins }]}>Wins</Text>
-          <Text style={[styles.headCell, { left: COL.points }]}>Points</Text>
+          <Text style={[styles.headCell, styles.headNum, { left: COL.wins }]}>Wins</Text>
+          <Text style={[styles.headCell, styles.headNum, { left: COL.points }]}>Points</Text>
         </View>
 
         {page ? (
@@ -312,6 +313,7 @@ const styles = StyleSheet.create({
   flag: { color: color.inkRed, fontFamily: font.label, fontSize: typeScale.xxs, top: 9 },
   name: { width: 320, fontFamily: font.display },
   num: { width: 60, textAlign: 'right' },
+  headNum: { width: 60, textAlign: 'right' },
   points: { fontFamily: font.display },
   meText: { color: color.inkRed },
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm },

@@ -156,7 +156,7 @@ export default function SettingsScreen() {
         <InkPanel w={340} h={132} seedKey="settings-credits" padding={space.xs} fill="none">
           <Text style={styles.creditsTitle}>Credits</Text>
           {CREDITS.map((c) => (
-            <Text key={c.what} style={styles.credit} numberOfLines={1}>
+            <Text key={c.what} style={styles.credit} numberOfLines={2}>
               {c.what} — {c.who} · {c.licence}
             </Text>
           ))}
@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
   left: { position: 'absolute', left: 64, top: 70 },
   right: { position: 'absolute', left: 416, top: 70, gap: 10 },
   actions: { flexDirection: 'row', gap: 10 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 44 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 38 },
   rowLabel: { color: color.ink, fontFamily: font.label, fontSize: typeScale.sm },
   volumeButtons: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   volumeValue: {

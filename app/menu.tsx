@@ -102,7 +102,7 @@ export default function MenuScreen() {
       </View>
 
       <View style={styles.title} pointerEvents="none">
-        <LogoMark w={280} h={48} />
+        <LogoMark w={280} h={56} subtitle="Sea Battle" />
       </View>
 
       <View style={styles.stack}>
@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: space.xs,
   },
-  title: { position: 'absolute', left: (CANVAS_W - 280) / 2, top: 2 },
+  title: { position: 'absolute', left: (CANVAS_W - 280) / 2, top: 0 },
   stack: {
     position: 'absolute',
     left: (CANVAS_W - BUTTON_W) / 2,

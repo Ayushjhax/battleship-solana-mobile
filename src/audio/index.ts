@@ -162,8 +162,10 @@ function createPlayers(): void {
 export function initializeAudio(): Promise<void> {
   if (initializing) return initializing;
   initializing = (async () => {
+    // playsInSilentMode must be true: on Android `false` mutes everything while
+    // the ringer is on vibrate/silent, which is how most people carry a phone.
     await setAudioModeAsync({
-      playsInSilentMode: false,
+      playsInSilentMode: true,
       shouldPlayInBackground: false,
       interruptionMode: 'mixWithOthers',
     }).catch(() => {});

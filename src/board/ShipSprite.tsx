@@ -1,8 +1,9 @@
 /**
  * Ships and own-board arsenal items at CELL scale.
  *
- *  'sprite'  the PNG from assets/images/ships/ (all four face left), rotated
- *            90deg when vertical, tinted with the stroke colour. Until the art
+ *  'sprite'  the PNG from assets/ink/ships/ (all four face left), rotated
+ *            90deg when vertical, tinted with the stroke colour and bled
+ *            SHIP_BLEED past the cells like the arsenal items. Until the art
  *            lands a hull is drawn in code — never a dashed placeholder on
  *            the board.
  *  'wreck'   `sunk`: the sprite at 55% opacity in inkFaint with three rough
@@ -75,7 +76,14 @@ export const ShipSprite = memo(function ShipSprite({
               transform: orientation === 'v' ? [{ rotate: '90deg' }] : undefined,
             }}
           >
-            <AssetSlot source={source} w={long} h={CELL} label={shipClass} tintColor={stroke} />
+            <AssetSlot
+              source={source}
+              w={long + SHIP_BLEED * 2}
+              h={CELL + SHIP_BLEED * 2}
+              label={shipClass}
+              tintColor={stroke}
+              style={{ position: 'absolute', left: -SHIP_BLEED, top: -SHIP_BLEED }}
+            />
           </View>
         </View>
         {sunk ? <Wreck shipClass={shipClass} orientation={orientation} /> : null}

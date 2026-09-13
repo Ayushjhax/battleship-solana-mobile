@@ -111,6 +111,12 @@ const border = roughRect(0, 0, w, h, { seed: hashString('board-frame-own') });
 - Every image goes through `<AssetSlot>` with a source from `src/ui/assets.ts`. Metro
   needs `require()` targets to exist, so an asset that hasn't landed is `null` there and
   the slot draws a labelled placeholder at the exact size.
+- Art is dropped into `assets/images/` but the app requires `assets/ink/`: `npm run assets`
+  (`scripts/ink-assets.sh`, ImageMagick) turns every line-art PNG into a pure-black alpha
+  mask so `tintColor` renders it as ink — a white-filled drawing tinted directly is a
+  solid violet blob. It also mirrors the flight planes to face right and builds the app
+  icon, adaptive icon and splash from the battleship. Re-run it after replacing any art
+  and commit `assets/ink/`; EAS never runs ImageMagick.
 - `app/(dev)/kitchen-sink.tsx` shows every component in every state; it redirects away
   in release builds. Check it after touching anything in `src/ui`.
 

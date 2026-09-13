@@ -6,6 +6,7 @@
  */
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { useBattle } from '@/state/battle';
 import { useProfile } from '@/state/profile';
@@ -47,10 +48,17 @@ export default function TutorialRoute() {
 
   useTutorialDriver(finish);
 
+  // Both are <Scale> roots (flex: 1); as siblings they would split the height.
   return (
-    <>
+    <View style={styles.root}>
       {screen === 'battle' ? <BattleScreen setup={setup} tutorial /> : <PlacementScreen />}
-      <TutorialOverlay onSkip={finish} />
-    </>
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <TutorialOverlay onSkip={finish} />
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

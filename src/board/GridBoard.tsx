@@ -180,17 +180,19 @@ function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLa
         ))}
         <RoughShape paths={inner} />
       </Svg>
-      {COL_LABELS.map((label, c) => (
-        <Text
-          key={`c${c}`}
-          style={[
-            styles.label,
-            { left: m + c * CELL, top: 2, width: CELL, height: m - 4, lineHeight: m - 4 },
-          ]}
-        >
-          {label}
-        </Text>
-      ))}
+      {columnLabels
+        ? COL_LABELS.map((label, c) => (
+            <Text
+              key={`c${c}`}
+              style={[
+                styles.label,
+                { left: m + c * CELL, top: 2, width: CELL, height: m - 4, lineHeight: m - 4 },
+              ]}
+            >
+              {label}
+            </Text>
+          ))
+        : null}
       {labels !== 'none'
         ? ROW_LABELS.map((label, r) => (
             <Text

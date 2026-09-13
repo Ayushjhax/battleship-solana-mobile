@@ -7,9 +7,10 @@
  * — this screen exists to show where the metagame goes.
  *
  * Zoom is about the canvas centre, 1x..3x, and the pan is clamped so the
- * image edge never comes inside the canvas: at 1x the 2:1 image covers the
- * 800x360 sheet as 800x400, so only 20 dp of vertical play exists until you
- * zoom. Both gestures write shared values; the clamp runs on the UI thread.
+ * image edge never comes inside the canvas: the 3:4 map is scaled to the
+ * sheet's width, so at 1x it is 800x1067 and the city scrolls vertically —
+ * you open on the harbour and pan down to the lighthouse. Both gestures write
+ * shared values; the clamp runs on the UI thread.
  */
 import { rankProgress } from '@engine/ranks';
 import { useRouter } from 'expo-router';
@@ -36,19 +37,19 @@ import { TitleRibbon } from '@/ui/TitleRibbon';
 import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
 import { RoughShape, hashString, useRough } from '@/ui/useRough';
 
-// The map covers the sheet: 2048x1024 scaled to the canvas width.
+// The map covers the sheet's width: city-port.png is 768x1024, scaled to 800 wide.
 const MAP_W = CANVAS_W;
-const MAP_H = CANVAS_W / 2;
+const MAP_H = Math.round((CANVAS_W * 1024) / 768);
 const MIN_SCALE = 1;
 const MAX_SCALE = 3;
 const CAPTAIN = { w: 150, h: 200 } as const;
 
-/** Where the future buildings go, in map units (at 1x). */
+/** Where the future buildings go, in map units (at 1x): the container docks, the old town by the cathedral, the lighthouse headland. */
 const SLOTS: readonly { key: string; x: number; y: number; w: number; h: number; label: string }[] =
   [
-    { key: 'docks', x: 96, y: 232, w: 132, h: 76, label: 'Shipyard' },
-    { key: 'hall', x: 350, y: 118, w: 120, h: 80, label: 'Admiralty' },
-    { key: 'tower', x: 612, y: 196, w: 104, h: 84, label: 'Lighthouse' },
+    { key: 'docks', x: 596, y: 500, w: 132, h: 76, label: 'Shipyard' },
+    { key: 'hall', x: 118, y: 506, w: 120, h: 80, label: 'Admiralty' },
+    { key: 'tower', x: 418, y: 764, w: 104, h: 84, label: 'Lighthouse' },
   ];
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -80,8 +81,8 @@ function Slot({ slot }: { slot: (typeof SLOTS)[number] }) {
         <RoughShape paths={outline} dash={[6, 4]} />
       </Svg>
       <Text style={styles.slotLabel}>{slot.label}</Text>
-      <View style={{ position: 'absolute', left: (slot.w - 112) / 2, bottom: -14 }}>
-        <TitleRibbon title="Coming soon" w={112} h={26} size="md" seedKey={`soon-${slot.key}`} />
+      <View style={{ position: 'absolute', left: (slot.w - 184) / 2, bottom: -14 }}>
+        <TitleRibbon title="Coming soon" w={184} h={26} size="sm" seedKey={`soon-${slot.key}`} />
       </View>
     </View>
   );
@@ -163,8 +164,9 @@ export default function CityScreen() {
               source={UI_ART.cityPort}
               w={MAP_W}
               h={MAP_H}
-              label="city-port 2048x1024"
-              tintColor={color.ink}
+              label="city-port"
+              tintColor={color.inkSoft}
+              style={{ opacity: 0.85 }}
             />
             {SLOTS.map((slot) => (
               <Slot key={slot.key} slot={slot} />
@@ -221,7 +223,14 @@ export default function CityScreen() {
 const styles = StyleSheet.create({
   root: { width: CANVAS_W, height: CANVAS_H, overflow: 'hidden', backgroundColor: color.paper },
   map: { position: 'absolute', left: 0, top: (CANVAS_H - MAP_H) / 2, width: MAP_W, height: MAP_H },
-  topLeft: { position: 'absolute', left: space.md, top: space.sm },
+  topLeft: {
+    position: 'absolute',
+    left: space.md,
+    top: space.sm,
+    paddingHorizontal: space.xs,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(251, 252, 254, 0.85)',
+  },
   topRight: {
     position: 'absolute',
     right: space.md,
