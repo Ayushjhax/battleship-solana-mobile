@@ -36,7 +36,7 @@ import { haptic } from '@/audio/haptics';
 import { playSfx } from '@/audio/sfx';
 import { GridBoard } from '@/board/GridBoard';
 import { BOARD_SIZE, CELL } from '@/board/layout';
-import { ShipSprite, shipSpriteSize } from '@/board/ShipSprite';
+import { ShipBacking, ShipSprite, shipSpriteSize } from '@/board/ShipSprite';
 import { ArsenalInkSprite, ShopPanel } from '@/features/arsenal/ShopPanel';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 import {
@@ -390,66 +390,90 @@ const DraggableShip = memo(function DraggableShip({
     () => buildPlacementPreview(ships, arsenal, shipId, orientation),
     [arsenal, orientation, shipId, ships],
   );
-  const validMap = useMemo(() => previews.map((preview) => (preview.ok ? 1 : 0)), [previews]);
+  // The worklets read the store's truth through shared values and refs, never
+  // through their render closure: a ship that moved a moment ago must be gone
+  // from every other ship's lookup by the time the next drag starts.
+  const previewsRef = useRef(previews);
+  previewsRef.current = previews;
+  const validMap = useSharedValue<readonly number[]>(previews.map((p) => (p.ok ? 1 : 0)));
+  const placedIndex = placed ? placed.origin.r * 10 + placed.origin.c : -1;
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const grabX = useSharedValue(0);
   const grabY = useSharedValue(0);
+  /** 1 while a gesture owns the ship — the drag's real lifecycle. */
+  const held = useSharedValue(0);
+  /** 1 while the pan is active; the long-press may not end a drag the pan owns. */
+  const panActive = useSharedValue(0);
+  /** The visual lift only (scale, shadow); springs back after a drop. */
   const lifted = useSharedValue(0);
   const valid = useSharedValue(1);
   const hoverIndex = useSharedValue(-1);
   const lastNotifiedIndex = useSharedValue(-2);
   const overTray = useSharedValue(placed ? 0 : 1);
-  const finalized = useSharedValue(0);
   const shake = useSharedValue(0);
 
+  useEffect(() => {
+    validMap.value = previews.map((preview) => (preview.ok ? 1 : 0));
+  }, [previews, validMap]);
+
+  // The store moved this ship (drop, rotate, shuffle, reset): its box is now
+  // at the new cell, so the drag offset that carried it there goes back to 0.
   useEffect(() => {
     translateX.value = 0;
     translateY.value = 0;
   }, [baseX, baseY, orientation, translateX, translateY]);
 
   const showPreview = useCallback(
-    (index: number) => previewRef.current?.show(index >= 0 ? (previews[index] ?? null) : null),
-    [previewRef, previews],
+    (index: number) =>
+      previewRef.current?.show(index >= 0 ? (previewsRef.current[index] ?? null) : null),
+    [previewRef],
   );
 
-  const resetVisuals = useCallback(() => {
-    translateX.value = 0;
-    translateY.value = 0;
+  const springHome = useCallback(() => {
+    translateX.value = reduceMotion ? 0 : withSpring(0, SPRING);
+    translateY.value = reduceMotion ? 0 : withSpring(0, SPRING);
     previewRef.current?.show(null);
-  }, [previewRef, translateX, translateY]);
+  }, [previewRef, reduceMotion, translateX, translateY]);
 
   const commitDrop = useCallback(
     (r: number, c: number) => {
       const result = usePlacement.getState().placeAt(shipId, { r, c }, orientation);
+      previewRef.current?.show(null);
       if (result.ok) {
         mediumHaptic();
         playSfx(SHIP_PLACE_SOURCE);
-      } else {
-        warningHaptic();
-        playSfx('shipInvalid');
+        // The box moves to the new cell on the re-render this triggers, and
+        // the effect above clears the offset in the same pass — no snap back.
+        return;
       }
-      resetVisuals();
+      warningHaptic();
+      playSfx('shipInvalid');
+      springHome();
     },
-    [orientation, resetVisuals, shipId],
+    [orientation, previewRef, shipId, springHome],
   );
 
   const unplace = useCallback(() => {
-    if (placed) {
-      usePlacement.getState().remove(shipId);
+    if (placed && usePlacement.getState().remove(shipId).ok) {
+      // Back in the tray: the box moves there and the effect clears the offset.
+      previewRef.current?.show(null);
+      return;
     }
-    resetVisuals();
-  }, [placed, resetVisuals, shipId]);
+    springHome();
+  }, [placed, previewRef, shipId, springHome]);
 
   const rejectDrop = useCallback(
     (index: number) => {
-      const reason = previews[index]?.reason ?? 'drop the ship on an open part of the board';
+      const reason =
+        previewsRef.current[index]?.reason ?? 'drop the ship on an open part of the board';
       usePlacement.getState().setValidationReason(reason);
       warningHaptic();
       playSfx('shipInvalid');
+      springHome();
     },
-    [previews],
+    [springHome],
   );
 
   const tapToRotate = useCallback(() => {
@@ -475,54 +499,76 @@ const DraggableShip = memo(function DraggableShip({
 
   const beginPickup = (absoluteX: number, absoluteY: number) => {
     'worklet';
-    if (lifted.value) return;
-    finalized.value = 0;
+    if (held.value) return;
+    held.value = 1;
     lifted.value = 1;
     grabX.value = (absoluteX - ox) / scale - (baseX + translateX.value);
     grabY.value = (absoluteY - oy) / scale - (baseY + translateY.value);
+    overTray.value = placed ? 0 : 1;
     activeBand.value = 1;
     if (placed) {
       hoverRow.value = placed.origin.r;
       hoverCol.value = placed.origin.c;
-      hoverIndex.value = placed.origin.r * 10 + placed.origin.c;
-      valid.value = validMap[hoverIndex.value] ?? 1;
-      runOnJS(showPreview)(hoverIndex.value);
-      lastNotifiedIndex.value = hoverIndex.value;
+      hoverIndex.value = placedIndex;
+      valid.value = validMap.value[placedIndex] ?? 1;
+      lastNotifiedIndex.value = placedIndex;
+      runOnJS(showPreview)(placedIndex);
+    } else {
+      hoverRow.value = -1;
+      hoverCol.value = -1;
+      hoverIndex.value = -1;
+      valid.value = 0;
+      lastNotifiedIndex.value = -1;
     }
     runOnJS(lightHaptic)();
   };
 
+  /**
+   * Ends the drag. Runs once per pickup: `held` is the guard, and only the
+   * gesture that still owns the ship calls it (see the pan / long-press
+   * wiring below). A ship dropped where it was picked up simply settles —
+   * no store write, no sound.
+   */
   const finishDrag = () => {
     'worklet';
-    if (!lifted.value || finalized.value) return;
-    finalized.value = 1;
+    if (!held.value) return;
+    held.value = 0;
     const index = hoverIndex.value;
     const shouldUnplace = overTray.value === 1;
     lifted.value = withSpring(0, SPRING);
     activeBand.value = 0;
     hoverRow.value = -1;
     hoverCol.value = -1;
+    hoverIndex.value = -1;
+    lastNotifiedIndex.value = -2;
 
     if (shouldUnplace) {
       runOnJS(unplace)();
+      return;
+    }
+    if (index >= 0 && index === placedIndex) {
+      runOnJS(springHome)();
       return;
     }
     if (index >= 0 && valid.value === 1) {
       runOnJS(commitDrop)(Math.floor(index / 10), index % 10);
       return;
     }
-
-    translateX.value = reduceMotion ? 0 : withSpring(0, SPRING);
-    translateY.value = reduceMotion ? 0 : withSpring(0, SPRING);
     runOnJS(rejectDrop)(index);
-    runOnJS(showPreview)(-1);
   };
 
+  // Pan and long-press run together so either can pick the ship up, but the
+  // long-press FAILS (and still finalizes) the moment an immediate drag passes
+  // its maxDistance — it must never end a drag the pan is still driving.
   const pan = Gesture.Pan()
-    .minDistance(1)
+    .minDistance(3)
     .shouldCancelWhenOutside(false)
-    .onStart((event) => beginPickup(event.absoluteX, event.absoluteY))
+    .onStart((event) => {
+      panActive.value = 1;
+      beginPickup(event.absoluteX, event.absoluteY);
+    })
     .onUpdate((event) => {
+      if (!held.value) return;
       const canvasX = (event.absoluteX - ox) / scale;
       const canvasY = (event.absoluteY - oy) / scale;
       const desiredX = canvasX - grabX.value;
@@ -546,7 +592,7 @@ const DraggableShip = memo(function DraggableShip({
         hoverRow.value = candidateR;
         hoverCol.value = candidateC;
         hoverIndex.value = index;
-        valid.value = validMap[index] ?? 0;
+        valid.value = validMap.value[index] ?? 0;
         if (lastNotifiedIndex.value !== index) {
           lastNotifiedIndex.value = index;
           runOnJS(showPreview)(index);
@@ -564,14 +610,19 @@ const DraggableShip = memo(function DraggableShip({
         }
       }
     })
-    .onFinalize(finishDrag);
+    .onFinalize(() => {
+      panActive.value = 0;
+      finishDrag();
+    });
 
   const longPress = Gesture.LongPress()
     .minDuration(120)
     .maxDistance(10)
     .shouldCancelWhenOutside(false)
     .onStart((event) => beginPickup(event.absoluteX, event.absoluteY))
-    .onFinalize(finishDrag);
+    .onFinalize(() => {
+      if (!panActive.value) finishDrag();
+    });
 
   const tap = Gesture.Tap()
     .maxDistance(5)
@@ -589,11 +640,17 @@ const DraggableShip = memo(function DraggableShip({
     ],
   }));
   const shadowStyle = useAnimatedStyle(() => ({ opacity: lifted.value * 0.38 }));
+  // The paper hull lifts away with the ship so the grid and any conflict tint
+  // show through a hovering ghost, and settles back under it on the drop.
+  // Tray ships get none: they sit over the row letters, which must stay legible.
+  const backingStyle = useAnimatedStyle(() => ({
+    opacity: placed ? Math.max(0, 1 - lifted.value) : 0,
+  }));
   const inkStyle = useAnimatedStyle(() => ({
-    opacity: lifted.value && hoverIndex.value >= 0 && valid.value === 0 ? 0.2 : 1,
+    opacity: held.value && hoverIndex.value >= 0 && valid.value === 0 ? 0.2 : 1,
   }));
   const redStyle = useAnimatedStyle(() => ({
-    opacity: lifted.value && hoverIndex.value >= 0 && valid.value === 0 ? 1 : 0,
+    opacity: held.value && hoverIndex.value >= 0 && valid.value === 0 ? 1 : 0,
   }));
 
   return (
@@ -605,25 +662,46 @@ const DraggableShip = memo(function DraggableShip({
         accessibilityLabel={`${shipClass} ${placed ? 'placed' : 'in tray'}. Tap to rotate or drag to move.`}
         style={[
           styles.draggable,
-          {
-            left: baseX - padX,
-            top: baseY - padY,
-            width: hitW,
-            height: hitH,
-            paddingLeft: padX,
-            paddingTop: padY,
-          },
+          { left: baseX - padX, top: baseY - padY, width: hitW, height: hitH },
           wrapperStyle,
         ]}
       >
-        <Animated.View pointerEvents="none" style={[styles.shipShadow, shadowStyle]}>
-          <ShipSprite shipClass={shipClass} orientation={orientation} stroke={color.inkSoft} />
+        {/* The hit box is padded out to 44 px; the layers are absolute, so
+            they are placed at the pad explicitly — Yoga puts absolute
+            children at the padding edge, not inside it. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.shipLayer, { left: padX + 3, top: padY + 3 }, shadowStyle]}
+        >
+          <ShipSprite
+            shipClass={shipClass}
+            orientation={orientation}
+            stroke={color.inkSoft}
+            backing={false}
+          />
         </Animated.View>
-        <Animated.View pointerEvents="none" style={[styles.shipLayer, inkStyle]}>
-          <ShipSprite shipClass={shipClass} orientation={orientation} />
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.shipLayer, { left: padX, top: padY }, backingStyle]}
+        >
+          <ShipBacking shipClass={shipClass} orientation={orientation} />
         </Animated.View>
-        <Animated.View pointerEvents="none" style={[styles.shipLayer, redStyle]}>
-          <ShipSprite shipClass={shipClass} orientation={orientation} stroke={color.inkRed} />
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.shipLayer, { left: padX, top: padY }, inkStyle]}
+        >
+          <ShipSprite shipClass={shipClass} orientation={orientation} backing={false} />
+        </Animated.View>
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.shipLayer, { left: padX, top: padY }, redStyle]}
+        >
+          <ShipSprite
+            shipClass={shipClass}
+            orientation={orientation}
+            stroke={color.inkRed}
+            backing={false}
+          />
         </Animated.View>
       </Animated.View>
     </GestureDetector>
@@ -803,11 +881,12 @@ const DraggableArsenal = memo(function DraggableArsenal({
         accessibilityLabel={`${item.kind}. Drag to move or hold to sell.`}
         style={[
           styles.arsenalDrag,
-          { left: baseX - pad, top: baseY - pad, width: hit, height: hit, padding: pad },
+          { left: baseX - pad, top: baseY - pad, width: hit, height: hit },
           animated,
         ]}
       >
-        <View style={styles.arsenalSpriteOnBoard}>
+        {/* Absolute child: placed at the pad by hand, as in DraggableShip. */}
+        <View style={[styles.arsenalSpriteOnBoard, { left: pad - 7, top: pad - 7 }]}>
           <ArsenalInkSprite kind={item.kind} />
         </View>
       </Animated.View>
@@ -1185,13 +1264,10 @@ const styles = StyleSheet.create({
     fontSize: typeScale.xxs,
   },
   draggable: { position: 'absolute', overflow: 'visible' },
-  shipLayer: { position: 'absolute', left: 0, top: 0 },
-  shipShadow: { position: 'absolute', left: 3, top: 3 },
+  shipLayer: { position: 'absolute' },
   arsenalDrag: { position: 'absolute', overflow: 'visible' },
   arsenalSpriteOnBoard: {
     position: 'absolute',
-    left: -7,
-    top: -7,
     width: 42,
     height: 42,
     alignItems: 'center',

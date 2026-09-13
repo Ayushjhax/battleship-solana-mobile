@@ -2,6 +2,10 @@
  * One 10 x 10 board, authored in the 800 x 360 design space.
  *
  * Layers, bottom to top:
+ *   0. a paper-coloured mask over the board's 280 x 280 — the sheet's own
+ *      rules are anchored for the battle layout, so any board placed off that
+ *      pitch (placement, the battle strip) would otherwise show two grids
+ *      through each other
  *   1. optional watermark at 12% opacity, clipped to the board
  *   2. the cell rules — 22 memoised plain <Line>s, not 100 rects, not rough
  *   3. the frame — a heavy double rough frame with overshooting corners,
@@ -121,7 +125,7 @@ function buildRules(): ReactNode[] {
         x2={p}
         y2={LABEL_MARGIN + BOARD_SIZE}
         stroke={color.gridMajor}
-        strokeWidth={major ? 1.15 : 0.9}
+        strokeWidth={major ? 1.35 : 0.85}
       />,
       <Line
         key={`h${i}`}
@@ -130,7 +134,7 @@ function buildRules(): ReactNode[] {
         x2={LABEL_MARGIN + BOARD_SIZE}
         y2={p}
         stroke={color.gridMajor}
-        strokeWidth={major ? 1.15 : 0.9}
+        strokeWidth={major ? 1.35 : 0.85}
       />,
     );
   }
@@ -157,6 +161,7 @@ function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLa
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <View style={styles.sheetMask} />
       {watermark ? (
         <View style={styles.watermarkClip}>
           <Image
@@ -427,6 +432,14 @@ const styles = StyleSheet.create({
     fontFamily: font.display,
     fontSize: LABEL_SIZE,
     textAlign: 'center',
+  },
+  sheetMask: {
+    position: 'absolute',
+    left: LABEL_MARGIN,
+    top: LABEL_MARGIN,
+    width: BOARD_SIZE,
+    height: BOARD_SIZE,
+    backgroundColor: color.paper,
   },
   watermarkClip: {
     position: 'absolute',
