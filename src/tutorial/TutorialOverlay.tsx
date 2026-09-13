@@ -1,8 +1,10 @@
 /**
  * The tutorial's overlay driver, drawn over the REAL screens:
- *   - a full-canvas dim at 55% with an SVG mask cutting a hole around the
+ *   - a full-canvas ink dim with an SVG mask cutting a hole around the
  *     spotlight target, outlined in a dashed animated ink stroke
- *   - the Captain sliding in from the beat's side with the P01 SpeechBubble
+ *   - the Captain, on a paper card, sliding in from the beat's side with the
+ *     P01 SpeechBubble — the bubble steps out of the spotlight's way, above or
+ *     below the hole, so the square the player must tap is never under it
  *   - a pointing-hand cursor that animates to the required target and taps
  *     twice, looping every 2 s until the player acts
  *   - a Skip button pinned top-right on every beat
@@ -30,6 +32,7 @@ import { CELL } from '@/board/layout';
 import { AssetSlot } from '@/ui/AssetSlot';
 import { AVATARS, UI_ART } from '@/ui/assets';
 import { InkButton } from '@/ui/InkButton';
+import { InkPanel } from '@/ui/InkPanel';
 import { Scale } from '@/ui/Scale';
 import { SpeechBubble } from '@/ui/SpeechBubble';
 import { CANVAS_H, CANVAS_W, color } from '@/ui/tokens';
@@ -41,8 +44,17 @@ const AnimatedRect = Animated.createAnimatedComponent(Rect);
 const W = CANVAS_W;
 const H = CANVAS_H;
 const HOLE_PAD = 4;
+/** How far the dim runs past the canvas edges, canvas units. */
+const DIM_BLEED = 200;
 const CAPTAIN = { w: 150, h: 200 } as const;
+/** The paper card the portrait sits on: the portrait plus this much all round. */
+const CARD_PAD = 8;
 const HAND = 44;
+const BUBBLE_W = 250;
+/** Room a bubble is assumed to need when checking it against the spotlight. */
+const BUBBLE_EST_H = 96;
+/** The bubble never rises above the Skip button's row. */
+const BUBBLE_MIN_TOP = 46;
 
 // ---------------------------------------------------------------------------
 // Resolving rects from the script and the registry
@@ -117,27 +129,34 @@ function Spotlight({ hole, pulse }: { hole: TargetRect | null; pulse: boolean })
   const w = hole ? hole.w + HOLE_PAD * 2 : 0;
   const h = hole ? hole.h + HOLE_PAD * 2 : 0;
 
+  // The dim reaches past the canvas: the screen around it is paper as well
+  // (Scale's backdrop), and a bright frame around a dimmed page reads wrong.
+  const dx = -DIM_BLEED;
+  const dy = -DIM_BLEED;
+  const dw = W + DIM_BLEED * 2;
+  const dh = H + DIM_BLEED * 2;
+
   return (
     <Svg
-      width={W}
-      height={H}
-      viewBox={`0 0 ${W} ${H}`}
-      style={StyleSheet.absoluteFill}
+      width={dw}
+      height={dh}
+      viewBox={`${dx} ${dy} ${dw} ${dh}`}
+      style={{ position: 'absolute', left: dx, top: dy, width: dw, height: dh }}
       pointerEvents="none"
     >
       <Defs>
-        <Mask id="tutorial-spot" maskUnits="userSpaceOnUse" x={0} y={0} width={W} height={H}>
-          <Rect x={0} y={0} width={W} height={H} fill="white" />
+        <Mask id="tutorial-spot" maskUnits="userSpaceOnUse" x={dx} y={dy} width={dw} height={dh}>
+          <Rect x={dx} y={dy} width={dw} height={dh} fill="white" />
           {hole ? <Rect x={x} y={y} width={w} height={h} rx={5} fill="black" /> : null}
         </Mask>
       </Defs>
       <Rect
-        x={0}
-        y={0}
-        width={W}
-        height={H}
-        fill={color.deskDark}
-        opacity={0.55}
+        x={dx}
+        y={dy}
+        width={dw}
+        height={dh}
+        fill={color.ink}
+        opacity={0.45}
         mask="url(#tutorial-spot)"
       />
       {hole ? (
@@ -303,7 +322,44 @@ function HandCursor({
 // The Captain
 // ---------------------------------------------------------------------------
 
-function Captain({ side, text, nonce }: { side: 'left' | 'right'; text: string; nonce: number }) {
+const intersects = (a: TargetRect, b: TargetRect, pad: number) =>
+  a.x < b.x + b.w + pad && a.x + a.w > b.x - pad && a.y < b.y + b.h + pad && a.y + a.h > b.y - pad;
+
+/**
+ * Where the bubble goes: beside the Captain's head by default; if that would
+ * sit on the spotlight, above the hole when there is room, else below it.
+ * The tail slides along the bubble's edge to keep pointing at the Captain.
+ */
+function placeBubble(
+  side: 'left' | 'right',
+  hole: TargetRect | null,
+): { left: number; top: number; tailAt: number } {
+  const captainLeft = side === 'right' ? W - CAPTAIN.w - 10 : 10;
+  const left = side === 'right' ? captainLeft - BUBBLE_W - 14 : captainLeft + CAPTAIN.w + 2;
+  const headY = H - CAPTAIN.h + 30;
+  let top = H - CAPTAIN.h + 6;
+  if (hole && intersects({ x: left, y: top, w: BUBBLE_W, h: BUBBLE_EST_H }, hole, 10)) {
+    const above = hole.y - HOLE_PAD - 14 - BUBBLE_EST_H;
+    const below = hole.y + hole.h + HOLE_PAD + 14;
+    top = above >= BUBBLE_MIN_TOP ? above : Math.min(below, H - BUBBLE_EST_H - 4);
+  }
+  // Tail towards the Captain's face: bottom of the edge when the bubble is
+  // high, top of it when low, a third down beside him.
+  const tailAt = top + BUBBLE_EST_H / 2 < headY - 20 ? 0.92 : top > headY + 20 ? 0.12 : 0.3;
+  return { left, top, tailAt };
+}
+
+function Captain({
+  side,
+  text,
+  nonce,
+  hole,
+}: {
+  side: 'left' | 'right';
+  text: string;
+  nonce: number;
+  hole: TargetRect | null;
+}) {
   const rise = useSharedValue(120);
   useEffect(() => {
     rise.value = 120;
@@ -312,30 +368,38 @@ function Captain({ side, text, nonce }: { side: 'left' | 'right'; text: string; 
   const slide = useAnimatedStyle(() => ({ transform: [{ translateY: rise.value }] }));
 
   const left = side === 'right' ? W - CAPTAIN.w - 10 : 10;
-  const bubbleW = 250;
-  const bubbleLeft = side === 'right' ? left - bubbleW - 14 : left + CAPTAIN.w + 2;
+  const bubble = placeBubble(side, hole);
+  const cardW = CAPTAIN.w + CARD_PAD * 2;
+  const cardH = CAPTAIN.h + CARD_PAD * 2;
 
   return (
     <>
+      {/* The portrait on a paper card, so the ink reads against the dim. The
+          card runs a little past the bottom edge, like a photo tucked in. */}
       <Animated.View
         pointerEvents="none"
         style={[
-          { position: 'absolute', left, top: H - CAPTAIN.h, width: CAPTAIN.w, height: CAPTAIN.h },
+          {
+            position: 'absolute',
+            left: left - CARD_PAD,
+            top: H - CAPTAIN.h - CARD_PAD,
+            width: cardW,
+            height: cardH + CARD_PAD,
+          },
           slide,
         ]}
       >
-        <AssetSlot source={AVATARS.captain} w={CAPTAIN.w} h={CAPTAIN.h} label="captain" />
+        <InkPanel w={cardW} h={cardH + CARD_PAD} seedKey="captain-card" padding={CARD_PAD}>
+          <AssetSlot source={AVATARS.captain} w={CAPTAIN.w} h={CAPTAIN.h} label="captain" />
+        </InkPanel>
       </Animated.View>
-      <View
-        pointerEvents="none"
-        style={{ position: 'absolute', left: bubbleLeft, top: H - CAPTAIN.h + 6 }}
-      >
+      <View pointerEvents="none" style={{ position: 'absolute', left: bubble.left, top: bubble.top }}>
         <SpeechBubble
           key={`${nonce}-${text}`}
           text={text}
           tail={side === 'right' ? 'right' : 'left'}
-          tailAt={0.3}
-          w={bubbleW}
+          tailAt={bubble.tailAt}
+          w={BUBBLE_W}
           seedKey={`captain-${side}`}
         />
       </View>
@@ -370,7 +434,12 @@ export function TutorialOverlay({ onSkip }: { onSkip: () => void }) {
     const ship = targets[`ship-${req.shipId}`];
     const board = targets['board-placement'];
     if (ship && board) {
-      handFrom = centre(ship);
+      // From the ship's FIRST cell: a drop is judged by where the bow lands,
+      // so the hand shows the grab that puts it on the target square.
+      handFrom = {
+        x: ship.x + Math.min(ship.w, CELL + 8) / 2,
+        y: ship.y + Math.min(ship.h, CELL + 8) / 2,
+      };
       handTo = centre(cellRectOn(board, req.to.r, req.to.c));
     }
   } else if (input && input !== 'all') {
@@ -391,7 +460,7 @@ export function TutorialOverlay({ onSkip }: { onSkip: () => void }) {
           style={{ position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h }}
         />
       ))}
-      {text ? <Captain side={side} text={text} nonce={handNonce} /> : null}
+      {text ? <Captain side={side} text={text} nonce={handNonce} hole={hole} /> : null}
       {handTo && handFrom ? (
         <HandCursor
           from={handFrom}

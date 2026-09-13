@@ -111,14 +111,14 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: color.desk }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: color.paper }}>
       <SafeAreaProvider>
         <StatusBar hidden />
         <Stack
           screenOptions={{
             headerShown: false,
             animation: 'fade',
-            contentStyle: { backgroundColor: color.desk },
+            contentStyle: { backgroundColor: color.paper },
           }}
         >
           {/* The boot sheet slides off to the left while these slide in from the right. */}

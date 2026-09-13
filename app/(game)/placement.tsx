@@ -404,8 +404,6 @@ const DraggableShip = memo(function DraggableShip({
   const grabY = useSharedValue(0);
   /** 1 while a gesture owns the ship — the drag's real lifecycle. */
   const held = useSharedValue(0);
-  /** 1 while the pan is active; the long-press may not end a drag the pan owns. */
-  const panActive = useSharedValue(0);
   /** The visual lift only (scale, shadow); springs back after a drop. */
   const lifted = useSharedValue(0);
   const valid = useSharedValue(1);
@@ -524,10 +522,9 @@ const DraggableShip = memo(function DraggableShip({
   };
 
   /**
-   * Ends the drag. Runs once per pickup: `held` is the guard, and only the
-   * gesture that still owns the ship calls it (see the pan / long-press
-   * wiring below). A ship dropped where it was picked up simply settles —
-   * no store write, no sound.
+   * Ends the drag. Runs once per pickup (`held` is the guard) and ONLY from
+   * the pan's finalize — see the wiring below. A ship dropped where it was
+   * picked up simply settles: no store write, no sound.
    */
   const finishDrag = () => {
     'worklet';
@@ -557,16 +554,17 @@ const DraggableShip = memo(function DraggableShip({
     runOnJS(rejectDrop)(index);
   };
 
-  // Pan and long-press run together so either can pick the ship up, but the
-  // long-press FAILS (and still finalizes) the moment an immediate drag passes
-  // its maxDistance — it must never end a drag the pan is still driving.
+  // Pan and long-press run together so either can pick the ship up, but only
+  // the pan ends a drag. The long-press FAILS — and still finalizes — the
+  // moment the finger passes its maxDistance, even after it has activated,
+  // and on the very move that activates the pan it can finalize FIRST: had
+  // it ended the drag there, the pan would re-grab a ship already springing
+  // home and drop it a cell off. The pan's finalize fires at touch-up whether
+  // or not the pan ever activated, so a pure long-press release ends there too.
   const pan = Gesture.Pan()
     .minDistance(3)
     .shouldCancelWhenOutside(false)
-    .onStart((event) => {
-      panActive.value = 1;
-      beginPickup(event.absoluteX, event.absoluteY);
-    })
+    .onStart((event) => beginPickup(event.absoluteX, event.absoluteY))
     .onUpdate((event) => {
       if (!held.value) return;
       const canvasX = (event.absoluteX - ox) / scale;
@@ -610,19 +608,13 @@ const DraggableShip = memo(function DraggableShip({
         }
       }
     })
-    .onFinalize(() => {
-      panActive.value = 0;
-      finishDrag();
-    });
+    .onFinalize(finishDrag);
 
   const longPress = Gesture.LongPress()
     .minDuration(120)
     .maxDistance(10)
     .shouldCancelWhenOutside(false)
-    .onStart((event) => beginPickup(event.absoluteX, event.absoluteY))
-    .onFinalize(() => {
-      if (!panActive.value) finishDrag();
-    });
+    .onStart((event) => beginPickup(event.absoluteX, event.absoluteY));
 
   const tap = Gesture.Tap()
     .maxDistance(5)

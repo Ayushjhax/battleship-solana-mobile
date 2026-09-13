@@ -14,6 +14,7 @@ import Animated, {
 import Svg, { G } from 'react-native-svg';
 
 import { BATTLE_BOARD_TOP, BOARD_SIZE, CELL, boardOrigins } from '@/board/layout';
+import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 import { InkButton } from '@/ui/InkButton';
 import { InkPanel } from '@/ui/InkPanel';
 import { useScale } from '@/ui/Scale';
@@ -59,8 +60,10 @@ function ArsenalCard({
   onPress: () => void;
 }) {
   const pressable = enabled && count > 0 && TARGETABLE.has(kind);
+  // The tutorial spotlights and unlocks a card by `card-<kind>` (step 8, the Bomber).
+  const target = useTutorialTarget(`card-${kind.toLowerCase()}`);
   return (
-    <View style={{ width: CARD_W, height: CARD_H, opacity: count === 0 ? 0.4 : 1 }}>
+    <View {...target} style={{ width: CARD_W, height: CARD_H, opacity: count === 0 ? 0.4 : 1 }}>
       <InkPanel w={CARD_W} h={CARD_H} seedKey={`battle-arsenal-${kind}`} padding={0}>
         <View pointerEvents="none" style={styles.cardIcon}>
           <ArsenalInkSprite kind={kind} />

@@ -1,20 +1,22 @@
 /**
- * The sheet: a school exercise book lying on a dark wooden desk.
+ * The sheet: a page of a school exercise book.
  *
- *  - desk behind it (assets/images/board/desk-wood.jpg once it lands, flat
- *    color.desk until then)
- *  - the paper, with a slightly hand-torn right edge
+ *  - 'full' is the screen's page. It is a plain opaque sheet edge to edge —
+ *    the display around the canvas is paper as well (Scale's PaperBackdrop
+ *    continues these rules outward), so there is no desk, no shadow and no
+ *    torn edge; those would draw a card lying on top of the page. Screens
+ *    also use it as an opaque curtain, so it must stay opaque.
+ *  - 'panel' is a bare sheet with a slightly hand-torn right edge, for the
+ *    keyboard and notes laid on the page
  *  - graph rules: minor every cell in gridMinor, major every 5th in gridMajor,
  *    drawn as plain <Line> inside one memoised <G> that renders exactly once —
  *    200 rough lines would eat the frame budget
  *  - the red margin rule across the top, drawn WITH roughLine so it reads as pen
  */
-import { Image } from 'expo-image';
 import { memo, useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, { ClipPath, Defs, G, Line, Path, Rect } from 'react-native-svg';
+import Svg, { ClipPath, Defs, G, Line, Path } from 'react-native-svg';
 
-import { BOARD_ART } from './assets';
 import { countRender } from './debug';
 import { sheetPath as buildSheetPath } from './geometry';
 import { CANVAS_H, CANVAS_W, PAPER_GRID, color } from './tokens';
@@ -89,15 +91,20 @@ export function Paper({
 }: PaperProps) {
   countRender('Paper');
   const seed = hashString(`${seedKey}-${variant}`);
+  const torn = variant === 'panel';
   const tearX = w - TEAR_INSET[variant];
-  const amp = variant === 'full' ? 3.2 : 1.8;
 
-  const sheetPath = useMemo(() => buildSheetPath(w, h, tearX, amp, seed), [w, h, tearX, amp, seed]);
+  // The page runs past its own edges so nothing shows at the seam with the
+  // backdrop; the panel keeps its tear.
+  const sheetPath = useMemo(
+    () => (torn ? buildSheetPath(w, h, tearX, 1.8, seed) : `M -6 -6 H ${w + 6} V ${h + 6} H -6 Z`),
+    [torn, w, h, tearX, seed],
+  );
   const clipId = `sheet-${seed}`;
 
   const rule =
     variant === 'full'
-      ? roughLine(-2, PAPER_GRID.ruleY, tearX - 4, PAPER_GRID.ruleY, {
+      ? roughLine(-2, PAPER_GRID.ruleY, w + 2, PAPER_GRID.ruleY, {
           seed: seed + 7,
           stroke: color.ruleRed,
           strokeWidth: 1.3,
@@ -106,38 +113,23 @@ export function Paper({
         })
       : null;
 
-  const showDeskImage = variant === 'full' && BOARD_ART.deskWood != null;
-
   return (
     <View style={{ width: w, height: h }}>
-      {showDeskImage ? (
-        <Image
-          source={BOARD_ART.deskWood}
-          contentFit="cover"
-          style={StyleSheet.absoluteFill}
-          cachePolicy="memory-disk"
-        />
-      ) : null}
       <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={StyleSheet.absoluteFill}>
         <Defs>
           <ClipPath id={clipId}>
             <Path d={sheetPath} />
           </ClipPath>
         </Defs>
-        {variant === 'full' && !showDeskImage ? (
-          <Rect x={0} y={0} width={w} height={h} fill={color.desk} />
-        ) : null}
-        {variant === 'full' ? (
-          // The sheet's shadow on the desk, drawn as a shape — never a shadow prop.
-          <Path d={sheetPath} fill={color.deskDark} opacity={0.7} transform="translate(3 3)" />
-        ) : null}
         <Path d={sheetPath} fill={color.paper} />
         <G clipPath={`url(#${clipId})`}>
           <GraphRules w={w} h={h} />
           {rule ? <RoughShape paths={rule} /> : null}
         </G>
-        {/* the fibrous edge of the tear */}
-        <Path d={sheetPath} fill="none" stroke="#DDE3EA" strokeWidth={0.8} />
+        {torn ? (
+          // the fibrous edge of the tear
+          <Path d={sheetPath} fill="none" stroke="#DDE3EA" strokeWidth={0.8} />
+        ) : null}
       </Svg>
       {children ? <View style={StyleSheet.absoluteFill}>{children}</View> : null}
     </View>

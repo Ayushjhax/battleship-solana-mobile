@@ -109,7 +109,7 @@ export default function Boot() {
   }, [mode, leave]);
 
   return (
-    <Scale>
+    <Scale backdrop="plain">
       <BootSequence mode={mode} />
       <Pressable onPress={skip} accessibilityLabel="Skip intro" style={StyleSheet.absoluteFill} />
     </Scale>
