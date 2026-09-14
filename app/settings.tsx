@@ -1,7 +1,6 @@
 /**
  * Settings: sound / music / haptics toggles, name and avatar, reset tutorial,
- * credits (docs/assets.md section 7 — attribution lives here) and the build
- * version.
+ * the maker's card and the build version.
  */
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
@@ -15,18 +14,6 @@ import { Paper } from '@/ui/Paper';
 import { Scale } from '@/ui/Scale';
 import { TitleRibbon } from '@/ui/TitleRibbon';
 import { CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
-
-/** Everything third-party that ships in the build. Add a line when an asset lands. */
-const CREDITS: readonly { what: string; who: string; licence: string }[] = [
-  { what: 'Rough.js', who: 'Preet Shihn', licence: 'MIT' },
-  {
-    what: 'Bitter typeface',
-    who: 'Sol Matas, Huerta Tipográfica',
-    licence: 'SIL Open Font License 1.1',
-  },
-  // { what: 'Arsenal icons', who: 'Lorc, Delapouite / game-icons.net', licence: 'CC BY 3.0' },
-  // { what: 'Sound effects', who: '<author> / freesound.org', licence: 'CC BY 4.0' },
-];
 
 function Toggle({ label, setting }: { label: string; setting: ProfileSetting }) {
   const on = useProfile((s) => s[setting]);
@@ -154,15 +141,11 @@ export default function SettingsScreen() {
           />
         </View>
         <InkPanel w={340} h={132} seedKey="settings-credits" padding={space.xs} fill="none">
-          <Text style={styles.creditsTitle}>Credits</Text>
-          {CREDITS.map((c) => (
-            <Text key={c.what} style={styles.credit} numberOfLines={2}>
-              {c.what} — {c.who} · {c.licence}
-            </Text>
-          ))}
-          <Text style={styles.credit}>
-            Game mechanics after Sea Battle 2 by BYRIL. All art and audio are original.
-          </Text>
+          <View style={styles.creditsBody}>
+            <Text style={styles.creditsTitle}>Sea Battle</Text>
+            <Text style={styles.credit}>An Empire of Bits game</Text>
+            <Text style={styles.credit}>On Indies on Solana Season 2</Text>
+          </View>
         </InkPanel>
       </View>
 
@@ -188,13 +171,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontVariant: ['tabular-nums'],
   },
+  creditsBody: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   creditsTitle: {
     color: color.ink,
     fontFamily: font.display,
-    fontSize: typeScale.xs,
-    marginBottom: 2,
+    fontSize: typeScale.lg,
   },
-  credit: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xxs, lineHeight: 14 },
+  credit: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.sm },
   version: {
     position: 'absolute',
     right: space.md,

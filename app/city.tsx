@@ -13,16 +13,18 @@
  * brings it back to the centre at 2x. Nothing on the map animates on its
  * own — the brief's no-ambient-motion rule.
  *
- * Zoom is about the canvas centre, 1x..3x, and the pan is clamped so the
- * image edge never comes inside the canvas: the 3:4 map is scaled to the
- * sheet's width, so at 1x it is 800x1067 and the city scrolls vertically —
- * you open on the harbour and pan down to the lighthouse. Both gestures write
- * shared values; the clamp runs on the UI thread.
+ * The map is the whole screen, not a card on the page: it is centred on the
+ * WINDOW (which may sit off the canvas centre when the safe-area insets are
+ * uneven), its lowest zoom is whatever covers the window plus a margin, and
+ * the pan is clamped so the image edge never comes inside the window. At that
+ * zoom the 3:4 map (800x1067 at 1x) scrolls vertically — you open on the
+ * harbour and pan down to the lighthouse. Both gestures write shared values;
+ * the clamp runs on the UI thread.
  */
 import { rankProgress } from '@engine/ranks';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -40,20 +42,30 @@ import { CurrencyChip } from '@/ui/CurrencyChip';
 import { InkButton } from '@/ui/InkButton';
 import { InkIconButton } from '@/ui/InkIconButton';
 import { RankBadge } from '@/ui/RankBadge';
-import { Scale } from '@/ui/Scale';
+import { Scale, useScale } from '@/ui/Scale';
 import { SpeechBubble } from '@/ui/SpeechBubble';
 import { TitleRibbon } from '@/ui/TitleRibbon';
 import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
 import { RoughShape, hashString, useRough } from '@/ui/useRough';
 
-// The map covers the sheet's width: city-port.png is 768x1024, scaled to 800 wide.
+// The map at 1x spans the canvas width: city-port.png is 768x1024, scaled to 800 wide.
 const MAP_W = CANVAS_W;
 const MAP_H = Math.round((CANVAS_W * 1024) / 768);
-const MIN_SCALE = 1;
 const MAX_SCALE = 3;
+/** Canvas units the map must cover beyond the reported window on every side. */
+const COVER_MARGIN = 40;
 const CAPTAIN = { w: 150, h: 200 } as const;
 const FOCUS_SCALE = 2;
 const FOCUS_MS = 320;
+
+/** The window in canvas units: its size, its centre, and the zoom that covers it. */
+interface Viewport {
+  readonly w: number;
+  readonly h: number;
+  readonly cx: number;
+  readonly cy: number;
+  readonly minScale: number;
+}
 
 /** Where the future buildings go, in map units (at 1x): the container docks, the old town by the cathedral, the lighthouse headland. */
 const SLOTS: readonly { key: string; x: number; y: number; w: number; h: number; label: string }[] =
@@ -79,14 +91,19 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /**
- * The translation that puts a map point at the canvas centre at a given
+ * The translation that puts a map point at the window centre at a given
  * zoom, clamped like the gestures clamp. The map view is centred on the
- * canvas and scales about its own centre, so a point p lands at
- * centre + (p - mapCentre) * scale + t.
+ * window and scales about its own centre, so a point p lands at
+ * centre + (p - mapCentre) * zoom + t.
  */
-function centreOn(point: { x: number; y: number }, zoom: number): { tx: number; ty: number } {
-  const maxX = (MAP_W * zoom - CANVAS_W) / 2;
-  const maxY = (MAP_H * zoom - CANVAS_H) / 2;
+function centreOn(
+  point: { x: number; y: number },
+  zoom: number,
+  view: Viewport,
+): { tx: number; ty: number } {
+  'worklet';
+  const maxX = Math.max(0, (MAP_W * zoom - view.w) / 2);
+  const maxY = Math.max(0, (MAP_H * zoom - view.h) / 2);
   return {
     tx: clamp(-(point.x - MAP_W / 2) * zoom, -maxX, maxX),
     ty: clamp(-(point.y - MAP_H / 2) * zoom, -maxY, maxY),
@@ -191,10 +208,18 @@ function HomeHarbour({
       [TAG_W / 2 + 5, TAG_H - 1],
       [TAG_W / 2, TAG_H + 7],
     ],
-    { seed: seed + 5, stroke: color.inkRed, strokeWidth: 1, fill: color.inkRed, fillStyle: 'solid' },
+    {
+      seed: seed + 5,
+      stroke: color.inkRed,
+      strokeWidth: 1,
+      fill: color.inkRed,
+      fillStyle: 'solid',
+    },
   );
   const record =
-    played === 0 ? 'No battles yet' : `${played} ${played === 1 ? 'battle' : 'battles'} · ${won} won`;
+    played === 0
+      ? 'No battles yet'
+      : `${played} ${played === 1 ? 'battle' : 'battles'} · ${won} won`;
   // The ribbon grows with the name (1-14 characters) so it never truncates.
   const ribbonLabel = `${name}'s harbour`;
   const ribbonW = Math.min(270, Math.max(200, 72 + ribbonLabel.length * 8));
@@ -251,6 +276,17 @@ function HomeHarbour({
 }
 
 export default function CityScreen() {
+  return (
+    // Plain paper behind: the map covers the window, so no rules should ever
+    // peek out at an edge while it settles.
+    <Scale backdrop="plain">
+      <CityCanvas />
+    </Scale>
+  );
+}
+
+/** Inside the Scale provider, so the window-to-canvas maths is real. */
+function CityCanvas() {
   const router = useRouter();
   const profile = useProfile();
   const progress = rankProgress(profile.rankPoints);
@@ -264,22 +300,52 @@ export default function CityScreen() {
     return () => clearTimeout(id);
   }, [welcome]);
 
+  // ---- the window in canvas units: what the map has to cover ----
+  const { width, height } = useWindowDimensions();
+  const { scale: canvasScale, ox, oy } = useScale();
+  const view = useMemo<Viewport>(() => {
+    const w = width / canvasScale + COVER_MARGIN * 2;
+    const h = height / canvasScale + COVER_MARGIN * 2;
+    return {
+      w,
+      h,
+      cx: (width / 2 - ox) / canvasScale,
+      cy: (height / 2 - oy) / canvasScale,
+      minScale: Math.max(1, w / MAP_W, h / MAP_H),
+    };
+  }, [width, height, canvasScale, ox, oy]);
+  // "Zoomed in" is a clear step above whatever zoom the window itself needs.
+  const focusZoom = Math.min(MAX_SCALE, Math.max(FOCUS_SCALE, view.minScale * 1.35));
+
   // ---- pinch + pan, clamped at the image edges; opens on the harbour ----
-  const home = centreOn(HARBOUR_CENTRE, 1);
-  const scale = useSharedValue(1);
-  const savedScale = useSharedValue(1);
+  const home = centreOn(HARBOUR_CENTRE, view.minScale, view);
+  const scale = useSharedValue(view.minScale);
+  const savedScale = useSharedValue(view.minScale);
   const tx = useSharedValue(home.tx);
   const ty = useSharedValue(home.ty);
   const savedTx = useSharedValue(home.tx);
   const savedTy = useSharedValue(home.ty);
 
+  // A rotation or inset change moves the floor: keep the map covering the window.
+  useEffect(() => {
+    const zoom = Math.max(scale.value, view.minScale);
+    const maxX = Math.max(0, (MAP_W * zoom - view.w) / 2);
+    const maxY = Math.max(0, (MAP_H * zoom - view.h) / 2);
+    scale.value = zoom;
+    savedScale.value = zoom;
+    tx.value = clamp(tx.value, -maxX, maxX);
+    ty.value = clamp(ty.value, -maxY, maxY);
+    savedTx.value = tx.value;
+    savedTy.value = ty.value;
+  }, [view, savedScale, savedTx, savedTy, scale, tx, ty]);
+
   // Zooms in on the harbour; pressed again while already there, eases back out.
   const focusHarbour = useCallback(() => {
     haptic('buttonPress');
-    const here = centreOn(HARBOUR_CENTRE, scale.value);
+    const here = centreOn(HARBOUR_CENTRE, scale.value, view);
     const atHarbour = Math.abs(tx.value - here.tx) < 2 && Math.abs(ty.value - here.ty) < 2;
-    const zoom = atHarbour && scale.value > 1.05 ? 1 : FOCUS_SCALE;
-    const target = centreOn(HARBOUR_CENTRE, zoom);
+    const zoom = atHarbour && scale.value > view.minScale + 0.05 ? view.minScale : focusZoom;
+    const target = centreOn(HARBOUR_CENTRE, zoom, view);
     const timing = { duration: FOCUS_MS, easing: Easing.out(Easing.cubic) };
     scale.value = withTiming(zoom, timing);
     tx.value = withTiming(target.tx, timing);
@@ -287,13 +353,13 @@ export default function CityScreen() {
     savedScale.value = zoom;
     savedTx.value = target.tx;
     savedTy.value = target.ty;
-  }, [savedScale, savedTx, savedTy, scale, tx, ty]);
+  }, [focusZoom, savedScale, savedTx, savedTy, scale, tx, ty, view]);
 
   const pinch = Gesture.Pinch()
     .onUpdate((e) => {
-      scale.value = clamp(savedScale.value * e.scale, MIN_SCALE, MAX_SCALE);
-      const maxX = (MAP_W * scale.value - CANVAS_W) / 2;
-      const maxY = (MAP_H * scale.value - CANVAS_H) / 2;
+      scale.value = clamp(savedScale.value * e.scale, view.minScale, MAX_SCALE);
+      const maxX = Math.max(0, (MAP_W * scale.value - view.w) / 2);
+      const maxY = Math.max(0, (MAP_H * scale.value - view.h) / 2);
       tx.value = clamp(tx.value, -maxX, maxX);
       ty.value = clamp(ty.value, -maxY, maxY);
     })
@@ -306,8 +372,8 @@ export default function CityScreen() {
   const pan = Gesture.Pan()
     .averageTouches(true)
     .onUpdate((e) => {
-      const maxX = (MAP_W * scale.value - CANVAS_W) / 2;
-      const maxY = (MAP_H * scale.value - CANVAS_H) / 2;
+      const maxX = Math.max(0, (MAP_W * scale.value - view.w) / 2);
+      const maxY = Math.max(0, (MAP_H * scale.value - view.h) / 2);
       tx.value = clamp(savedTx.value + e.translationX, -maxX, maxX);
       ty.value = clamp(savedTy.value + e.translationY, -maxY, maxY);
     })
@@ -319,11 +385,11 @@ export default function CityScreen() {
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
     .onEnd(() => {
-      const next = scale.value > 1.05 ? 1 : 2;
+      const next = scale.value > view.minScale + 0.05 ? view.minScale : focusZoom;
       scale.value = withTiming(next, { duration: 260, easing: Easing.out(Easing.cubic) });
       savedScale.value = next;
-      const maxX = (MAP_W * next - CANVAS_W) / 2;
-      const maxY = (MAP_H * next - CANVAS_H) / 2;
+      const maxX = Math.max(0, (MAP_W * next - view.w) / 2);
+      const maxY = Math.max(0, (MAP_H * next - view.h) / 2);
       tx.value = withTiming(clamp(tx.value, -maxX, maxX), { duration: 260 });
       ty.value = withTiming(clamp(ty.value, -maxY, maxY), { duration: 260 });
       savedTx.value = clamp(tx.value, -maxX, maxX);
@@ -336,96 +402,97 @@ export default function CityScreen() {
   }));
 
   return (
-    <Scale>
-      <View style={styles.root}>
-        <GestureDetector gesture={gesture}>
-          <Animated.View style={[styles.map, mapStyle]}>
-            <AssetSlot
-              source={UI_ART.cityPort}
-              w={MAP_W}
-              h={MAP_H}
-              label="city-port"
-              tintColor={color.inkSoft}
-              style={{ opacity: 0.85 }}
-            />
-            {SLOTS.map((slot) => (
-              <Slot key={slot.key} slot={slot} />
-            ))}
-            <HomeHarbour
-              name={name}
-              played={profile.battlesPlayed}
-              won={profile.battlesWon}
-              onPress={focusHarbour}
-            />
-          </Animated.View>
-        </GestureDetector>
-
-        <View style={styles.title} pointerEvents="none">
-          <TitleRibbon title="Port city" w={200} h={36} size="md" seedKey="city-title" />
-        </View>
-        {welcome ? (
-          <View style={styles.hint} pointerEvents="none">
-            <Text style={styles.hintText}>Pinch to zoom · drag to look around</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.topLeft} pointerEvents="box-none">
-          <RankBadge
-            name={profile.name || 'Sailor'}
-            rank={progress.rank.name}
-            current={progress.current}
-            total={progress.total}
-            avatar={{ source: AVATARS[profile.avatarId], tint: profile.avatarColor }}
-            seedKey="city"
+    <View style={styles.root}>
+      <GestureDetector gesture={gesture}>
+        <Animated.View
+          style={[styles.map, { left: view.cx - MAP_W / 2, top: view.cy - MAP_H / 2 }, mapStyle]}
+        >
+          <AssetSlot
+            source={UI_ART.cityPort}
+            w={MAP_W}
+            h={MAP_H}
+            label="city-port"
+            tintColor={color.inkSoft}
+            style={{ opacity: 0.85 }}
           />
-        </View>
-        <View style={styles.topRight} pointerEvents="box-none">
-          <CurrencyChip kind="coins" value={profile.coins} />
-          <CurrencyChip kind="gems" value={profile.gems} />
-        </View>
-        <View style={styles.back}>
-          <InkButton
-            label="↩"
-            size="lg"
-            w={54}
-            h={44}
-            seedKey="city-back"
-            onPress={() => (router.canGoBack() ? router.back() : router.replace('/menu'))}
-          />
-        </View>
-        <View style={styles.home}>
-          <InkIconButton
-            icon="home"
-            size={44}
-            accessibilityLabel="Centre the map on your harbour"
+          {SLOTS.map((slot) => (
+            <Slot key={slot.key} slot={slot} />
+          ))}
+          <HomeHarbour
+            name={name}
+            played={profile.battlesPlayed}
+            won={profile.battlesWon}
             onPress={focusHarbour}
           />
-        </View>
+        </Animated.View>
+      </GestureDetector>
 
-        {welcome ? (
-          <>
-            <View pointerEvents="none" style={styles.captain}>
-              <AssetSlot source={AVATARS.captain} w={CAPTAIN.w} h={CAPTAIN.h} label="captain" />
-            </View>
-            <View pointerEvents="none" style={styles.bubble}>
-              <SpeechBubble
-                text="Welcome to your port city! The berth with the flag is yours."
-                tail="left"
-                tailAt={0.3}
-                w={250}
-                seedKey="city-welcome"
-              />
-            </View>
-          </>
-        ) : null}
+      <View style={styles.title} pointerEvents="none">
+        <TitleRibbon title="Port city" w={200} h={36} size="md" seedKey="city-title" />
       </View>
-    </Scale>
+      {welcome ? (
+        <View style={styles.hint} pointerEvents="none">
+          <Text style={styles.hintText}>Pinch to zoom · drag to look around</Text>
+        </View>
+      ) : null}
+
+      <View style={styles.topLeft} pointerEvents="box-none">
+        <RankBadge
+          name={profile.name || 'Sailor'}
+          rank={progress.rank.name}
+          current={progress.current}
+          total={progress.total}
+          avatar={{ source: AVATARS[profile.avatarId], tint: profile.avatarColor }}
+          seedKey="city"
+        />
+      </View>
+      <View style={styles.topRight} pointerEvents="box-none">
+        <CurrencyChip kind="coins" value={profile.coins} />
+        <CurrencyChip kind="gems" value={profile.gems} />
+      </View>
+      <View style={styles.back}>
+        <InkButton
+          label="↩"
+          size="lg"
+          w={54}
+          h={44}
+          seedKey="city-back"
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/menu'))}
+        />
+      </View>
+      <View style={styles.home}>
+        <InkIconButton
+          icon="home"
+          size={44}
+          accessibilityLabel="Centre the map on your harbour"
+          onPress={focusHarbour}
+        />
+      </View>
+
+      {welcome ? (
+        <>
+          <View pointerEvents="none" style={styles.captain}>
+            <AssetSlot source={AVATARS.captain} w={CAPTAIN.w} h={CAPTAIN.h} label="captain" />
+          </View>
+          <View pointerEvents="none" style={styles.bubble}>
+            <SpeechBubble
+              text="Welcome to your port city! The berth with the flag is yours."
+              tail="left"
+              tailAt={0.3}
+              w={250}
+              seedKey="city-welcome"
+            />
+          </View>
+        </>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { width: CANVAS_W, height: CANVAS_H, overflow: 'hidden', backgroundColor: color.paper },
-  map: { position: 'absolute', left: 0, top: (CANVAS_H - MAP_H) / 2, width: MAP_W, height: MAP_H },
+  // No clipping here: the map runs past the canvas to fill the window.
+  root: { width: CANVAS_W, height: CANVAS_H, overflow: 'visible' },
+  map: { position: 'absolute', width: MAP_W, height: MAP_H },
   topLeft: {
     position: 'absolute',
     left: space.md,

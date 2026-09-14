@@ -33,6 +33,9 @@ export interface PaperBackdropProps {
   rules: boolean;
 }
 
+/** Canvas units drawn beyond the reported window on each side. */
+const OVERDRAW = 400;
+
 export const PaperBackdrop = memo(function PaperBackdrop({
   width,
   height,
@@ -42,11 +45,14 @@ export const PaperBackdrop = memo(function PaperBackdrop({
   rules,
 }: PaperBackdropProps) {
   const { unit, major, anchorX, anchorY, ruleY } = PAPER_GRID;
-  // The window's bounds in canvas units.
-  const x0 = -ox / scale;
-  const y0 = -oy / scale;
-  const x1 = (width - ox) / scale;
-  const y1 = (height - oy) / scale;
+  // The window's bounds in canvas units, pushed well out on every side: on
+  // phones with a display cutout or rounded corners the root view can run
+  // past what useWindowDimensions reports, and a rule that stops short there
+  // leaves a blank strip at the edge. The view clips whatever is not needed.
+  const x0 = -ox / scale - OVERDRAW;
+  const y0 = -oy / scale - OVERDRAW;
+  const x1 = (width - ox) / scale + OVERDRAW;
+  const y1 = (height - oy) / scale + OVERDRAW;
 
   const lines: ReactNode[] = [];
   if (rules) {
@@ -84,8 +90,7 @@ export const PaperBackdrop = memo(function PaperBackdrop({
 
   const pen = { stroke: color.ruleRed, strokeWidth: 1.3, roughness: 0.9, bowing: 0.7 } as const;
   const seed = hashString('backdrop-rule');
-  const ruleLeft =
-    rules && x0 < 0 ? roughLine(x0 - 2, ruleY, 0, ruleY, { seed, ...pen }) : null;
+  const ruleLeft = rules && x0 < 0 ? roughLine(x0 - 2, ruleY, 0, ruleY, { seed, ...pen }) : null;
   const ruleRight =
     rules && x1 > CANVAS_W
       ? roughLine(CANVAS_W, ruleY, x1 + 2, ruleY, { seed: seed + 1, ...pen })
@@ -93,7 +98,13 @@ export const PaperBackdrop = memo(function PaperBackdrop({
 
   return (
     <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Rect x={0} y={0} width={width} height={height} fill={color.paper} />
+      <Rect
+        x={-OVERDRAW * scale}
+        y={-OVERDRAW * scale}
+        width={width + OVERDRAW * scale * 2}
+        height={height + OVERDRAW * scale * 2}
+        fill={color.paper}
+      />
       <G transform={`translate(${ox} ${oy}) scale(${scale})`}>
         {lines}
         {ruleLeft ? <RoughShape paths={ruleLeft} /> : null}
