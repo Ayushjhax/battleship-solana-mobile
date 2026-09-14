@@ -73,8 +73,6 @@ export const TUTORIAL_OWN_FLEET: Ship[] = [
   ship('cruiser-2', 'cruiser', 3, 'G1', 'h'),
   ship('boat-1', 'boat', 1, 'F9', 'h'),
   ship('boat-2', 'boat', 1, 'H10', 'h'),
-  ship('boat-3', 'boat', 1, 'I1', 'h'),
-  ship('boat-4', 'boat', 1, 'J8', 'h'),
 ];
 
 /**
@@ -91,8 +89,6 @@ export const TUTORIAL_ENEMY_FLEET: Ship[] = [
   ship('destroyer-3', 'destroyer', 2, 'G1', 'v'),
   ship('boat-1', 'boat', 1, 'A8', 'h'),
   ship('boat-2', 'boat', 1, 'E9', 'h'),
-  ship('boat-3', 'boat', 1, 'H6', 'h'),
-  ship('boat-4', 'boat', 1, 'C9', 'h'),
 ];
 
 export const TUTORIAL_ENEMY_ARSENAL: ArsenalItem[] = [

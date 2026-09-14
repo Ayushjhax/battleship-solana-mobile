@@ -29,7 +29,7 @@ const ship = (
  *   row 0: battleship (0,0)-(0,3)
  *   row 2: cruiser-1 (2,0)-(2,2)   cruiser-2 (2,4)-(2,6)
  *   row 4: destroyer-1 (4,0)-(4,1)  destroyer-2 (4,3)-(4,4)  destroyer-3 (4,6)-(4,7)
- *   row 6: boats at (6,0) (6,2) (6,4) (6,6)
+ *   row 6: boats at (6,0) (6,2)
  */
 export const LAYOUT_A: Ship[] = [
   ship('battleship-1', 'battleship', 4, 0, 0, 'h'),
@@ -40,8 +40,6 @@ export const LAYOUT_A: Ship[] = [
   ship('destroyer-3', 'destroyer', 2, 4, 6, 'h'),
   ship('boat-1', 'boat', 1, 6, 0, 'h'),
   ship('boat-2', 'boat', 1, 6, 2, 'h'),
-  ship('boat-3', 'boat', 1, 6, 4, 'h'),
-  ship('boat-4', 'boat', 1, 6, 6, 'h'),
 ];
 
 /** Layout B — the same idea turned vertical, in columns 9, 7, 5, 3. */
@@ -54,8 +52,6 @@ export const LAYOUT_B: Ship[] = [
   ship('destroyer-3', 'destroyer', 2, 6, 5, 'v'),
   ship('boat-1', 'boat', 1, 0, 3, 'v'),
   ship('boat-2', 'boat', 1, 2, 3, 'v'),
-  ship('boat-3', 'boat', 1, 4, 3, 'v'),
-  ship('boat-4', 'boat', 1, 6, 3, 'v'),
 ];
 
 /** Every cell of a layout, for exhaustive firing. */

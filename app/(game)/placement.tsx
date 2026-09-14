@@ -1,8 +1,10 @@
+import { ARSENAL_SPEC, isOwnBoardKind, specFor } from '@engine/arsenal';
 import { emptyBoard } from '@engine/board';
 import type { Difficulty } from '@engine/ai';
+import { makeFleet } from '@engine/fleet';
 import { validateSubmission } from '@engine/match';
 import { validateArsenalPlacement } from '@engine/placement';
-import type { ArsenalItem, Orientation } from '@engine/types';
+import type { ArsenalItem, ArsenalKind, Orientation, ShipClass } from '@engine/types';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   forwardRef,
@@ -14,7 +16,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { BackHandler, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -34,10 +36,10 @@ import Svg, { G } from 'react-native-svg';
 
 import { haptic } from '@/audio/haptics';
 import { playSfx } from '@/audio/sfx';
-import { GridBoard } from '@/board/GridBoard';
+import { GridBoard, LABEL_MARGIN } from '@/board/GridBoard';
 import { BOARD_SIZE, CELL } from '@/board/layout';
 import { ShipBacking, ShipSprite, shipSpriteSize } from '@/board/ShipSprite';
-import { ArsenalInkSprite, ShopPanel } from '@/features/arsenal/ShopPanel';
+import { ARSENAL_NAMES, ArsenalInkSprite, ShopPanel } from '@/features/arsenal/ShopPanel';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 import {
   buildPlacementPreview,
@@ -52,32 +54,35 @@ import { Scale, useScale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
 import { RoughShape, hashString, useRough } from '@/ui/useRough';
 
-const ADVANCED_BOARD_X = 32;
-const CLASSIC_BOARD_X = (CANVAS_W - BOARD_SIZE) / 2;
+/**
+ * Layout, left to right on the 800-unit canvas: the dock (unplaced ships,
+ * drawn at half size in their own frame so they never read as placed), the
+ * row letters, the 280 board, then the shop. Classic mode has no shop and
+ * centres the board; the dock keeps its place to the left of the letters.
+ */
 const BOARD_Y = 68;
-const SHOP_X = 330;
+const TRAY_W = 62;
+const TRAY_H = BOARD_SIZE;
+const TRAY_Y = BOARD_Y;
+const TRAY_X = 6;
+/** Room between the dock and the row letters. */
+const TRAY_GAP = 4;
+const ADVANCED_BOARD_X = TRAY_X + TRAY_W + TRAY_GAP + LABEL_MARGIN; // 96
+const CLASSIC_BOARD_X = (CANVAS_W - BOARD_SIZE) / 2;
+const CLASSIC_TRAY_X = CLASSIC_BOARD_X - LABEL_MARGIN - TRAY_GAP - TRAY_W;
+const SHOP_X = 388;
 const SHOP_Y = 62;
-const SHOP_W = 458;
+const SHOP_W = 400;
 const SHOP_H = 226;
-const TRAY_X = 0;
-const TRAY_Y = 67;
-const TRAY_W = 38;
-const TRAY_H = 280;
+/** Ships in the dock are drawn at this scale and grow to 1 as they are picked up. */
+const TRAY_SCALE = 0.5;
+const TRAY_HEADER = 20;
+const TRAY_PITCH = 24;
 const SPRING = { damping: 18, stiffness: 230, mass: 0.7 } as const;
 const SHIP_PLACE_SOURCE = 'shipPlace' as const;
 
-const FLEET = [
-  { id: 'battleship-1', class: 'battleship', len: 4 },
-  { id: 'cruiser-1', class: 'cruiser', len: 3 },
-  { id: 'cruiser-2', class: 'cruiser', len: 3 },
-  { id: 'destroyer-1', class: 'destroyer', len: 2 },
-  { id: 'destroyer-2', class: 'destroyer', len: 2 },
-  { id: 'destroyer-3', class: 'destroyer', len: 2 },
-  { id: 'boat-1', class: 'boat', len: 1 },
-  { id: 'boat-2', class: 'boat', len: 1 },
-  { id: 'boat-3', class: 'boat', len: 1 },
-  { id: 'boat-4', class: 'boat', len: 1 },
-] as const;
+/** The fleet table from the engine — the same list autoPlaceFleet fills. */
+const FLEET = makeFleet();
 
 function parseMode(value: string | string[] | undefined): PlacementMode {
   const mode = Array.isArray(value) ? value[0] : value;
@@ -143,7 +148,7 @@ const PreviewHud = forwardRef<PreviewHandle, { boardX: number }>(function Previe
         );
       })}
       {reason ? (
-        <View style={[styles.reasonPill, { left: boardX + 40 }]}>
+        <View style={[styles.reasonPill, { left: boardX + 8 }]}>
           <Text style={styles.reasonText}>{reason}</Text>
         </View>
       ) : null}
@@ -349,7 +354,7 @@ function ArsenalFrame({ onUnaffordable }: { onUnaffordable: () => void }) {
 interface DraggableShipProps {
   fleetIndex: number;
   shipId: string;
-  shipClass: (typeof FLEET)[number]['class'];
+  shipClass: ShipClass;
   ships: ReturnType<typeof usePlacement.getState>['ships'];
   arsenal: ReturnType<typeof usePlacement.getState>['arsenal'];
   boardX: number;
@@ -380,8 +385,16 @@ const DraggableShip = memo(function DraggableShip({
   const placed = ships.find((ship) => ship.id === shipId);
   const orientation: Orientation = placed?.orientation ?? 'h';
   const size = shipSpriteSize(shipClass, orientation);
-  const baseX = placed ? boardX + placed.origin.c * CELL : trayX + 4;
-  const baseY = placed ? BOARD_Y + placed.origin.r * CELL : TRAY_Y + fleetIndex * 26.3;
+  // In the dock the sprite is drawn at TRAY_SCALE about its own centre, so the
+  // box is offset to put the SCALED ship's bow at the dock's left margin.
+  const dockLeft = trayX + 5;
+  const dockTop = TRAY_Y + TRAY_HEADER + 6 + fleetIndex * TRAY_PITCH;
+  const baseX = placed
+    ? boardX + placed.origin.c * CELL
+    : dockLeft - (size.width * (1 - TRAY_SCALE)) / 2;
+  const baseY = placed
+    ? BOARD_Y + placed.origin.r * CELL
+    : dockTop - (size.height * (1 - TRAY_SCALE)) / 2;
   const hitW = Math.max(size.width, 44 / scale);
   const hitH = Math.max(size.height, 44 / scale);
   const padX = (hitW - size.width) / 2;
@@ -406,6 +419,8 @@ const DraggableShip = memo(function DraggableShip({
   const held = useSharedValue(0);
   /** The visual lift only (scale, shadow); springs back after a drop. */
   const lifted = useSharedValue(0);
+  /** TRAY_SCALE in the dock, 1 on the board and in the hand. */
+  const shipScale = useSharedValue(placed ? 1 : TRAY_SCALE);
   const valid = useSharedValue(1);
   const hoverIndex = useSharedValue(-1);
   const lastNotifiedIndex = useSharedValue(-2);
@@ -422,6 +437,12 @@ const DraggableShip = memo(function DraggableShip({
     translateX.value = 0;
     translateY.value = 0;
   }, [baseX, baseY, orientation, translateX, translateY]);
+
+  // Dock ships are small; a ship put back in the dock shrinks again.
+  useEffect(() => {
+    if (held.value) return;
+    shipScale.value = withTiming(placed ? 1 : TRAY_SCALE, { duration: 160 });
+  }, [held, placed, shipScale]);
 
   const showPreview = useCallback(
     (index: number) =>
@@ -448,9 +469,10 @@ const DraggableShip = memo(function DraggableShip({
       }
       warningHaptic();
       playSfx('shipInvalid');
+      if (!placed) shipScale.value = withSpring(TRAY_SCALE, SPRING);
       springHome();
     },
-    [orientation, previewRef, shipId, springHome],
+    [orientation, placed, previewRef, shipId, shipScale, springHome],
   );
 
   const unplace = useCallback(() => {
@@ -500,8 +522,19 @@ const DraggableShip = memo(function DraggableShip({
     if (held.value) return;
     held.value = 1;
     lifted.value = 1;
-    grabX.value = (absoluteX - ox) / scale - (baseX + translateX.value);
-    grabY.value = (absoluteY - oy) / scale - (baseY + translateY.value);
+    // The finger is on the sprite as drawn — in the dock, at TRAY_SCALE about
+    // the box centre. Map it to the full-size sprite the drag works in, so the
+    // ship stays under the finger as it grows to 1.
+    const s = shipScale.value;
+    const boxX = baseX + translateX.value;
+    const boxY = baseY + translateY.value;
+    const cx = boxX + size.width / 2;
+    const cy = boxY + size.height / 2;
+    const px = (absoluteX - ox) / scale;
+    const py = (absoluteY - oy) / scale;
+    grabX.value = cx + (px - cx) / s - boxX;
+    grabY.value = cy + (py - cy) / s - boxY;
+    shipScale.value = withTiming(1, { duration: 140 });
     overTray.value = placed ? 0 : 1;
     activeBand.value = 1;
     if (placed) {
@@ -540,6 +573,9 @@ const DraggableShip = memo(function DraggableShip({
     lastNotifiedIndex.value = -2;
 
     if (shouldUnplace) {
+      // A dock ship let go over the dock shrinks back where it was; a placed
+      // one leaves the store and the effect above shrinks it in its new spot.
+      if (placedIndex < 0) shipScale.value = withSpring(TRAY_SCALE, SPRING);
       runOnJS(unplace)();
       return;
     }
@@ -551,6 +587,7 @@ const DraggableShip = memo(function DraggableShip({
       runOnJS(commitDrop)(Math.floor(index / 10), index % 10);
       return;
     }
+    if (placedIndex < 0) shipScale.value = withSpring(TRAY_SCALE, SPRING);
     runOnJS(rejectDrop)(index);
   };
 
@@ -575,11 +612,14 @@ const DraggableShip = memo(function DraggableShip({
       const candidateR = Math.round((desiredY - BOARD_Y) / CELL);
       const nearBoard = candidateC >= 0 && candidateC < 10 && candidateR >= 0 && candidateR < 10;
 
+      // Over the dock = the ship's own centre carried left of the row letters.
+      // Judged from the ship, not the raw finger, so it holds on devices whose
+      // window coordinates carry an inset offset.
+      const shipCentreX = desiredX + size.width / 2;
       overTray.value =
-        canvasX >= trayX &&
-        canvasX <= trayX + TRAY_W + 12 &&
-        canvasY >= TRAY_Y &&
-        canvasY <= TRAY_Y + TRAY_H
+        shipCentreX < boardX - LABEL_MARGIN &&
+        desiredY + size.height / 2 >= TRAY_Y - 20 &&
+        desiredY + size.height / 2 <= TRAY_Y + TRAY_H + 20
           ? 1
           : 0;
 
@@ -632,6 +672,7 @@ const DraggableShip = memo(function DraggableShip({
     ],
   }));
   const shadowStyle = useAnimatedStyle(() => ({ opacity: lifted.value * 0.38 }));
+  const groupStyle = useAnimatedStyle(() => ({ transform: [{ scale: shipScale.value }] }));
   // The paper hull lifts away with the ship so the grid and any conflict tint
   // show through a hovering ghost, and settles back under it on the drop.
   // Tray ships get none: they sit over the row letters, which must stay legible.
@@ -658,42 +699,39 @@ const DraggableShip = memo(function DraggableShip({
           wrapperStyle,
         ]}
       >
-        {/* The hit box is padded out to 44 px; the layers are absolute, so
-            they are placed at the pad explicitly — Yoga puts absolute
-            children at the padding edge, not inside it. */}
+        {/* The hit box is padded out to 44 px; the group is absolute, so it is
+            placed at the pad explicitly — Yoga puts absolute children at the
+            padding edge, not inside it. The group carries the dock scale. */}
         <Animated.View
           pointerEvents="none"
-          style={[styles.shipLayer, { left: padX + 3, top: padY + 3 }, shadowStyle]}
+          style={[
+            styles.shipGroup,
+            { left: padX, top: padY, width: size.width, height: size.height },
+            groupStyle,
+          ]}
         >
-          <ShipSprite
-            shipClass={shipClass}
-            orientation={orientation}
-            stroke={color.inkSoft}
-            backing={false}
-          />
-        </Animated.View>
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.shipLayer, { left: padX, top: padY }, backingStyle]}
-        >
-          <ShipBacking shipClass={shipClass} orientation={orientation} />
-        </Animated.View>
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.shipLayer, { left: padX, top: padY }, inkStyle]}
-        >
-          <ShipSprite shipClass={shipClass} orientation={orientation} backing={false} />
-        </Animated.View>
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.shipLayer, { left: padX, top: padY }, redStyle]}
-        >
-          <ShipSprite
-            shipClass={shipClass}
-            orientation={orientation}
-            stroke={color.inkRed}
-            backing={false}
-          />
+          <Animated.View style={[styles.shipLayer, styles.shipShadow, shadowStyle]}>
+            <ShipSprite
+              shipClass={shipClass}
+              orientation={orientation}
+              stroke={color.inkSoft}
+              backing={false}
+            />
+          </Animated.View>
+          <Animated.View style={[styles.shipLayer, backingStyle]}>
+            <ShipBacking shipClass={shipClass} orientation={orientation} />
+          </Animated.View>
+          <Animated.View style={[styles.shipLayer, inkStyle]}>
+            <ShipSprite shipClass={shipClass} orientation={orientation} backing={false} />
+          </Animated.View>
+          <Animated.View style={[styles.shipLayer, redStyle]}>
+            <ShipSprite
+              shipClass={shipClass}
+              orientation={orientation}
+              stroke={color.inkRed}
+              backing={false}
+            />
+          </Animated.View>
         </Animated.View>
       </Animated.View>
     </GestureDetector>
@@ -950,6 +988,103 @@ function DifficultyPicker({ value }: { value: Difficulty }) {
   );
 }
 
+/**
+ * The dock: a dashed rough frame left of the row letters holding the ships
+ * still to be placed (drawn at half size by DraggableShip), with a running
+ * count so a missed ship is never mistaken for a placed one.
+ */
+function TrayDock({ x, remaining }: { x: number; remaining: number }) {
+  const { roughRect } = useRough();
+  const frame = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
+    seed: hashString('placement-dock'),
+    stroke: remaining > 0 ? color.ink : color.inkFaint,
+    strokeWidth: 1.3,
+    roughness: 1.2,
+    fill: color.paper,
+    fillStyle: 'solid',
+  });
+  return (
+    <View pointerEvents="none" style={[styles.dock, { left: x }]}>
+      <Svg width={TRAY_W} height={TRAY_H} viewBox={`0 0 ${TRAY_W} ${TRAY_H}`}>
+        <RoughShape paths={frame} dash={[5, 4]} opacity={0.9} />
+      </Svg>
+      <Text style={styles.dockTitle}>Dock</Text>
+      <Text style={[styles.dockCount, remaining === 0 && styles.dockCountDone]}>
+        {remaining === 0 ? 'All placed' : `${remaining} to place`}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * Shuffle and Reset with defences on the board: the new layout cannot keep
+ * them, so they are sold back first — say so, name the refund, and let the
+ * player back out. Bought bombers, torpedoes and the submarine are untouched.
+ */
+function ConfirmClearDialog({
+  action,
+  placed,
+  refund,
+  onCancel,
+  onConfirm,
+}: {
+  action: 'shuffle' | 'reset';
+  placed: readonly ArsenalItem[];
+  refund: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      onCancel();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [onCancel]);
+
+  const counts = new Map<ArsenalKind, number>();
+  for (const item of placed) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
+  const names = ARSENAL_SPEC.filter((spec) => counts.has(spec.kind)).map((spec) => {
+    const n = counts.get(spec.kind) ?? 0;
+    const name = ARSENAL_NAMES[spec.kind];
+    return n === 1 ? `the ${name}` : `${n} ${name}s`;
+  });
+  const list =
+    names.length <= 1
+      ? (names[0] ?? '')
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const verb = action === 'shuffle' ? 'Shuffling' : 'Clearing the board';
+  const their = placed.length === 1 ? 'Its' : 'Their';
+
+  return (
+    <View style={styles.dialogRoot} accessibilityViewIsModal>
+      <Pressable style={styles.dialogDim} onPress={onCancel} accessibilityLabel="Cancel" />
+      <View style={styles.dialogPanel}>
+        <InkPanel w={400} h={172} seedKey="placement-clear" padding={space.sm}>
+          <Text style={styles.dialogTitle}>
+            {action === 'shuffle' ? 'Shuffle the fleet?' : 'Clear the board?'}
+          </Text>
+          <Text style={styles.dialogBody}>
+            {verb} takes {list} off the board too. {their} {refund} fuel goes back to your gauge;
+            the bombers and torpedoes you bought stay yours.
+          </Text>
+          <View style={styles.dialogButtons}>
+            <InkButton label="Keep them" size="sm" w={120} h={40} onPress={onCancel} />
+            <InkButton
+              label={action === 'shuffle' ? 'Shuffle anyway' : 'Clear anyway'}
+              tone="confirm"
+              size="sm"
+              w={150}
+              h={40}
+              onPress={onConfirm}
+            />
+          </View>
+        </InkPanel>
+      </View>
+    </View>
+  );
+}
+
 function HandoffCurtain({ name, onReady }: { name: string; onReady: () => void }) {
   return (
     <View style={styles.handoff} accessibilityViewIsModal>
@@ -1005,8 +1140,18 @@ function PlacementCanvas() {
   }, [router]);
 
   const boardX = ruleset === 'classic' ? CLASSIC_BOARD_X : ADVANCED_BOARD_X;
-  const trayX = ruleset === 'classic' ? CLASSIC_BOARD_X - 32 : TRAY_X;
+  const trayX = ruleset === 'classic' ? CLASSIC_TRAY_X : TRAY_X;
   const pendingItem = arsenal.find((item) => item.id === pendingArsenalId);
+  // Defences on the board (or one being placed) that Shuffle / Reset would sell back.
+  const placedArsenal = useMemo(
+    () =>
+      arsenal.filter(
+        (item) => isOwnBoardKind(item.kind) && (item.at !== undefined || item.id === pendingArsenalId),
+      ),
+    [arsenal, pendingArsenalId],
+  );
+  const placedRefund = placedArsenal.reduce((sum, item) => sum + specFor(item.kind).cost, 0);
+  const [confirmClear, setConfirmClear] = useState<'shuffle' | 'reset' | null>(null);
   const legalArsenalCells = useMemo(() => {
     if (!pendingItem) return [];
     const board = { ...emptyBoard(), ships, arsenal };
@@ -1019,15 +1164,32 @@ function PlacementCanvas() {
     );
   }, [arsenal, pendingItem, ships]);
 
-  const shuffle = useCallback(() => {
-    usePlacement.getState().autoPlace(shuffleSeed.current++);
+  // Both first sell back whatever defences are on the board — a fresh layout
+  // cannot respect their cells — so with any placed they ask first.
+  const performClear = useCallback((action: 'shuffle' | 'reset') => {
+    const store = usePlacement.getState();
+    store.sellPlacedArsenal();
+    if (action === 'shuffle') store.autoPlace(shuffleSeed.current++);
+    else store.clearFleet();
     previewRef.current?.show(null);
+    setConfirmClear(null);
   }, []);
 
+  const shuffle = useCallback(() => {
+    if (usePlacement.getState().arsenal.some((item) => item.at !== undefined)) {
+      setConfirmClear('shuffle');
+      return;
+    }
+    performClear('shuffle');
+  }, [performClear]);
+
   const reset = useCallback(() => {
-    usePlacement.getState().clearFleet();
-    previewRef.current?.show(null);
-  }, []);
+    if (usePlacement.getState().arsenal.some((item) => item.at !== undefined)) {
+      setConfirmClear('reset');
+      return;
+    }
+    performClear('reset');
+  }, [performClear]);
 
   const back = useCallback(() => {
     if (usePlacement.getState().pendingArsenalId) {
@@ -1082,10 +1244,7 @@ function PlacementCanvas() {
       ) : null}
       {mode === 'ai' ? <DifficultyPicker value={difficulty} /> : null}
 
-      <View
-        pointerEvents="none"
-        style={[styles.trayRail, ruleset === 'classic' && styles.trayRailClassic]}
-      />
+      <TrayDock x={trayX} remaining={FLEET.length - ships.length} />
       <GridBoard
         x={boardX}
         y={BOARD_Y}
@@ -1148,6 +1307,16 @@ function PlacementCanvas() {
         onPress={beginBattle}
       />
 
+      {confirmClear ? (
+        <ConfirmClearDialog
+          action={confirmClear}
+          placed={placedArsenal}
+          refund={placedRefund}
+          onCancel={() => setConfirmClear(null)}
+          onConfirm={() => performClear(confirmClear)}
+        />
+      ) : null}
+
       {handoffVisible ? (
         <HandoffCurtain
           name={hotseatPlayer === 2 ? playerTwoName : 'Player 1'}
@@ -1209,18 +1378,62 @@ const styles = StyleSheet.create({
     fontSize: typeScale.md,
     fontVariant: ['tabular-nums'],
   },
-  trayRail: {
+  dock: { position: 'absolute', top: TRAY_Y, width: TRAY_W, height: TRAY_H },
+  dockTitle: {
     position: 'absolute',
-    left: TRAY_X + 2,
-    top: TRAY_Y,
-    width: TRAY_W - 4,
-    height: TRAY_H,
-    backgroundColor: color.paper,
-    borderRightWidth: 1,
-    borderRightColor: color.inkFaint,
-    opacity: 0.7,
+    left: 0,
+    right: 0,
+    top: 3,
+    textAlign: 'center',
+    color: color.ink,
+    fontFamily: font.label,
+    fontSize: typeScale.xs,
   },
-  trayRailClassic: { left: CLASSIC_BOARD_X - 32 },
+  dockCount: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 6,
+    textAlign: 'center',
+    color: color.inkRed,
+    fontFamily: font.label,
+    fontSize: typeScale.xxs,
+  },
+  dockCountDone: { color: color.inkGreen },
+  dialogRoot: { position: 'absolute', left: 0, top: 0, width: CANVAS_W, height: CANVAS_H, zIndex: 90 },
+  // Runs past the canvas so the paper beside it dims as well.
+  dialogDim: {
+    position: 'absolute',
+    left: -200,
+    top: -200,
+    right: -200,
+    bottom: -200,
+    backgroundColor: 'rgba(62, 47, 184, 0.28)',
+  },
+  dialogPanel: { position: 'absolute', left: (CANVAS_W - 400) / 2, top: 94 },
+  dialogTitle: {
+    color: color.inkRed,
+    fontFamily: font.display,
+    fontSize: typeScale.md,
+    textAlign: 'center',
+  },
+  dialogBody: {
+    marginTop: 6,
+    color: color.ink,
+    fontFamily: font.body,
+    fontSize: typeScale.xs,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  dialogButtons: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: space.sm,
+  },
   bandLayer: {
     position: 'absolute',
     top: BOARD_Y,
@@ -1243,8 +1456,9 @@ const styles = StyleSheet.create({
   },
   reasonPill: {
     position: 'absolute',
-    top: 42,
+    top: BOARD_Y + BOARD_SIZE - 24,
     minWidth: 190,
+    maxWidth: BOARD_SIZE - 16,
     paddingHorizontal: space.xs,
     paddingVertical: 2,
     backgroundColor: color.paper,
@@ -1256,7 +1470,9 @@ const styles = StyleSheet.create({
     fontSize: typeScale.xxs,
   },
   draggable: { position: 'absolute', overflow: 'visible' },
-  shipLayer: { position: 'absolute' },
+  shipGroup: { position: 'absolute', overflow: 'visible' },
+  shipLayer: { position: 'absolute', left: 0, top: 0 },
+  shipShadow: { left: 3, top: 3 },
   arsenalDrag: { position: 'absolute', overflow: 'visible' },
   arsenalSpriteOnBoard: {
     position: 'absolute',
@@ -1266,9 +1482,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     transform: [{ scale: 0.67 }],
   },
-  resetButton: { position: 'absolute', left: 336, top: 299 },
+  resetButton: { position: 'absolute', left: SHOP_X + 6, top: 299 },
   resetButtonClassic: { left: 570, top: 82 },
-  shuffleButton: { position: 'absolute', left: 394, top: 301 },
+  shuffleButton: { position: 'absolute', left: SHOP_X + 64, top: 301 },
   shuffleButtonClassic: { left: 630, top: 84 },
   battleButton: { position: 'absolute', right: 12, bottom: 2 },
   handoff: {

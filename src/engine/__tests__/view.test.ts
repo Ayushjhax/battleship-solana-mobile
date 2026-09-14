@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { coordKey } from '../board';
+import { FLEET_SHIP_COUNT } from '../fleet';
 import { projectView, reduce } from '../match';
 import type { ArsenalItem, Coord, MatchState } from '../types';
 import { LAYOUT_A, LAYOUT_B, P0, P1, cellsOfLayout, startMatch } from './fixtures';
@@ -62,7 +63,7 @@ describe('projectView — the masking function', () => {
     expect('arsenal' in view.enemy).toBe(false);
     expect(view.enemy.marks).toEqual({});
     expect(view.enemy.sunkShips).toEqual([]);
-    expect(view.enemy.shipsRemaining).toBe(10);
+    expect(view.enemy.shipsRemaining).toBe(FLEET_SHIP_COUNT);
     // Your own board is complete.
     expect(view.you.board.ships).toEqual(state.players[1].board.ships);
   });
@@ -101,7 +102,7 @@ describe('projectView — the masking function', () => {
     expect(view.enemy.sunkShips).toEqual([
       { id: 'destroyer-2', class: 'destroyer', cells: sunkCells },
     ]);
-    expect(view.enemy.shipsRemaining).toBe(9);
+    expect(view.enemy.shipsRemaining).toBe(FLEET_SHIP_COUNT - 1);
     // The halo is public, but it contains no ship cells by construction.
     const revealed = Object.entries(view.enemy.marks).filter(([, m]) => m === 'revealed');
     expect(revealed).toHaveLength(10);

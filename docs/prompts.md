@@ -547,7 +547,7 @@ FLOW:
   - On mount, call autoPlaceFleet(seed) so the board is never empty. Players who don't care
     hit Battle! in one tap; players who do can rearrange. This is a deliberate UX choice —
     keep it.
-  - "Battle!" is disabled until all 10 ships are placed. Once enabled it gets one slow pulse
+  - "Battle!" is disabled until every ship is placed. Once enabled it gets one slow pulse
     every 3s to draw the eye.
   - On Battle!, branch on mode:
       'ai'      -> push /(game)/battle with the local layout

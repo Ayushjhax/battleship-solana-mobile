@@ -1,4 +1,8 @@
-/** The fleet table from docs/brief.md 3.1. Ten ships, twenty cells. */
+/**
+ * The fleet table from docs/brief.md 3.1. Eight ships, eighteen cells: the
+ * classic ten-ship fleet minus two of the four one-cell boats, which made
+ * placement fiddly and added little to the game.
+ */
 import type { PlayerState, Ship, ShipClass } from './types';
 
 export interface FleetSpecEntry {
@@ -12,11 +16,12 @@ export const FLEET_SPEC: readonly FleetSpecEntry[] = [
   { class: 'battleship', len: 4, count: 1 },
   { class: 'cruiser', len: 3, count: 2 },
   { class: 'destroyer', len: 2, count: 3 },
-  { class: 'boat', len: 1, count: 4 },
+  { class: 'boat', len: 1, count: 2 },
 ] as const;
 
-export const FLEET_SHIP_COUNT = 10;
-export const FLEET_CELL_COUNT = 20;
+/** Derived from the table so the two can never disagree. */
+export const FLEET_SHIP_COUNT = FLEET_SPEC.reduce((n, entry) => n + entry.count, 0); // 8
+export const FLEET_CELL_COUNT = FLEET_SPEC.reduce((n, entry) => n + entry.count * entry.len, 0); // 18
 
 export function lengthOf(shipClass: ShipClass): number {
   const entry = FLEET_SPEC.find((e) => e.class === shipClass);
@@ -46,7 +51,7 @@ export function isSunk(ship: Ship): boolean {
   return ship.hits.length >= ship.len;
 }
 
-/** All ten ships sunk. Arsenal items never count toward the win. */
+/** Every ship sunk. Arsenal items never count toward the win. */
 export function allSunk(player: PlayerState): boolean {
   return player.board.ships.length > 0 && player.board.ships.every(isSunk);
 }

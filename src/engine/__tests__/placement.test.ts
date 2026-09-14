@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cellsOf, coordKey, emptyBoard, halo } from '../board';
-import { FLEET_SPEC, validateFleetComposition } from '../fleet';
+import { FLEET_SHIP_COUNT, FLEET_SPEC, validateFleetComposition } from '../fleet';
 import {
   autoPlaceFleet,
   moveShip,
@@ -173,7 +173,7 @@ describe('autoPlaceFleet', () => {
   it('produces a complete, valid layout for 1000 different seeds', () => {
     for (let seed = 1; seed <= 1000; seed++) {
       const ships = autoPlaceFleet(createRng(seed));
-      expect(ships).toHaveLength(10);
+      expect(ships).toHaveLength(FLEET_SHIP_COUNT);
       expect(validateFleetComposition(ships).ok).toBe(true);
       const layout = validateLayout(ships);
       if (!layout.ok) throw new Error(`seed ${seed}: ${layout.reason}`);

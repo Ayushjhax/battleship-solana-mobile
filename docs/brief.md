@@ -45,15 +45,16 @@ Advanced mode adds a buy step: (cite index="14-1">after arranging your fleet the
 
 Grid `10 × 10`. Rows `A–J` top to bottom, columns `1–10` left to right. Internally always `{r: 0..9, c: 0..9}`; letters are display only.
 
-Fleet, confirmed by counting sprites in your tutorial screenshot `IMG_9744`:
+Fleet — the reference's ten ships (`IMG_9744`) minus two of the four one-cell boats,
+which made placement fiddly and added little to the game:
 
 | Class | Length | Count | Cells |
 |---|---|---|---|
 | Battleship | 4 | 1 | 4 |
 | Cruiser | 3 | 2 | 6 |
 | Destroyer | 2 | 3 | 6 |
-| Boat | 1 | 4 | 4 |
-| **Total** | | **10** | **20** |
+| Boat | 1 | 2 | 2 |
+| **Total** | | **8** | **18** |
 
 ### 3.2 Placement
 
@@ -77,7 +78,7 @@ resolveShot(cell):
   otherwise           -> MISS. Turn ENDS.
 ```
 
-- **Win:** all 10 enemy ships sunk. Arsenal items never count toward the win.
+- **Win:** all 8 enemy ships sunk. Arsenal items never count toward the win.
 - **Turn timer:** 20 seconds, counted down inside the turn triangle (your screenshots show 20, 23, 25). Two consecutive timeouts = forfeit.
 - **First turn:** server coin flip from the match seed.
 

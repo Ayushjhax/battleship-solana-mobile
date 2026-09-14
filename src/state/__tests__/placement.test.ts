@@ -1,5 +1,6 @@
 import { emptyBoard } from '../../engine/board';
 import { specFor } from '../../engine/arsenal';
+import { FLEET_SHIP_COUNT } from '../../engine/fleet';
 import { validateArsenalPlacement, validateLayout } from '../../engine/placement';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -12,7 +13,7 @@ describe('placement store', () => {
     for (let seed = 1; seed <= 50; seed++) {
       usePlacement.getState().autoPlace(seed);
       const ships = usePlacement.getState().ships;
-      expect(ships).toHaveLength(10);
+      expect(ships).toHaveLength(FLEET_SHIP_COUNT);
       expect(validateLayout(ships)).toEqual({ ok: true });
     }
   });

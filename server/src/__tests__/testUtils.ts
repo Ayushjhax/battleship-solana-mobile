@@ -87,8 +87,6 @@ export const KNOWN_LAYOUT: readonly Ship[] = [
   ship('destroyer-3', 'destroyer', 2, 4, 6, 'h'),
   ship('boat-1', 'boat', 1, 6, 0, 'h'),
   ship('boat-2', 'boat', 1, 6, 2, 'h'),
-  ship('boat-3', 'boat', 1, 6, 4, 'h'),
-  ship('boat-4', 'boat', 1, 6, 6, 'h'),
 ];
 
 export function shipCellsOf(ships: readonly Ship[]): Coord[] {

@@ -60,10 +60,11 @@ describe('board', () => {
 });
 
 describe('fleet spec', () => {
-  it('matches the brief: 10 ships, 20 cells', () => {
+  it('matches the brief: 8 ships, 18 cells', () => {
     const ships = FLEET_SPEC.reduce((n, e) => n + e.count, 0);
     const cells = FLEET_SPEC.reduce((n, e) => n + e.count * e.len, 0);
-    expect(ships).toBe(10);
+    expect(ships).toBe(8);
+    expect(cells).toBe(18);
     expect(cells).toBe(FLEET_CELL_COUNT);
   });
 });

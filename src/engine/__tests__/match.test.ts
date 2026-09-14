@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FLEET_CELL_COUNT, FLEET_SHIP_COUNT } from '../fleet';
 import { createMatch, firstTurn, reduce, validateSubmission } from '../match';
 import type { ArsenalItem, MatchState, Ship } from '../types';
 import { LAYOUT_A, LAYOUT_B, P0, P1, cellsOfLayout, startMatch, types } from './fixtures';
@@ -40,8 +41,8 @@ describe('lifecycle', () => {
     }
     expect(state.phase).toBe('over');
     expect(state.winner).toBe(P0);
-    expect(state.moves).toBe(20);
-    expect(seen.filter((t) => t === 'SUNK')).toHaveLength(10);
+    expect(state.moves).toBe(FLEET_CELL_COUNT);
+    expect(seen.filter((t) => t === 'SUNK')).toHaveLength(FLEET_SHIP_COUNT);
     expect(seen.filter((t) => t === 'TURN_CHANGED')).toHaveLength(0);
     expect(seen[seen.length - 1]).toBe('GAME_OVER');
     expect(state.players[1].board.ships.every((s) => s.hits.length === s.len)).toBe(true);

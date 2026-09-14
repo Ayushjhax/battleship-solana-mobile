@@ -118,10 +118,12 @@ export function BattleArsenalPopover({
     transform: [{ translateY: (enter.value - 1) * PANEL_H }],
   }));
 
+  // The AA gun is bought and placed in the shop and then works on its own; it
+  // has no place in a "choose a weapon" list. The grid stays 2 x 5.
+  const kinds = ARSENAL_SPEC.map((entry) => entry.kind).filter((kind) => kind !== 'aaGun');
   const slots: readonly (ArsenalKind | null)[] = [
-    ...ARSENAL_SPEC.map((entry) => entry.kind),
-    null,
-    null,
+    ...kinds,
+    ...Array.from({ length: 10 - kinds.length }, () => null),
   ];
 
   return (

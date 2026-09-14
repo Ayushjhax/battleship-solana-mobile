@@ -22,10 +22,13 @@ import { color, font, space, type as typeScale } from '@/ui/tokens';
 import { RoughShape, hashString, useRough, type PathInfo } from '@/ui/useRough';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 
-const PANEL_W = 458;
+// Two columns of cards: 2 * CARD_W + the 5 gap + 8 padding a side = PANEL_W.
+const PANEL_W = 400;
 const PANEL_H = 226;
-const CARD_W = 205;
+const CARD_W = 189;
 const CARD_H = 62;
+/** How long a "not enough fuel" / "you have them all" notice replaces the title. */
+const NOTICE_MS = 2200;
 
 export const ARSENAL_NAMES: Record<ArsenalKind, string> = {
   torpedoBomber: 'Torpedo Bomber',
@@ -289,18 +292,47 @@ function OwnedCount({ count, max, atCap }: { count: number; max: number; atCap: 
   );
 }
 
+/** A short line the panel shows in place of its title after a press that bought nothing. */
+export interface ShopNotice {
+  readonly text: string;
+  readonly tone: 'red' | 'green';
+}
+
+/** The "Max" tag stamped on a card whose slot is full. */
+function MaxTag({ kind }: { kind: ArsenalKind }) {
+  const { roughRect } = useRough();
+  const frame = roughRect(1, 1, 34, 16, {
+    seed: hashString(`arsenal-max-${kind}`),
+    stroke: color.inkGreen,
+    strokeWidth: 1.1,
+    fill: color.paper,
+    fillStyle: 'solid',
+    roughness: 0.9,
+  });
+  return (
+    <View pointerEvents="none" style={styles.maxTag}>
+      <Svg width={36} height={18} viewBox="0 0 36 18" style={StyleSheet.absoluteFill}>
+        <RoughShape paths={frame} />
+      </Svg>
+      <Text style={styles.maxTagText}>Max</Text>
+    </View>
+  );
+}
+
 function ShopCard({
   kind,
   count,
   remaining,
   onInfo,
   onUnaffordable,
+  onNotice,
 }: {
   kind: ArsenalKind;
   count: number;
   remaining: number;
   onInfo: (kind: ArsenalKind) => void;
   onUnaffordable: () => void;
+  onNotice: (notice: ShopNotice) => void;
 }) {
   const [pressed, setPressed] = useState(false);
   // Tutorial: lets the overlay spotlight and point at this card (`card-<kind>`).
@@ -311,10 +343,22 @@ function ShopCard({
   const disabledByFuel = !atCap && !affordable;
   const label = ARSENAL_NAMES[kind];
 
+  // A press that cannot buy still answers: the gauge shakes for fuel, and the
+  // title says why — a silent no-op reads as a broken button.
   const buy = () => {
-    if (atCap) return;
+    if (atCap) {
+      onNotice({
+        text: `${label}: you have all ${spec.max}${spec.max === 1 ? '' : ' of them'}`,
+        tone: 'green',
+      });
+      return;
+    }
     if (!affordable) {
       onUnaffordable();
+      onNotice({
+        text: `Not enough fuel — ${label} costs ${spec.cost}, you have ${remaining}`,
+        tone: 'red',
+      });
       return;
     }
     usePlacement.getState().buyArsenal(kind);
@@ -325,7 +369,7 @@ function ShopCard({
       {...tutorialTarget}
       style={{
         opacity: disabledByFuel ? 0.45 : 1,
-        transform: [{ translateY: pressed && !atCap ? 1 : 0 }],
+        transform: [{ translateY: pressed ? 1 : 0 }],
       }}
     >
       <InkPanel w={CARD_W} h={CARD_H} seedKey={`arsenal-${kind}`} padding={0}>
@@ -339,15 +383,22 @@ function ShopCard({
           <ArsenalInkSprite kind={kind} />
         </View>
         <OwnedCount count={count} max={spec.max} atCap={atCap} />
-        <Text pointerEvents="none" numberOfLines={1} style={styles.cardName}>
+        {atCap ? <MaxTag kind={kind} /> : null}
+        <Text
+          pointerEvents="none"
+          numberOfLines={1}
+          style={[styles.cardName, atCap && styles.cardNameCapped]}
+        >
           {label}
         </Text>
       </InkPanel>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${label}, ${count} of ${spec.max}, costs ${spec.cost} fuel`}
-        accessibilityState={{ disabled: atCap }}
-        disabled={atCap}
+        accessibilityLabel={
+          atCap
+            ? `${label}, you have all ${spec.max}`
+            : `${label}, ${count} of ${spec.max}, costs ${spec.cost} fuel`
+        }
         onPress={buy}
         onPressIn={() => setPressed(true)}
         onPressOut={() => setPressed(false)}
@@ -441,11 +492,27 @@ export function ShopPanel({ onUnaffordable }: ShopPanelProps) {
   const fuelBudget = usePlacement((state) => state.fuelBudget);
   const pendingArsenalId = usePlacement((state) => state.pendingArsenalId);
   const [infoKind, setInfoKind] = useState<ArsenalKind | null>(null);
+  const [notice, setNotice] = useState<ShopNotice | null>(null);
   const remaining = fuelBudget - fuelSpent;
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   return (
     <View style={{ width: PANEL_W, height: PANEL_H }}>
-      <Text style={styles.title}>Arsenal</Text>
+      {notice ? (
+        <Text
+          numberOfLines={1}
+          style={[styles.notice, notice.tone === 'green' ? styles.noticeGreen : styles.noticeRed]}
+        >
+          {notice.text}
+        </Text>
+      ) : (
+        <Text style={styles.title}>Arsenal</Text>
+      )}
       <Animated.View
         pointerEvents={pendingArsenalId ? 'none' : 'auto'}
         style={[styles.scroller, { opacity: pendingArsenalId ? 0.32 : 1 }]}
@@ -459,6 +526,7 @@ export function ShopPanel({ onUnaffordable }: ShopPanelProps) {
               remaining={remaining}
               onInfo={setInfoKind}
               onUnaffordable={onUnaffordable}
+              onNotice={setNotice}
             />
           ))}
         </ScrollView>
@@ -479,8 +547,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     height: 28,
   },
+  notice: {
+    height: 28,
+    lineHeight: 26,
+    paddingHorizontal: 8,
+    fontFamily: font.label,
+    fontSize: typeScale.xs,
+    textAlign: 'center',
+  },
+  noticeRed: { color: color.inkRed },
+  noticeGreen: { color: color.inkGreen },
   scroller: { height: PANEL_H - 30 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, paddingHorizontal: 17, paddingBottom: 7 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, paddingHorizontal: 8, paddingBottom: 7 },
+  maxTag: {
+    position: 'absolute',
+    right: 4,
+    bottom: 3,
+    width: 36,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-6deg' }],
+  },
+  maxTagText: {
+    color: color.inkGreen,
+    fontFamily: font.label,
+    fontSize: typeScale.xxs,
+    lineHeight: 14,
+  },
   infoButton: {
     position: 'absolute',
     left: 5,
@@ -540,6 +634,7 @@ const styles = StyleSheet.create({
     fontSize: typeScale.sm,
     textAlign: 'center',
   },
+  cardNameCapped: { right: 42 },
   pendingCopy: {
     position: 'absolute',
     left: 0,

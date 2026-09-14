@@ -41,8 +41,6 @@ export const DEMO_OWN_FLEET: Ship[] = [
   ship('destroyer-3', 'destroyer', 2, 'I5', 'h'),
   ship('boat-1', 'boat', 1, 'A10', 'h'),
   ship('boat-2', 'boat', 1, 'J1', 'h'),
-  ship('boat-3', 'boat', 1, 'J3', 'h'),
-  ship('boat-4', 'boat', 1, 'H10', 'h'),
 ];
 
 export const DEMO_OWN_ARSENAL: ArsenalItem[] = [
@@ -62,8 +60,6 @@ export const DEMO_ENEMY_FLEET: Ship[] = [
   ship('destroyer-3', 'destroyer', 2, 'G6', 'v'),
   ship('boat-1', 'boat', 1, 'J10', 'h'),
   ship('boat-2', 'boat', 1, 'E4', 'h'),
-  ship('boat-3', 'boat', 1, 'H10', 'h'),
-  ship('boat-4', 'boat', 1, 'J1', 'h'),
 ];
 
 export const DEMO_ENEMY_ARSENAL: ArsenalItem[] = [
