@@ -20,6 +20,13 @@ const AccountSchema = z.object({
   welcomeAwarded: z.boolean(),
 });
 
+/**
+ * The server is already awake by the time this runs (src/net/wake.ts pings
+ * /health first), so this only has to cover the work itself: verifying the
+ * Privy token, the Supabase admin calls, and issuing the session handoff.
+ */
+const SYNC_TIMEOUT_MS = 30_000;
+
 const ResponseSchema = z.object({
   account: AccountSchema,
   session: z
@@ -65,15 +72,28 @@ export async function syncPrivyAccount(privyAccessToken: string): Promise<Synced
   };
   if (supabaseToken.ok) headers['X-Supabase-Access-Token'] = supabaseToken.value;
 
+  // Bounded on purpose. A host that accepts the connection but never answers —
+  // an instance still coming up, or a proxy holding the socket open — would
+  // otherwise leave this pending forever, and the loader waiting on it with it.
+  // Failing is recoverable (the gate offers a retry); hanging is not.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SYNC_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetch(url, {
       method: 'POST',
       body: '{}',
       headers,
+      signal: controller.signal,
     });
   } catch {
-    throw new Error('The game server could not be reached. Start the backend and retry.');
+    throw new Error(
+      controller.signal.aborted
+        ? 'The game server took too long to answer. Try again in a moment.'
+        : 'The game server could not be reached. Start the backend and retry.',
+    );
+  } finally {
+    clearTimeout(timer);
   }
   if (!response.ok) throw new Error(await responseMessage(response));
   const parsed = ResponseSchema.safeParse(await response.json());

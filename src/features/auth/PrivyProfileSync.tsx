@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { subscribeConnectivity } from '@/net/connectivity';
 import { cloudAsLocal, pullCloudProfile, shouldRestoreCloudProfile } from '@/net/profileSync';
 import { syncPrivyAccount } from '@/net/privySync';
+import { ensureBackendAwake } from '@/net/wake';
 import { useCloud } from '@/state/cloud';
 import { usePrivySync } from '@/state/privySync';
 import { usePoints } from '@/state/points';
@@ -36,6 +37,12 @@ export function PrivyProfileSync() {
       try {
         const token = await getAccessToken();
         if (!token) throw new Error('Privy session expired. Please sign in again.');
+        // The host suspends the instance when it is idle, so the sync would
+        // otherwise be the request that pays for the cold start — hanging with
+        // nothing to show. Waking first turns that into a visible, counted
+        // wait (BackendWakeGate), and costs one fast ping when it is awake.
+        await ensureBackendAwake();
+        if (cancelled) return;
         const account = await syncPrivyAccount(token);
         if (cancelled) return;
         // The gameplay session installed above is what makes this row readable,

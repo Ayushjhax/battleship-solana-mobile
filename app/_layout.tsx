@@ -21,6 +21,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { initializeAudio, refreshAudioSettings, setAudioActive, setMusic } from '@/audio';
 import { AuthErrorScreen, AuthLoadingScreen } from '@/features/auth/AuthStatusScreen';
+import { BackendWakeGate } from '@/features/auth/BackendWakeGate';
 import { PrivyLoginScreen } from '@/features/auth/PrivyLoginScreen';
 import { PrivyProfileSync } from '@/features/auth/PrivyProfileSync';
 import { ResumeMatchPrompt } from '@/features/battle/ResumeMatchPrompt';
@@ -183,6 +184,10 @@ function AuthenticatedApp() {
       <WelcomePointsModal />
       {/* Finds the player wherever they are when a match outlived the app. */}
       <ResumeMatchPrompt />
+      {/* A sibling of the Stack, not a Modal, so its blur has the real screen
+          behind it. Holds onboarding and the welcome bonus until the account
+          handoff has actually landed. */}
+      <BackendWakeGate />
     </>
   );
 }

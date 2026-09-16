@@ -4,20 +4,32 @@
 # it by hand in the dashboard, use these same values (see README.md's
 # "Deploying the match server" section for the field-by-field walkthrough).
 #
-# Match state (rooms, matchmaking queues) lives in process memory, so this
-# must run as exactly one always-on instance:
-#   - plan must NOT be "free" — Render's free web services spin down after
-#     15 minutes idle, which would silently drop every in-progress match.
-#   - do not enable autoscaling / add a second instance. A second process
-#     can't see the first one's rooms, so matches would randomly 50/50 land
-#     on a server that's never heard of them.
+# Match state (rooms, matchmaking queues) lives in process memory, so this must
+# run as exactly ONE instance. Never enable autoscaling or add a second one: a
+# second process cannot see the first one's rooms, so matches would randomly
+# land on a server that has never heard of them.
+#
+# This is set to the free plan deliberately, with eyes open. Free instances
+# suspend after ~15 minutes without inbound traffic, and that has two costs:
+#
+#   1. Any match in progress when it suspends is gone. The clients see the
+#      socket close and their reconnect fails; the 45-second grace expires and
+#      the match is forfeited. Nothing is corrupted — settlement is atomic and
+#      wagers are held in Postgres, not in memory — but the game is over.
+#   2. The first request after a suspension waits for a container cold start,
+#      tens of seconds. The app handles this rather than hanging: it pings
+#      /health until the server answers (src/net/wake.ts) and holds onboarding
+#      behind a loader until the account handoff lands.
+#
+# Move to `starter` for anything with real players: it stays always-on, which
+# removes both costs above without another change anywhere.
 services:
   - type: web
     name: seabattle-match-server
     env: docker
     dockerfilePath: ./server/Dockerfile
     dockerContext: .
-    plan: starter
+    plan: free
     region: oregon
     healthCheckPath: /health
     autoDeploy: true

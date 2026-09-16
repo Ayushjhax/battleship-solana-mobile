@@ -65,7 +65,7 @@ Point the app at it with `EXPO_PUBLIC_WS_URL` in `.env`:
    | Dockerfile Path | `server/Dockerfile` |
    | Docker Build Context Directory | `.` (repo root, **not** `server`) |
    | Health Check Path | `/health` |
-   | Plan | **Starter or higher — never Free** |
+   | Plan | `Free` to try it, `Starter` for real players — see below |
    | Instances | **1**, no autoscaling |
 
 3. Set env vars in the dashboard (never commit these): `SUPABASE_URL`,
@@ -77,11 +77,25 @@ Point the app at it with `EXPO_PUBLIC_WS_URL` in `.env`:
    `wss://<name>.onrender.com/ws` (Render terminates TLS and proxies WebSocket upgrades
    transparently — no extra config needed).
 
-**Why not the Free plan or autoscaling:** match state (rooms, matchmaking queues) lives
-in process memory. Free web services on Render spin down after 15 minutes idle, which
-would silently drop every in-progress match; a second instance can't see the first
-one's rooms, so matches would randomly land on a server that's never heard of them.
-One always-on instance is a hard requirement, not a cost optimization.
+**Never autoscale.** Match state (rooms, matchmaking queues) lives in process memory, so
+a second instance can't see the first one's rooms and matches would randomly land on a
+server that's never heard of them. One instance is a hard requirement.
+
+**What the Free plan costs.** Free instances suspend after ~15 minutes without inbound
+traffic. Two consequences, both handled but neither free:
+
+- A match in progress when it suspends is lost. Clients see the socket close, the
+  reconnect fails, and the 45-second grace forfeits it. Nothing is corrupted — the
+  result settlement is one atomic transaction and wagers are held in Postgres, not in
+  memory — but that game is over.
+- The first request after a suspension pays for a container cold start, tens of seconds.
+  The app expects this: `src/net/wake.ts` polls `/health` until the server answers and
+  `BackendWakeGate` holds onboarding, the welcome bonus and the menu behind a loader
+  until the account handoff actually lands, so nobody types a name into a screen that
+  can't save it. A warm server answers the first ping in well under a second and the
+  loader never appears.
+
+`Starter` removes both, and needs no code change — flip `plan` in `render.yaml`.
 
 ## Checks
 

@@ -295,6 +295,49 @@ app.post('/offline-results', async (request, reply) => {
   }
 });
 
+let wss: ReturnType<typeof attachWebSocketServer> | null = null;
+
+/**
+ * The host sends SIGTERM before it replaces a deploy or suspends an idle
+ * instance, then kills the process shortly after. Closing the sockets first
+ * means every connected client gets a real close frame and can start
+ * reconnecting immediately, instead of holding a half-open socket until its
+ * own 20-second liveness check notices. Rooms live in memory and go with the
+ * process either way — this is about not leaving clients hanging.
+ */
+let shuttingDown = false;
+function shutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  app.log.info(`${signal} received — closing connections`);
+
+  if (wss) {
+    for (const client of wss.clients) {
+      try {
+        client.close(1001, 'server shutting down');
+      } catch {
+        /* already gone */
+      }
+    }
+    wss.close();
+  }
+
+  // Never outstay the platform's grace period; exit even if close() stalls.
+  const hardStop = setTimeout(() => process.exit(0), 8_000);
+  hardStop.unref?.();
+
+  void app.close().then(
+    () => process.exit(0),
+    (error: unknown) => {
+      app.log.error(error);
+      process.exit(1);
+    },
+  );
+}
+
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
+
 async function main(): Promise<void> {
   await verifyDatabaseConnection();
   app.log.info('database connected: Supabase profiles, Privy accounts, and points schema ready');
@@ -304,7 +347,7 @@ async function main(): Promise<void> {
     app.log.warn('Privy server authentication is not configured');
   }
   await app.listen({ port, host: '0.0.0.0' });
-  attachWebSocketServer(app.server, (msg) => app.log.info(msg));
+  wss = attachWebSocketServer(app.server, (msg) => app.log.info(msg));
   app.log.info(`ws listening on ws://0.0.0.0:${port}/ws`);
   app.log.info(`backend ready: HTTP and WebSocket live on port ${port}`);
 }
