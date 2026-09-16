@@ -34,6 +34,7 @@ import { chooseMove } from '@engine/ai';
 import { REWARD } from '@engine/ranks';
 
 import {
+  abandonMatch,
   appendMatchEvent,
   applyMatchResult,
   BOT_PLAYER_ID,
@@ -56,6 +57,13 @@ const LATENCY_GRACE_MS = 2000;
 const TURN_TIMEOUT_MS = envMs('SEABATTLE_TURN_TIMEOUT_MS', TURN_SECONDS * 1000 + LATENCY_GRACE_MS);
 const LAYOUT_DEADLINE_MS = envMs('SEABATTLE_LAYOUT_DEADLINE_MS', 90_000);
 const DISCONNECT_GRACE_MS = envMs('SEABATTLE_DISCONNECT_GRACE_MS', 45_000);
+/**
+ * Both human captains are away. Neither should lose a match the other is not
+ * playing either, so the room simply waits: if they both come back it carries
+ * on exactly where it stopped. Shorter than the single-player grace because
+ * nobody is sitting in front of a frozen board waiting it out.
+ */
+const ABANDON_GRACE_MS = envMs('SEABATTLE_ABANDON_GRACE_MS', 20_000);
 const BOT_LAYOUT_DELAY_MS = envMs('SEABATTLE_BOT_LAYOUT_DELAY_MS', 1200);
 const BOT_THINK_MIN_MS = envMs('SEABATTLE_BOT_THINK_MIN_MS', 900);
 const BOT_THINK_SPREAD_MS = envMs('SEABATTLE_BOT_THINK_SPREAD_MS', 600);
@@ -99,6 +107,8 @@ export class Room {
   private turnEndsAt: number | null = null;
   private layoutTimer: NodeJS.Timeout | null = null;
   private botTurnTimer: NodeJS.Timeout | null = null;
+  /** Running while every human seat is disconnected. See ABANDON_GRACE_MS. */
+  private abandonTimer: NodeJS.Timeout | null = null;
   private finished = false;
   private cancellingBeforeStart = false;
   /** Set just before a disconnect-forced RESIGN so the DB record says why. */
@@ -182,12 +192,22 @@ export class Room {
    */
   attach(playerId: string, socket: WebSocket): boolean {
     const seat = this.seatOf(playerId);
-    if (!seat) return false;
+    if (!seat || this.finished) return false;
     seat.socket = socket;
     seat.connected = true;
     if (seat.disconnectTimer) {
       clearTimeout(seat.disconnectTimer);
       seat.disconnectTimer = null;
+    }
+    // Somebody is back, so the room is no longer abandoned. Anyone still away
+    // goes back on their own forfeit clock — returning first must not buy the
+    // other captain an indefinite wait.
+    if (this.abandonTimer) {
+      clearTimeout(this.abandonTimer);
+      this.abandonTimer = null;
+      for (const other of this.seats) {
+        if (!other.isBot && !other.connected) this.armForfeit(other);
+      }
     }
 
     this.sendMatched(playerId);
@@ -206,11 +226,62 @@ export class Room {
     seat.connected = false;
     this.broadcastState();
 
+    // Nobody left to play or to award: hold the room briefly instead of
+    // forfeiting one of two captains who both walked away. abandonMatch()
+    // closes it with no winner if neither returns.
+    if (this.seats.every((s) => !s.isBot && !s.connected)) {
+      for (const other of this.seats) {
+        if (other.disconnectTimer) {
+          clearTimeout(other.disconnectTimer);
+          other.disconnectTimer = null;
+        }
+      }
+      this.abandonTimer = setTimeout(() => void this.abandonRoom(), ABANDON_GRACE_MS);
+      return;
+    }
+
+    this.armForfeit(seat);
+  }
+
+  /** The lone-absentee clock: 45 s away and the match is forfeited. */
+  private armForfeit(seat: Seat): void {
+    if (seat.disconnectTimer) clearTimeout(seat.disconnectTimer);
     seat.disconnectTimer = setTimeout(() => {
       if (this.finished || seat.connected) return;
       this.forcedDbReason = 'disconnect';
-      this.applyAction({ type: 'RESIGN', playerId });
+      this.applyAction({ type: 'RESIGN', playerId: seat.playerId });
     }, DISCONNECT_GRACE_MS);
+  }
+
+  /**
+   * Neither captain came back. The match closes with no winner, no rank
+   * movement and no refund — the row and both stakes settle in one statement
+   * (0013). Nobody is connected, so there is nothing to notify.
+   */
+  private async abandonRoom(): Promise<void> {
+    this.abandonTimer = null;
+    if (this.finished) return;
+    if (this.seats.some((seat) => seat.connected)) return;
+    this.finished = true;
+    this.clearAllTimers();
+    try {
+      await abandonMatch(this.id);
+    } catch (error) {
+      console.error(`[room ${this.id}] could not record the abandonment`, error);
+    }
+    this.onFinished(this);
+  }
+
+  private clearAllTimers(): void {
+    if (this.turnTimer) clearTimeout(this.turnTimer);
+    if (this.layoutTimer) clearTimeout(this.layoutTimer);
+    if (this.botTurnTimer) clearTimeout(this.botTurnTimer);
+    if (this.abandonTimer) clearTimeout(this.abandonTimer);
+    this.turnTimer = this.layoutTimer = this.botTurnTimer = this.abandonTimer = null;
+    for (const seat of this.seats) {
+      if (seat.disconnectTimer) clearTimeout(seat.disconnectTimer);
+      seat.disconnectTimer = null;
+    }
   }
 
   /**
@@ -238,10 +309,7 @@ export class Room {
       }
 
       this.finished = true;
-      if (this.turnTimer) clearTimeout(this.turnTimer);
-      if (this.layoutTimer) clearTimeout(this.layoutTimer);
-      if (this.botTurnTimer) clearTimeout(this.botTurnTimer);
-      for (const seat of this.seats) if (seat.disconnectTimer) clearTimeout(seat.disconnectTimer);
+      this.clearAllTimers();
 
       const byProfile = new Map(balances.map((entry) => [entry.profileId, entry.balance]));
       for (const seat of this.seats) {
@@ -441,10 +509,7 @@ export class Room {
 
   private finish(events: readonly MatchEvent[]): void {
     this.finished = true;
-    if (this.turnTimer) clearTimeout(this.turnTimer);
-    if (this.layoutTimer) clearTimeout(this.layoutTimer);
-    if (this.botTurnTimer) clearTimeout(this.botTurnTimer);
-    for (const seat of this.seats) if (seat.disconnectTimer) clearTimeout(seat.disconnectTimer);
+    this.clearAllTimers();
 
     const over = events.find((e): e is Extract<MatchEvent, { type: 'GAME_OVER' }> => e.type === 'GAME_OVER');
     const winnerId = over?.winner ?? this.state.winner ?? this.state.players[0].id;

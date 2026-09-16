@@ -23,6 +23,7 @@ import { initializeAudio, refreshAudioSettings, setAudioActive, setMusic } from 
 import { AuthErrorScreen, AuthLoadingScreen } from '@/features/auth/AuthStatusScreen';
 import { PrivyLoginScreen } from '@/features/auth/PrivyLoginScreen';
 import { PrivyProfileSync } from '@/features/auth/PrivyProfileSync';
+import { ResumeMatchPrompt } from '@/features/battle/ResumeMatchPrompt';
 import { WelcomePointsModal } from '@/features/points/WelcomePointsModal';
 import { subscribeConnectivity } from '@/net/connectivity';
 import { flushPendingResults } from '@/net/offlineResults';
@@ -180,6 +181,8 @@ function AuthenticatedApp() {
         <Stack.Screen name="(onboarding)/progress" options={{ animation: 'slide_from_right' }} />
       </Stack>
       <WelcomePointsModal />
+      {/* Finds the player wherever they are when a match outlived the app. */}
+      <ResumeMatchPrompt />
     </>
   );
 }

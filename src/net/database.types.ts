@@ -496,6 +496,7 @@ export type Database = {
         Args: { p_error: string; p_request_id: string }
         Returns: number
       }
+      abandon_match: { Args: { p_match_id: string }; Returns: boolean }
       settle_offline_wager: {
         Args: { p_profile_id: string; p_request_id: string; p_won: boolean }
         Returns: { balance: number; settled: boolean }[]

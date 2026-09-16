@@ -281,6 +281,25 @@ check(r.settled === false, 'a hold owned by a server room is never settled as an
 await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [ROOM_MATCH, A]);
 check((await balanceOf(A)) === 200, 'the offline wager checks left A’s balance where they found it');
 
+// 0013 - both captains walked out: nobody wins, and no stake comes back.
+const ABANDON_HOLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa8';
+const ABANDON_MATCH = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd5';
+await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, ABANDON_HOLD]);
+await q(`select public.create_wagered_match($1, 'classic', $2, $3, 11, true, $4, null)`, [ABANDON_MATCH, A, BOT, ABANDON_HOLD]);
+const beforeAbandon = { balance: await balanceOf(A), points: Number((await q(`select rank_points from public.profiles where id = $1`, [A])).rows[0].rank_points) };
+r = (await q(`select public.abandon_match($1) as ok`, [ABANDON_MATCH])).rows[0];
+const abandoned = (await q(`select winner, ended_at, end_reason from public.matches where id = $1`, [ABANDON_MATCH])).rows[0];
+check(r.ok === true && abandoned.winner === null && abandoned.ended_at !== null, 'abandoning closes the match with no winner');
+check((await balanceOf(A)) === beforeAbandon.balance, 'an abandoned wager returns nothing to either captain');
+check(Number((await q(`select rank_points from public.profiles where id = $1`, [A])).rows[0].rank_points) === beforeAbandon.points, 'an abandoned match moves no rank points');
+check((await q(`select count(*)::int as n from public.point_wager_holds where match_id = $1 and status = 'settled'`, [ABANDON_MATCH])).rows[0].n === 1, 'the abandoned stake is settled, not left held');
+check((await q(`select public.abandon_match($1) as ok`, [ABANDON_MATCH])).rows[0].ok === false, 'abandoning twice changes nothing');
+check((await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [ABANDON_MATCH, A])).rows[0].ok === false, 'an abandoned match can never be settled for a winner afterwards');
+// That stake is gone for good, which is the point. Put it back by hand so the
+// point-trade checks below can keep asserting absolute balances.
+await q(`update public.point_accounts set balance = balance + 50 where privy_user_id = public.point_identity_for_profile($1)`, [A]);
+check((await balanceOf(A)) === 200, 'the abandonment checks left A’s balance where they found it');
+
 const BUY_REQUEST = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
 const BUY_REPLAY = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
 const BUY_SIGNATURE = 'confirmed-solana-signature-0000000000000001';

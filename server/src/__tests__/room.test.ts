@@ -10,7 +10,7 @@
  * and re-mocks before its own fresh dynamic import.
  */
 import type { Coord } from '@engine/types';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   connectClient,
@@ -367,4 +367,185 @@ describe('disconnect and reconnect', () => {
     other.close();
     await server.close();
   });
+
+  it('offers nothing to a player who comes back after losing on the grace period', async () => {
+    const [alice, bob] = await setUpMatch(server);
+    const turnMsg = await alice.waitFor((m) => m.t === 'turn');
+    const quitter = turnMsg.playerId === 'alice' ? alice : bob;
+    const stayer = quitter === alice ? bob : alice;
+    const quitterId = quitter.playerId;
+
+    quitter.raw().terminate();
+    await stayer.waitFor((m) => m.t === 'over', 3000);
+
+    // The room is gone, so the returning player has nothing to be attached to:
+    // no `matched`, which is what the rejoin prompt keys off. They land on the
+    // menu free to start a new match, not staring at a dead room's offer.
+    const { rooms, roomIdForPlayer } = await import('../room');
+    expect(rooms.size).toBe(0);
+    expect(roomIdForPlayer.get(quitterId)).toBeUndefined();
+
+    const back = await reconnectClient(server.port, quitterId);
+    await expect(back.waitFor((m) => m.t === 'matched', 800)).rejects.toThrow();
+    expect(back.history().some((m) => m.t === 'matched')).toBe(false);
+    expect(back.history().some((m) => m.t === 'hello:ok')).toBe(true);
+
+    back.close();
+    stayer.close();
+    await server.close();
+  }, 20000);
+});
+
+describe('returning while a decided match is still settling', () => {
+  it('does not offer a rejoin for a room that is finished but not yet swept', async () => {
+    vi.resetModules();
+    process.env.SEABATTLE_DISCONNECT_GRACE_MS = '300';
+    delete process.env.SEABATTLE_TURN_TIMEOUT_MS;
+    installAuthMock();
+    // Settlement is held open, so the room stays in the registry with
+    // finished = true — the narrow window a fast app relaunch can land in.
+    installDbMock({ settleDelayMs: 2000 });
+    const server = await startTestServer();
+
+    const [alice, bob] = await setUpMatch(server);
+    const turnMsg = await alice.waitFor((m) => m.t === 'turn');
+    const quitter = turnMsg.playerId === 'alice' ? alice : bob;
+    const quitterId = quitter.playerId;
+    const stayer = quitter === alice ? bob : alice;
+
+    quitter.raw().terminate();
+    await sleep(700); // past the grace: the room has decided, and is settling
+
+    const { rooms } = await import('../room');
+    expect(rooms.size).toBe(1); // still registered — this is the window
+
+    // attach() refuses a finished room, so no `matched` goes out and the
+    // prompt never appears for a match that is already lost.
+    const back = await reconnectClient(server.port, quitterId);
+    await expect(back.waitFor((m) => m.t === 'matched', 800)).rejects.toThrow();
+
+    // And once settlement lands the room sweeps itself away as normal.
+    await stayer.waitFor((m) => m.t === 'over', 5000);
+    await sleep(100);
+    expect(rooms.size).toBe(0);
+
+    back.close();
+    stayer.close();
+    await server.close();
+    delete process.env.SEABATTLE_DISCONNECT_GRACE_MS;
+  }, 20000);
+});
+
+describe('both captains walk away', () => {
+  let server: TestServer;
+  let dbCalls: DbCall[];
+
+  beforeEach(async () => {
+    vi.resetModules();
+    // Long enough that the abandon window is what these tests measure, not
+    // one player's own forfeit clock.
+    process.env.SEABATTLE_DISCONNECT_GRACE_MS = '4000';
+    process.env.SEABATTLE_ABANDON_GRACE_MS = '500';
+    delete process.env.SEABATTLE_TURN_TIMEOUT_MS;
+    installAuthMock();
+    dbCalls = installDbMock().calls;
+    server = await startTestServer();
+  });
+
+  afterEach(() => {
+    delete process.env.SEABATTLE_ABANDON_GRACE_MS;
+    delete process.env.SEABATTLE_DISCONNECT_GRACE_MS;
+  });
+
+  it('closes the match with no winner when neither comes back', async () => {
+    const [alice, bob, matchId] = await setUpMatch(server);
+    await alice.waitFor((m) => m.t === 'turn');
+
+    alice.raw().terminate();
+    bob.raw().terminate();
+    await sleep(900);
+
+    // Nobody is awarded, and nothing is settled for a winner.
+    expect(dbCalls.filter((c) => c.fn === 'applyMatchResult')).toHaveLength(0);
+    const abandoned = dbCalls.filter((c) => c.fn === 'abandonMatch');
+    expect(abandoned).toHaveLength(1);
+    expect(abandoned[0]?.args).toEqual([matchId]);
+
+    // And the room is gone, so neither player is stranded in an empty one.
+    const { rooms, roomIdForPlayer } = await import('../room');
+    expect(rooms.size).toBe(0);
+    expect(roomIdForPlayer.get('alice')).toBeUndefined();
+    expect(roomIdForPlayer.get('bob')).toBeUndefined();
+
+    await server.close();
+  }, 20000);
+
+  it('carries on exactly where it stopped when both rejoin in time', async () => {
+    const [alice, bob, matchId] = await setUpMatch(server);
+    const turnMsg = await alice.waitFor((m) => m.t === 'turn');
+    const shooterId = turnMsg.playerId as string;
+    const shooter = shooterId === 'alice' ? alice : bob;
+
+    // One confirmed hit, so the resumed board has something to preserve.
+    const firstCell = OPPONENT_CELLS[0] as Coord;
+    shooter.send({ t: 'action', v: 1, seq: 0, action: { type: 'FIRE', at: firstCell } });
+    await shooter.waitFor((m) => m.t === 'events');
+
+    alice.raw().terminate();
+    bob.raw().terminate();
+    await sleep(150);
+
+    const backA = await reconnectClient(server.port, 'alice', matchId);
+    const backB = await reconnectClient(server.port, 'bob', matchId);
+    // Past the abandon window: returning has to have cancelled it.
+    await sleep(700);
+
+    const { rooms } = await import('../room');
+    expect(rooms.size).toBe(1);
+    expect(dbCalls.filter((c) => c.fn === 'abandonMatch')).toHaveLength(0);
+
+    // The board each captain gets back is the one they left: same marks, same
+    // ships, same turn.
+    const resumedShooter = shooterId === 'alice' ? backA : backB;
+    const state = await resumedShooter.waitFor((m) => m.t === 'state');
+    const view = state.view as {
+      enemy: { marks: Record<string, string> };
+      you: { board: { ships: unknown[] } };
+      turn: string;
+    };
+    expect(view.enemy.marks[`${firstCell.r},${firstCell.c}`]).toBe('hit');
+    expect(view.you.board.ships).toHaveLength(KNOWN_LAYOUT.length);
+
+    // And it is still playable to a real finish.
+    const other = resumedShooter === backA ? backB : backA;
+    const over = await playToVictory(resumedShooter, other, OPPONENT_CELLS.slice(1), 1);
+    expect(over.reason).toBe('fleet');
+
+    backA.close();
+    backB.close();
+    await server.close();
+  }, 30000);
+
+  it('still forfeits the absentee when only one of the two returns', async () => {
+    const [alice, bob, matchId] = await setUpMatch(server);
+    await alice.waitFor((m) => m.t === 'turn');
+
+    alice.raw().terminate();
+    bob.raw().terminate();
+    await sleep(150);
+
+    // Alice is back; Bob never is. Alice must not be punished for returning,
+    // and Bob's own forfeit clock has to start again.
+    process.env.SEABATTLE_DISCONNECT_GRACE_MS = '4000';
+    const backA = await reconnectClient(server.port, 'alice', matchId);
+    await sleep(900);
+
+    // The abandon window passed without firing, because someone came back.
+    expect(dbCalls.filter((c) => c.fn === 'abandonMatch')).toHaveLength(0);
+    const over = await backA.waitFor((m) => m.t === 'over', 6000);
+    expect(over.winnerId).toBe('alice');
+
+    backA.close();
+    await server.close();
+  }, 30000);
 });

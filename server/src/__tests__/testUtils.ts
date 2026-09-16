@@ -33,7 +33,16 @@ export interface DbCall {
 }
 
 /** Every db.ts export, recording calls so a test can assert on them. */
-export function installDbMock(): { calls: DbCall[] } {
+export interface DbMockOptions {
+  /**
+   * Holds up applyMatchResult, so a test can act inside the window where a
+   * room is finished but its settlement has not returned and the registry has
+   * not been cleaned yet.
+   */
+  readonly settleDelayMs?: number;
+}
+
+export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } {
   const calls: DbCall[] = [];
   const wagerPlayers = new Map<string, readonly string[]>();
   const record =
@@ -77,8 +86,15 @@ export function installDbMock(): { calls: DbCall[] } {
     }),
     fetchPointBalance: vi.fn(async () => 100),
     appendMatchEvent: vi.fn(async (...args: unknown[]) => record('appendMatchEvent')(...args)),
+    abandonMatch: vi.fn(async (matchId: string) => {
+      record('abandonMatch')(matchId);
+      return true;
+    }),
     applyMatchResult: vi.fn(async (...args: unknown[]) => {
       record('applyMatchResult')(...args);
+      if (options.settleDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.settleDelayMs));
+      }
       return true;
     }),
     dbEndReason: (reason: string) => (reason === 'fleet' ? 'victory' : reason === 'forfeit' ? 'timeout' : 'resign'),

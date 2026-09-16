@@ -85,6 +85,12 @@ interface Totals {
    * payout is still in flight when this screen opens.
    */
   readonly wager: { stake: number; prize: number } | null;
+  /**
+   * An online result this device has not mirrored into the profile yet. It is
+   * applied from an effect, never while rendering: a store write during render
+   * updates other subscribed components mid-render, which React rejects.
+   */
+  readonly settle: { matchId: string; won: boolean; reward: { points: number; coins: number } } | null;
 }
 
 /** The demo menu's forced results: shown as given, nothing written to the profile. */
@@ -95,6 +101,11 @@ export interface ForcedTotals {
   readonly coinsAfter: number;
 }
 
+/**
+ * Works out every number this screen shows. PURE — it reads the stores but
+ * writes nothing, so it is safe to run from a useState initialiser. The one
+ * write it implies is handed back as `settle` for an effect to perform.
+ */
 function prepare(
   won: boolean,
   local: boolean,
@@ -110,22 +121,32 @@ function prepare(
         coins: forced.coinsAfter - forced.coinsBefore,
       },
       wager: null,
+      settle: null,
     };
   }
   const profile = useProfile.getState();
   const over = !local ? useMatchClient.getState().over : undefined;
   const reward = over?.rewards ?? (won ? REWARD.win : REWARD.loss);
-  if (!local && matchId) profile.recordOnlineResult(matchId, won, reward);
-  const after = useProfile.getState();
+
+  // Offline results were already applied by the battle store before this route
+  // opened, so the profile is the "after". An online one has not been applied
+  // yet — unless this is a re-mount of a match already in settledMatchIds —
+  // so the "after" is computed rather than read back.
+  const unapplied =
+    !local && matchId.length > 0 && !profile.settledMatchIds.includes(matchId);
+  const pointsAfter = unapplied ? profile.rankPoints + reward.points : profile.rankPoints;
+  const coinsAfter = unapplied ? profile.coins + reward.coins : profile.coins;
+
   return {
-    pointsBefore: after.rankPoints - reward.points,
-    pointsAfter: after.rankPoints,
-    coinsBefore: after.coins - reward.coins,
-    coinsAfter: after.coins,
+    pointsBefore: pointsAfter - reward.points,
+    pointsAfter,
+    coinsBefore: coinsAfter - reward.coins,
+    coinsAfter,
     reward,
     wager: wagered
       ? (over?.wager ?? { stake: WAGER_STAKE, prize: won ? WAGER_STAKE * 2 : 0 })
       : null,
+    settle: unapplied ? { matchId, won, reward } : null,
   };
 }
 
@@ -497,6 +518,15 @@ export default function ResultScreen() {
     const id = setTimeout(() => playSfx('coinFlow'), T_COINS);
     return () => clearTimeout(id);
   }, []);
+
+  // Mirror the server's settlement into the profile so the menu reads right at
+  // once. recordOnlineResult is keyed by match id, so a re-mount (or React
+  // invoking this effect twice) cannot double count.
+  useEffect(() => {
+    const settle = totals.settle;
+    if (!settle) return;
+    useProfile.getState().recordOnlineResult(settle.matchId, settle.won, settle.reward);
+  }, [totals]);
 
   // The result has already captured every server value it needs. Clear the
   // completed socket state so a later local game can never reuse this match.

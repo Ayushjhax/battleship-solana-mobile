@@ -105,6 +105,14 @@ export interface MatchFailure {
   readonly detail: string;
 }
 
+/** A live match the server still holds for us, waiting on rejoin or resign. */
+export interface ResumeOffer {
+  readonly matchId: string;
+  readonly opponentName: string;
+  readonly wagered: boolean;
+  readonly wagerStake: number;
+}
+
 export interface MatchOver {
   readonly winnerId: string;
   readonly reason: GameOverReason;
@@ -145,6 +153,12 @@ interface MatchClientData {
   queuePosition: number | null;
   onlineCount: number | null;
   over: MatchOver | null;
+  /**
+   * Set when the server attaches us to a match this session never entered —
+   * the app was closed (or crashed) mid-game and the room is still open.
+   * ResumeMatchPrompt turns it into a rejoin-or-resign choice.
+   */
+  resumeOffer: ResumeOffer | null;
   lastError: { code: ErrorCode; message: string } | null;
   /** Bumps on every server `error` — an illegal_action clears an optimistic shot. */
   errorNonce: number;
@@ -161,6 +175,19 @@ interface MatchClientActions {
   ) => void;
   cancelQueue: () => Promise<void>;
   /** `ready` with the placed fleet. Re-sent automatically after a reconnect if it never landed. */
+  /**
+   * Quietly ask the server whether it still holds a match for us — the app was
+   * closed mid-game, or crashed. Only runs from `idle`, never interrupts a
+   * live flow, and stays silent when there is nothing to find.
+   */
+  discover: () => void;
+  /** This session is taking the match onto the battle screen. Clears the offer. */
+  enterMatch: () => void;
+  /**
+   * Give the offered match up: the opponent wins it immediately. False when
+   * the socket was already gone, in which case the offer is left standing.
+   */
+  declineResume: () => boolean;
   ready: (layout: LayoutPayload) => void;
   /**
    * Refuse to play on a layout the engine has already rejected, rather than
@@ -200,6 +227,12 @@ const OPEN_TIMEOUT_MS = 8_000;
 const RESYNC_TIMEOUT_MS = 6_000;
 /** Outside a match there is nothing to protect; stop trying after ~7.5 s (500+1000+2000+4000). */
 const MAX_INITIAL_ATTEMPTS = 4;
+/**
+ * How long a discovery connect waits for a `matched` after `hello:ok`. The
+ * room attaches synchronously inside the hello handler, so anything that has
+ * not arrived by now does not exist.
+ */
+const DISCOVER_TIMEOUT_MS = 4_000;
 
 /** In a match: a protocol `ping` this often, and this much silence means the socket is dead. */
 const LIVENESS_PING_MS = 10_000;
@@ -252,6 +285,15 @@ let layoutPending = false;
 let closedOnPurpose = false;
 /** Set when we lose the socket mid-match; cleared on resync. */
 let disconnectedAt: number | null = null;
+/**
+ * The match this app session has actually opened the battle screen for. A
+ * `matched` for anything else is a match we walked away from and the server
+ * still has — an offer to rejoin, not a match to drop the player into.
+ */
+let enteredMatchId: string | null = null;
+/** A quiet connect that exists only to ask "do I still have a match?". */
+let discovering = false;
+let discoverTimer: ReturnType<typeof setTimeout> | null = null;
 
 const EMPTY: MatchClientData = {
   status: 'idle',
@@ -278,6 +320,7 @@ const EMPTY: MatchClientData = {
   queuePosition: null,
   onlineCount: null,
   over: null,
+  resumeOffer: null,
   lastError: null,
   errorNonce: 0,
   reconnectAttempt: 0,
@@ -365,11 +408,26 @@ function send(message: ClientMessage): boolean {
 }
 
 function fail(reason: FailureReason, detail: string): void {
-  log(`failed: ${reason} — ${detail}`);
   settlePendingCancellation();
   clearAllTimers();
   dropSocket();
+  // Discovery is a background question nobody asked out loud. If it cannot be
+  // answered — no session yet, server down, offline — the answer is simply
+  // "no match", and the app carries on. A visible failure here would ambush a
+  // player who was only opening the menu.
+  if (discovering && !useMatchClient.getState().matchId) {
+    log(`discovery gave up: ${reason} — ${detail}`);
+    endDiscovery();
+    useMatchClient.setState({ ...EMPTY });
+    return;
+  }
+  log(`failed: ${reason} — ${detail}`);
   useMatchClient.setState({ status: 'failed', failure: { reason, detail }, reconnectDeadline: null });
+}
+
+function endDiscovery(): void {
+  discovering = false;
+  discoverTimer = clearTimer(discoverTimer);
 }
 
 /** Detach handlers and close, without triggering the reconnect path. */
@@ -655,6 +713,8 @@ function handleMessage(message: ServerMessage): void {
         // The replay that follows is absorbed; the `state` after it is truth.
         resyncing = true;
         intent = null;
+        discovering = false;
+        discoverTimer = clearTimer(discoverTimer);
         outboundSeq = Math.max(outboundSeq, Date.now());
         set({
           status: s.matchId === message.matchId ? s.status : 'reconnecting',
@@ -667,6 +727,19 @@ function handleMessage(message: ServerMessage): void {
           wagered: message.wagered,
           wagerStake: message.wagerStake,
           queuePosition: null,
+          // A match this session never opened the battle screen for: the
+          // player chooses whether to go back to it. The socket stays attached
+          // either way, so the room is not forfeited while they decide.
+          ...(enteredMatchId === message.matchId
+            ? {}
+            : {
+                resumeOffer: {
+                  matchId: message.matchId,
+                  opponentName: message.opponent.name,
+                  wagered: message.wagered,
+                  wagerStake: message.wagerStake,
+                },
+              }),
         });
         return;
       }
@@ -752,9 +825,14 @@ function handleMessage(message: ServerMessage): void {
     case 'over':
       if (message.wager) usePoints.getState().sync(message.wager.balance);
       closedOnPurpose = true;
+      discovering = false;
+      discoverTimer = clearTimer(discoverTimer);
       clearAllTimers();
       set({
         status: 'over',
+        // The match ended while the rejoin prompt was up (our grace ran out,
+        // or the opponent resigned). There is nothing left to rejoin.
+        resumeOffer: null,
         over: {
           winnerId: message.winnerId,
           reason: message.reason,
@@ -838,6 +916,9 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
       // Already busy with something — a second queue() is a screen re-mount, not a new intent.
       return;
     }
+    // A discovery socket may be open and its timer pending; that timer tears
+    // the socket down and resets the store, which would cancel this queue.
+    endDiscovery();
     closedOnPurpose = false;
     authRetried = false;
     disconnectedAt = null;
@@ -880,6 +961,50 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
       }, 4_000);
     });
     return cancelInFlight;
+  },
+
+  discover: () => {
+    const s = useMatchClient.getState();
+    // Anything other than a cold store means this session already owns the
+    // socket's lifecycle — queueing, playing, reconnecting, or done.
+    if (s.status !== 'idle' || s.resumeOffer || intent || socket || discovering) return;
+    if (!wsUrl() || isForcedOffline()) return;
+
+    discovering = true;
+    closedOnPurpose = false;
+    discoverTimer = clearTimer(discoverTimer);
+    discoverTimer = setTimeout(() => {
+      // hello:ok came back with no `matched` behind it: no match is waiting.
+      if (!discovering) return;
+      const now = useMatchClient.getState();
+      // queue() may have claimed this socket while we were waiting. Tearing it
+      // down here would kill the matchmaking the player actually asked for.
+      if (now.matchId || now.status !== 'idle') return;
+      log('no match waiting to be resumed');
+      endDiscovery();
+      closedOnPurpose = true;
+      clearAllTimers();
+      dropSocket();
+      useMatchClient.setState({ ...EMPTY });
+    }, DISCOVER_TIMEOUT_MS);
+    void connect();
+  },
+
+  enterMatch: () => {
+    enteredMatchId = useMatchClient.getState().matchId;
+    endDiscovery();
+    useMatchClient.setState({ resumeOffer: null });
+  },
+
+  declineResume: () => {
+    const offer = useMatchClient.getState().resumeOffer;
+    endDiscovery();
+    useMatchClient.setState({ resumeOffer: null });
+    if (send(resignMessage())) return true;
+    // The socket died between raising the offer and the tap. Put the choice
+    // back rather than leaving the player staring at "Resigning…".
+    useMatchClient.setState({ resumeOffer: offer });
+    return false;
   },
 
   ready: (layout) => {

@@ -72,6 +72,12 @@ export async function verifyDatabaseConnection(): Promise<void> {
   if (probe.error && isMissingFunction(probe.error)) {
     throw missingMigration('settle_offline_wager', '0012_offline_wagers.sql');
   }
+
+  // No match carries this id, so the function returns false without writing.
+  const abandonProbe = await db().rpc('abandon_match', { p_match_id: unused });
+  if (abandonProbe.error && isMissingFunction(abandonProbe.error)) {
+    throw missingMigration('abandon_match', '0013_abandoned_matches.sql');
+  }
 }
 
 /** For matchmaking's rank window and the `matched` message's player cards. */
@@ -160,6 +166,20 @@ export async function insertWageredMatch(
     p_hold_b: holdB?.requestId ?? null,
   });
   if (error) throw new Error(`create_wagered_match(${input.id}): ${error.message}`);
+}
+
+/**
+ * Closes a match nobody stayed for (0013): no winner, no profile movement, and
+ * the stakes stay forfeited. Idempotent, and it will never overwrite a match
+ * that already has a real result.
+ */
+export async function abandonMatch(matchId: string): Promise<boolean> {
+  const { data, error } = await db().rpc('abandon_match', { p_match_id: matchId });
+  if (error && isMissingFunction(error)) {
+    throw missingMigration('abandon_match', '0013_abandoned_matches.sql');
+  }
+  if (error) throw new Error(`abandonMatch(${matchId}): ${error.message}`);
+  return data === true;
 }
 
 export type DbEndReason = 'victory' | 'resign' | 'timeout' | 'disconnect';

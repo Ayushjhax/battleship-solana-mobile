@@ -166,6 +166,9 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         router.replace('/menu');
         return;
       }
+      // This session now owns the match, so a reconnect from here is the match
+      // client's own business and must never raise the rejoin prompt again.
+      matchClient.enterMatch();
       setup = online;
     } else if (!setup && placement.mode === 'online') {
       // An online route without a live authoritative match is stale.

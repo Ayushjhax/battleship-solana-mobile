@@ -510,6 +510,60 @@ describe('match client', () => {
     expect(server.received.some((m) => m.t === 'cancelQueue')).toBe(true);
   });
 
+  it('offers a match the app was killed out of, without replaying it', async () => {
+    // A room mid-match on the server, and a client that knows nothing about it
+    // — exactly the state after the app is force-quit and reopened.
+    server.room.apply({ type: 'SUBMIT_LAYOUT', playerId: ALICE, ships: autoPlaceFleet(createRng(3)), arsenal: [] });
+    server.room.apply({ type: 'SUBMIT_LAYOUT', playerId: BOT, ships: autoPlaceFleet(createRng(99)), arsenal: [] });
+    server.room.state = { ...server.room.state, turn: ALICE };
+    server.room.apply({ type: 'FIRE', playerId: ALICE, at: { r: 0, c: 0 } });
+
+    const mc = await client();
+    expect(mc.getState().status).toBe('idle');
+    mc.getState().discover();
+
+    await until(() => mc.getState().resumeOffer !== null, 8000, 'a resume offer');
+    const offered = mc.getState();
+    expect(offered.resumeOffer?.matchId).toBe(MATCH_ID);
+    expect(offered.resumeOffer?.opponentName).toBe('Berhan');
+    // The replayed log is absorbed, never animated: the board is restored from
+    // the authoritative view, not by re-playing the match from the first shot.
+    await until(() => mc.getState().view !== null, 8000, 'the authoritative view');
+    expect(mc.getState().pendingEvents).toHaveLength(0);
+    expect(mc.getState().view?.enemy.marks['0,0']).toBeDefined();
+    expect(mc.getState().view?.you.board.ships.length).toBeGreaterThan(0);
+
+    // Taking the match clears the offer, so a later reconnect never re-prompts.
+    mc.getState().enterMatch();
+    expect(mc.getState().resumeOffer).toBeNull();
+  }, 20000);
+
+  it('stays idle and silent when there is no match to resume', async () => {
+    const mc = await client();
+    mc.getState().discover();
+    // The fake room has no event log, so `hello` is answered with hello:ok
+    // alone — the discovery window closes and the client goes back to sleep.
+    await until(() => server.received.some((m) => m.t === 'hello'), 8000, 'hello');
+    await sleep(4500);
+
+    const s = mc.getState();
+    expect(s.resumeOffer).toBeNull();
+    expect(s.status).toBe('idle');
+    expect(s.failure).toBeNull();
+    expect(s.matchId).toBeNull();
+  }, 20000);
+
+  it('lets queueing win a race against an open discovery socket', async () => {
+    const mc = await client();
+    mc.getState().discover();
+    mc.getState().queue('classic');
+
+    await until(() => mc.getState().status === 'queued', 8000, 'queued');
+    // The discovery timer must not fire and tear this down underneath us.
+    await sleep(4500);
+    expect(mc.getState().status).toBe('queued');
+  }, 20000);
+
   it('gives up cleanly when nothing is listening', async () => {
     await server.close();
     process.env.EXPO_PUBLIC_WS_URL = `ws://127.0.0.1:${port + 500}/ws`;
