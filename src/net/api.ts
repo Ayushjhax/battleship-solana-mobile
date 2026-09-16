@@ -159,15 +159,34 @@ export async function getAccessToken(): Promise<Result<string>> {
   });
 }
 
-/** Anonymous sign-in: a real auth.users row, no login screen ever. */
-export async function signInAnonymously(): Promise<Result<{ userId: string }>> {
+/** Install the one-use Supabase session issued by our Privy bootstrap route. */
+export async function installGameplaySession(
+  tokenHash: string,
+  type: 'magiclink',
+): Promise<Result<{ userId: string }>> {
   return guard(async () => {
-    const { data, error } = await supabase.auth.signInAnonymously();
+    const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
     if (error)
       return fail(classify({ message: error.message, status: error.status }).code, error.message);
-    const userId = data.user?.id;
-    return userId ? ok({ userId }) : fail('unknown', 'sign-in returned no user');
+    const userId = data.session?.user.id;
+    return userId ? ok({ userId }) : fail('unauthenticated', 'session handoff returned no user');
   });
+}
+
+/** Revoke this device's gameplay refresh session and remove its local credentials. */
+export async function signOutGameplaySession(): Promise<Result<true>> {
+  if (!isSupabaseConfigured) return ok(true);
+  try {
+    // Supabase removes the local session even if the Auth-server revocation
+    // fails, so an offline sign-out cannot leak the prior account on-device.
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) return fail(classify({ message: error.message, status: error.status }).code, error.message);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return fail(classify({ message }).code, message);
+  }
+
+  return ok(true);
 }
 
 // ---------------------------------------------------------------------------

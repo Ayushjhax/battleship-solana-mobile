@@ -16,7 +16,7 @@
  * already joined when the battle starts; battle.tsx takes it over (chat.ts
  * ref-counts the subscription across the route change).
  */
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -34,9 +34,11 @@ import Svg from 'react-native-svg';
 import { AvatarCard, FlagChip } from '@/features/battle/Hud';
 import { subscribeEmotes } from '@/net/chat';
 import { failureCopy, useMatchClient } from '@/net/match-client';
+import { cancelPointWager } from '@/net/points';
 import { useOnlineCount } from '@/net/presence';
 import { toLayoutPayload, type OpponentSummary } from '@/net/protocol';
 import { usePlacement } from '@/state/placement';
+import { usePoints } from '@/state/points';
 import { useProfile } from '@/state/profile';
 import { InkButton } from '@/ui/InkButton';
 import { InkPanel } from '@/ui/InkPanel';
@@ -194,6 +196,9 @@ function ArenaReveal({
 
 export default function SearchingScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ wager?: string; opponent?: string }>();
+  const wagered = params.wager === '1';
+  const opponentKind = params.opponent === 'bot' ? 'bot' : 'player';
   const ruleset = usePlacement((s) => s.ruleset);
   const status = useMatchClient((s) => s.status);
   const failure = useMatchClient((s) => s.failure);
@@ -203,13 +208,14 @@ export default function SearchingScreen() {
   const queuedCount = useMatchClient((s) => s.onlineCount);
   const presenceCount = useOnlineCount(ruleset);
   const [elapsed, setElapsed] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
   const startedAt = useRef(Date.now());
   const readySent = useRef<string | null>(null);
 
   // Queue once. The client is idempotent across a re-mount.
   useEffect(() => {
-    useMatchClient.getState().queue(ruleset);
-  }, [ruleset]);
+    useMatchClient.getState().queue(ruleset, { wagered, opponent: opponentKind });
+  }, [opponentKind, ruleset, wagered]);
 
   useEffect(() => {
     const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt.current) / 1000)), 500);
@@ -232,6 +238,7 @@ export default function SearchingScreen() {
 
   // matched: send the fleet at once, hold the reveal, then into battle.
   useEffect(() => {
+    if (status === 'cancelling') return;
     if (!matchId || !you || !opponent) return;
     if (readySent.current === matchId) return;
     readySent.current = matchId;
@@ -248,15 +255,29 @@ export default function SearchingScreen() {
       if (useMatchClient.getState().matchId === matchId) router.replace('/battle');
     }, REVEAL_HOLD_MS);
     return () => clearTimeout(timer);
-  }, [matchId, you, opponent, router]);
+  }, [matchId, you, opponent, router, status]);
 
-  const onCancel = () => {
-    useMatchClient.getState().cancelQueue();
-    router.back();
+  const onCancel = async () => {
+    if (cancelling) return;
+    setCancelling(true);
+    const requestId = useMatchClient.getState().wagerRequestId;
+    try {
+      await useMatchClient.getState().cancelQueue();
+      if (wagered && requestId) {
+        const result = await cancelPointWager(requestId);
+        if (result.balance !== null) usePoints.getState().sync(result.balance);
+      }
+    } catch (error) {
+      // Socket close cleanup still performs the idempotent refund. Keep the
+      // player moving; the next points refresh reads the same server balance.
+      console.warn('[wager] cancellation confirmation failed:', error);
+    } finally {
+      router.back();
+    }
   };
 
   const count = presenceCount ?? queuedCount;
-  const revealing = status !== 'failed' && matchId && you && opponent;
+  const revealing = status !== 'failed' && status !== 'cancelling' && matchId && you && opponent;
 
   return (
     <Scale>
@@ -267,17 +288,30 @@ export default function SearchingScreen() {
       ) : status === 'failed' ? (
         <View style={styles.centre}>
           <InkPanel w={420} h={190} seedKey="search-failed" padding={space.md}>
-            <Text style={styles.failedTitle}>No connection</Text>
+            <Text style={styles.failedTitle}>
+              {failure?.reason === 'insufficient_points'
+                ? 'Not enough points'
+                : failure?.reason === 'match_cancelled'
+                  ? 'Match cancelled'
+                  : 'No connection'}
+            </Text>
             <Text style={styles.failedBody}>
               {failure ? failureCopy(failure) : 'The match server is out of reach.'}
             </Text>
             <View style={styles.buttons}>
               <InkButton
-                label="Try again"
+                label={failure?.reason === 'insufficient_points' ? 'Buy points' : 'Try again'}
                 tone="confirm"
                 w={150}
                 seedKey="search-retry"
-                onPress={() => useMatchClient.getState().retry()}
+                onPress={() => {
+                  if (failure?.reason === 'insufficient_points') {
+                    useMatchClient.getState().disconnect();
+                    router.replace('/points');
+                  } else {
+                    useMatchClient.getState().retry();
+                  }
+                }}
               />
               <InkButton
                 label="Back to menu"
@@ -294,14 +328,28 @@ export default function SearchingScreen() {
       ) : (
         <View style={styles.centre}>
           <RadarSweep />
-          <Text style={styles.title}>Finding an opponent</Text>
+          <Text style={styles.title}>{cancelling || status === 'cancelling' ? 'Returning your wager' : 'Finding an opponent'}</Text>
           <Text style={styles.meta}>
-            {status === 'connecting' ? 'Raising the match server' : status === 'queued' ? 'In line' : 'Connecting'}
+            {cancelling || status === 'cancelling'
+              ? 'Confirming balance with the game server'
+              : status === 'connecting'
+                ? 'Raising the match server'
+                : status === 'queued'
+                  ? 'In line'
+                  : 'Connecting'}
             {' · '}
             {formatElapsed(elapsed)}
             {count !== null ? ` · ${count} sailors online` : ''}
           </Text>
-          <InkButton label="Cancel" w={140} seedKey="search-cancel" style={styles.cancel} onPress={onCancel} />
+          {wagered ? <Text style={styles.wager}>50-point stake · 100-point prize</Text> : null}
+          <InkButton
+            label={cancelling || status === 'cancelling' ? 'Refunding…' : 'Cancel'}
+            w={140}
+            seedKey="search-cancel"
+            style={styles.cancel}
+            disabled={cancelling || status === 'cancelling'}
+            onPress={() => void onCancel()}
+          />
         </View>
       )}
     </Scale>
@@ -335,6 +383,12 @@ const styles = StyleSheet.create({
     color: color.inkSoft,
     fontFamily: font.body,
     fontSize: typeScale.sm,
+  },
+  wager: {
+    marginTop: 3,
+    color: color.inkGreen,
+    fontFamily: font.label,
+    fontSize: typeScale.xs,
   },
   cancel: { marginTop: space.md },
   ribbon: { position: 'absolute', left: (CANVAS_W - 380) / 2, top: 78 },

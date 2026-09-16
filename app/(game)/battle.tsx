@@ -152,8 +152,14 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
     started.current = true;
     const placement = usePlacement.getState();
     const profile = useProfile.getState();
+    const matchClient = useMatchClient.getState();
+    const hasServerMatch =
+      Boolean(matchClient.matchId) &&
+      matchClient.status !== 'idle' &&
+      matchClient.status !== 'failed' &&
+      matchClient.status !== 'over';
     let setup = presetSetup;
-    if (!setup && placement.mode === 'online') {
+    if (!setup && hasServerMatch) {
       const online = buildOnlineSetup(profile);
       if (!online) {
         // No `matched` behind us (a stale route): nothing to play. Back out.
@@ -161,6 +167,10 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         return;
       }
       setup = online;
+    } else if (!setup && placement.mode === 'online') {
+      // An online route without a live authoritative match is stale.
+      router.replace('/menu');
+      return;
     }
     useBattle
       .getState()
@@ -283,14 +293,22 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
     // The store resets when this screen unmounts, so the result gets what it
     // needs as params: the verdict, how to "Play again", and the other card.
     const them = selectOpponent(state);
+    const matchClient = useMatchClient.getState();
+    const serverBacked = Boolean(matchClient.matchId);
+    const serverBot = serverBacked && matchClient.opponent?.isBot === true;
+    // An offline wager has no socket behind it — the battle store captured it
+    // at start(), so a settlement still queued from an earlier match cannot
+    // make this result read as wagered.
+    const wagered = matchClient.wagered || state.wagered;
     router.replace({
       pathname: '/result',
       params: {
         won: won ? '1' : '0',
-        local: state.mode === 'online' ? '0' : '1',
-        mode: state.mode,
+        local: serverBacked || state.mode === 'online' ? '0' : '1',
+        mode: serverBot ? 'ai' : state.mode,
         ruleset: state.ruleset,
         matchId: state.matchId ?? '',
+        wager: wagered ? '1' : '0',
         oppName: them?.name ?? '',
         oppPoints: String(them?.points ?? 0),
         oppAvatar: String(them?.avatarId ?? 2),

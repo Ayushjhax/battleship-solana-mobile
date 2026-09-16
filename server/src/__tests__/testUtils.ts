@@ -35,6 +35,7 @@ export interface DbCall {
 /** Every db.ts export, recording calls so a test can assert on them. */
 export function installDbMock(): { calls: DbCall[] } {
   const calls: DbCall[] = [];
+  const wagerPlayers = new Map<string, readonly string[]>();
   const record =
     (fn: string) =>
     (...args: unknown[]) => {
@@ -56,6 +57,25 @@ export function installDbMock(): { calls: DbCall[] } {
       };
     }),
     insertMatch: vi.fn(async (...args: unknown[]) => record('insertMatch')(...args)),
+    insertWageredMatch: vi.fn(async (input: { id: string; playerA: string; playerB: string }, ...rest: unknown[]) => {
+      record('insertWageredMatch')(input, ...rest);
+      wagerPlayers.set(input.id, [input.playerA, input.playerB]);
+    }),
+    reservePointWager: vi.fn(async (profileId: string, requestId: string) => {
+      record('reservePointWager')(profileId, requestId);
+      return { ok: true, requestId, balance: 50, reason: null };
+    }),
+    refundPointWager: vi.fn(async (profileId: string, requestId: string) => {
+      record('refundPointWager')(profileId, requestId);
+      return 100;
+    }),
+    cancelWageredMatchBeforeStart: vi.fn(async (matchId: string, cancelledBy: string) => {
+      record('cancelWageredMatchBeforeStart')(matchId, cancelledBy);
+      return (wagerPlayers.get(matchId) ?? [])
+        .filter((profileId) => profileId !== 'b0000000-0000-4000-8000-000000000001')
+        .map((profileId) => ({ profileId, balance: 100 }));
+    }),
+    fetchPointBalance: vi.fn(async () => 100),
     appendMatchEvent: vi.fn(async (...args: unknown[]) => record('appendMatchEvent')(...args)),
     applyMatchResult: vi.fn(async (...args: unknown[]) => {
       record('applyMatchResult')(...args);

@@ -11,20 +11,17 @@ Bundle id `com.empireofbits.seabattle` · scheme `empireofbits`.
 
 ---
 
-## 1. Expo Go compatibility is non-negotiable
+## 1. Expo development build
 
-Every dependency must be pure JS or already bundled in Expo Go. **No library that needs
-a custom development build.** We never run Gradle during development; one APK gets built
-with EAS at the very end.
+Privy authentication and its embedded Solana wallet require native modules, so this app
+runs in an Expo development build and **not Expo Go**. Keep native dependencies limited to
+the Expo 57-compatible Privy stack already declared in `package.json`; verify changes with
+`npx expo-doctor` and an Android production export.
 
-Banned outright: `react-native-mmkv`, `react-native-quick-crypto`, any wallet SDK,
-Firebase native, and anything shipping a config plugin that touches native code.
-Also not wanted: `react-navigation` directly (expo-router owns it), `nativewind`,
+Still not wanted: `react-native-mmkv`, `react-native-quick-crypto`, Firebase native,
+`react-navigation` directly (expo-router owns it), `nativewind`,
 `styled-components`, any UI kit, and `react-native-url-polyfill` (Expo already provides
 a `URL` global — the Supabase docs saying otherwise are out of date for Expo).
-
-If you catch yourself thinking *"this needs a dev build"* — stop and find another way.
-**A violation is a bug, not a trade-off.**
 
 Persistence uses `expo-sqlite` (including `expo-sqlite/localStorage/install` for the
 Supabase auth session). Not AsyncStorage, not MMKV.
@@ -263,15 +260,15 @@ that looks like a rectangle from a UI kit.
   `EXPO_PUBLIC_WS_URL` there must be the deployed `wss://` host. `server/scripts/seed-demo.ts`
   seeds a crew, history and your rank through the secret key (idempotent).
 
-## 5. Landscape only, Android target, no crypto ever
+## 5. Landscape mobile app and isolated wallet boundary
 
 - Landscape only. `app.json` pins `orientation: "landscape"` and `app/_layout.tsx` locks
   it again with `expo-screen-orientation`. Rotating the device must never change layout.
-- Android is the target. iOS and web are not tested and not a reason to change anything.
-- **No crypto, no wallet, no wagering, no on-chain anything, ever.** This is a Web2 game:
-  Supabase for accounts and history, a Node WebSocket server for matches. Do not add a
-  wallet SDK, a signing library, or a token. Removing crypto is what bought the Expo Go
-  workflow — don't spend it.
+- Android is the primary target; Privy's configured native client also supports iOS. Web
+  is unsupported.
+- Privy authentication and the embedded Solana wallet are isolated under `src/features/auth`,
+  `src/wallet`, and the `wallet`/`profile` routes. The pure engine and frozen gameplay wire
+  protocol never import or depend on wallet code. No wagering or gameplay-token logic.
 
 ## 6. Layout of the repo
 
@@ -291,13 +288,12 @@ docs/           brief, prompt pack, asset guide
 
 | | |
 |---|---|
-| `npm start` | Metro, scan with Expo Go |
-| `npm run android` | Metro, open on a connected device |
+| `npx expo run:android` | create/install the native development build |
+| `npm start -- --dev-client` | Metro for the installed development build |
 | `npm run typecheck` | `tsc --noEmit`, must stay clean |
 | `npm test` | vitest: engine, placement store, match client (real sockets vs a fake server) |
 | `npm run lint` | eslint (flat config; `--ext` no longer exists in eslint 10) |
 | `npm run server` | the match server on `:8080` |
 
-Secrets: the app only ever sees `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The secret key
-lives in the server environment. Use the publishable/secret key names, not
-anon/service_role.
+Secrets: the app only sees `EXPO_PUBLIC_*` values. Supabase and Privy secret keys live in
+the server environment. Use the publishable/secret key names, not anon/service_role.

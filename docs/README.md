@@ -6,15 +6,15 @@ of the codebase are in [CLAUDE.md](../CLAUDE.md); the stage script is [DEMO.md](
 ## Local setup
 
 Requirements: Node 22 (the server image is `node:22-alpine`; `process.loadEnvFile` needs
-≥ 20.12), npm, **Expo Go** on an Android phone on the same wifi as the laptop. No Android
-Studio, no JDK, no Gradle: the app is Expo Go compatible for the whole build and the one
-APK is built in the cloud by EAS.
+≥ 20.12), npm, and an Expo development build on a phone. Privy's native authentication
+and wallet modules are not available in Expo Go.
 
 ```bash
 git clone <repo> && cd my-app
 npm install
 cp .env.example .env            # fill in the values below
-npm start                       # Metro; scan the QR with Expo Go (landscape, Android)
+npx expo run:android            # first native development build
+npm start -- --dev-client       # Metro for subsequent sessions
 
 cd server && npm install && cd ..
 npm run server                  # the match server on :8080 (reads the root .env)
@@ -41,9 +41,21 @@ Expo inlines only the `EXPO_PUBLIC_*` names into the app bundle; the server read
 |---|---|---|
 | `EXPO_PUBLIC_SUPABASE_URL` | app | `https://<ref>.supabase.co` |
 | `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | app | `sb_publishable_…` — public by design, RLS does the protecting |
-| `EXPO_PUBLIC_WS_URL` | app | the match socket: `ws://<lan-ip>:8080/ws` on your wifi, `wss://<host>/ws` anywhere else |
+| `EXPO_PUBLIC_WS_URL` | app | `ws://10.0.2.2:8080/ws` in Android Emulator, `ws://<lan-ip>:8080/ws` on a phone, `wss://<host>/ws` elsewhere |
+| `EXPO_PUBLIC_API_URL` | app | optional HTTP base; otherwise derived from the WebSocket URL |
+| `EXPO_PUBLIC_PRIVY_APP_ID` | app | public Privy application id |
+| `EXPO_PUBLIC_PRIVY_CLIENT_ID` | app | public native/mobile app client id |
+| `EXPO_PUBLIC_SOLANA_RPC_URL` | app | authenticated RPC recommended in production |
+| `EXPO_PUBLIC_SOLANA_CLUSTER` | app | `devnet`, `testnet`, or `mainnet-beta` |
 | `SUPABASE_URL` | server | same project |
 | `SUPABASE_SECRET_KEY` | server | `sb_secret_…` — bypasses RLS; **never** under `app/` or `src/`, `server/src/db.ts` is the only reader |
+| `PRIVY_APP_ID` | server | same Privy app id, used for access-token verification |
+| `PRIVY_APP_SECRET` | server | Privy server secret; never use an `EXPO_PUBLIC_*` name |
+| `PRIVY_JWT_VERIFICATION_KEY` | server | optional dashboard verification-key override |
+| `SOLANA_RPC_URL` | server | authenticated mainnet RPC used to verify buys and broadcast treasury payouts |
+| `TREASURY_PUBLIC_KEY` | server | point-exchange treasury address |
+| `TREASURY_PRIVATE_KEY` | server | JSON 64-byte signing key; never public or committed |
+| `SELL_POINTS_COST` / `SELL_SOL_PAYOUT` | server | fixed supported quote: `100` / `0.001` |
 | `PORT` | server | default 8080; Render injects its own |
 
 Never put the secret key in an `EXPO_PUBLIC_*` name. `npm run check:bundle` scans the
@@ -66,9 +78,11 @@ npx supabase gen types typescript --linked > src/net/database.types.ts   # after
 npx supabase migration list --linked                                  # what is applied where
 ```
 
-Two dashboard toggles the SQL cannot set: **Auth → Providers → Anonymous sign-ins: on**
-(there is no login screen) and **Realtime → Settings → Allow public access: off** (every
-channel is private and passes the `realtime.messages` policies).
+Two Supabase dashboard toggles the SQL cannot set: **Auth → Providers → Anonymous
+sign-ins: on** (this remains the internal gameplay session behind Privy) and **Realtime →
+Settings → Allow public access: off**. In Privy Dashboard enable Email and Google login,
+create a mobile app client, enable Solana embedded wallets, and allow the `empireofbits`
+app scheme.
 
 Verify: `node supabase/verify-offline.mjs` (no project needed) and, against the live
 project, `npm --prefix server run verify:rls`.
@@ -82,7 +96,9 @@ project, `npm --prefix server run verify:rls`.
 Run locally with `npm run server` from the root. Deploy with `server/Dockerfile` +
 `render.yaml` (Render, one always-on **Starter** instance, never Free and never two — match
 state lives in process memory; the root README has the dashboard walkthrough). Set
-`SUPABASE_URL` and `SUPABASE_SECRET_KEY` in the service's environment. Once live, the
+`SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `PRIVY_APP_ID`, `PRIVY_APP_SECRET`,
+`SOLANA_RPC_URL`, `TREASURY_PUBLIC_KEY`, and `TREASURY_PRIVATE_KEY` in the
+service's environment. Once live, the
 socket is `wss://<service>.onrender.com/ws`; put that in `eas.json` and in `.env` for any
 phone off your LAN.
 
@@ -113,14 +129,16 @@ x86, x86_64) — fine for a USB stick. A Play build would use the `production` p
 
 ## Known limitations
 
-- **Android only.** iOS is not built, not tested, and not a reason to change anything.
+- **Android remains the tested target.** Privy and app configuration support iOS, but no
+  iOS build is currently part of CI.
 - **Landscape only**, on every screen. `app.json` pins it and `_layout.tsx` locks it again.
-- **No account recovery.** Sign-in is anonymous; the profile lives on the device and in the
-  matching `auth.users` row. Uninstalling the app (or clearing its data) loses the account
-  unless you built the optional email link from P11 — this build has not.
+- **Two identity layers.** Privy recovers the human account and embedded wallet. The
+  frozen gameplay/RLS layer still uses its existing per-install Supabase session, mapped
+  to the verified Privy DID by migration 0009. Reinstalling restores the Privy wallet but
+  does not yet merge old gameplay progress into the new internal profile.
 - **One match server instance.** Rooms and queues are in memory; a restart ends every
   in-progress match (clients see "The match ended while you were away").
-- **Expo Go is the dev runtime.** Anything that needs a custom dev build is out; the only
-  native build is the EAS APK.
+- **Development build required.** Privy authentication and wallet native modules do not
+  run in Expo Go.
 - **Assets that have not landed** draw as labelled placeholders (`src/ui/assets.ts`,
   `src/audio/sfx.ts`); the app never waits on them.

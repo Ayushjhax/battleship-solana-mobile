@@ -9,7 +9,7 @@ import { color, font, type as typeScale } from './tokens';
 import { RoughShape, hashString, useRough, type Point } from './useRough';
 
 export interface CurrencyChipProps {
-  kind: 'coins' | 'gems';
+  kind: 'points' | 'coins' | 'gems';
   value: number;
   w?: number;
   h?: number;
@@ -41,7 +41,24 @@ export function CurrencyChip({ kind, value, w = 92, h = 30, style }: CurrencyChi
   });
 
   const icon =
-    kind === 'coins'
+    kind === 'points'
+      ? [
+          roughCircle(iconCx, iconCy, r * 2, {
+            seed: seed + 1,
+            stroke: color.ink,
+            strokeWidth: 1.4,
+            fill: color.ink,
+            fillStyle: 'hachure',
+            hachureGap: 2.4,
+            fillWeight: 1,
+          }),
+          roughLine(iconCx - r * 0.55, iconCy, iconCx + r * 0.55, iconCy, {
+            seed: seed + 2,
+            stroke: color.paper,
+            strokeWidth: 1.2,
+          }),
+        ]
+      : kind === 'coins'
       ? [
           roughCircle(iconCx, iconCy, r * 2, {
             seed: seed + 1,

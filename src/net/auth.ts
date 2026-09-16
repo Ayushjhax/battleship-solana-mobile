@@ -1,16 +1,25 @@
 /**
- * Auth without accounts — docs/brief.md 4.5. Anonymous sign-in on first
- * launch gives the player a real auth.users row; P11 adds the profiles
- * trigger, RLS and the optional email link.
+ * The gameplay session is provisioned by the backend only after it verifies
+ * the Privy identity. This module reads that persisted local session; it must
+ * never create an unrelated anonymous Supabase user first.
  *
- * Nothing here may block the boot: every call is wrapped in a timeout and
- * resolves to null on any failure, and the app proceeds offline.
+ * Nothing here may block boot: calls are bounded and resolve to null on a
+ * failure so the local-first app can still open while account sync retries.
  */
-import { getSessionUserId, signInAnonymously } from './api';
-import { hasInternet } from './connectivity';
+import { getSessionUserId } from './api';
 import { isSupabaseConfigured } from './supabase';
 
 export const BOOT_NETWORK_TIMEOUT_MS = 2500;
+
+/**
+ * How long boot may wait for the verified Privy -> gameplay handoff when this
+ * device holds no session at all. That happens on a first install and on the
+ * first launch after a sign-out, and it is the only moment where the identity
+ * is genuinely unknown: routing before it lands sends a returning captain
+ * through blank onboarding. It gets its own budget rather than sharing the
+ * Supabase read's, which is why the two can no longer race each other out.
+ */
+export const PRIVY_HANDOFF_TIMEOUT_MS = 10_000;
 
 export function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise<T>((resolve) => {
@@ -28,20 +37,21 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Pr
   });
 }
 
-/** The signed-in user id, signing in anonymously if there is no session. */
-export async function ensureSession(): Promise<string | null> {
+let sessionInFlight: Promise<string | null> | null = null;
+
+async function ensureSessionOnce(): Promise<string | null> {
   if (!isSupabaseConfigured) return null;
-  if (!(await hasInternet())) return null;
-
   const session = await getSessionUserId();
-  if (session.ok && session.value) return session.value;
+  return session.ok ? session.value : null;
+}
 
-  const signedIn = await signInAnonymously();
-  if (!signedIn.ok) {
-    console.warn('[auth] anonymous sign-in failed, continuing offline:', signedIn.error.message);
-    return null;
-  }
-  return signedIn.value.userId;
+/** The locally installed gameplay user id, or null until Privy sync finishes. */
+export function ensureSession(): Promise<string | null> {
+  if (sessionInFlight) return sessionInFlight;
+  sessionInFlight = ensureSessionOnce().finally(() => {
+    sessionInFlight = null;
+  });
+  return sessionInFlight;
 }
 
 /** Boot-safe variant: never throws, never takes longer than the timeout. */

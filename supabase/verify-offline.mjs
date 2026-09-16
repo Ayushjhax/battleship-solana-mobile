@@ -1,8 +1,9 @@
 import { PGlite } from '@electric-sql/pglite';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const MIG = new URL('./migrations/', import.meta.url).pathname;
+const MIG = fileURLToPath(new URL('./migrations/', import.meta.url));
 const db = new PGlite();
 let fails = 0;
 const check = (ok, msg) => { if (!ok) fails++; console.log((ok ? 'ok   ' : 'FAIL ') + msg); };
@@ -40,7 +41,11 @@ const files = fs.readdirSync(MIG).filter((f) => f.endsWith('.sql')).sort();
 for (const pass of [1, 2]) {
   for (const f of files) {
     try { await db.exec(fs.readFileSync(path.join(MIG, f), 'utf8')); }
-    catch (e) { fails++; console.log(`FAIL pass ${pass} ${f}: ${e.message}`); }
+    catch (e) {
+      fails++;
+      const at = e.position ? ` at character ${e.position}` : '';
+      console.log(`FAIL pass ${pass} ${f}: ${e.message}${at}`);
+    }
   }
   console.log(`ok    pass ${pass}: ${files.join(', ')} applied`);
 }
@@ -171,6 +176,140 @@ const mineC = (await q(`select * from public.my_leaderboard_row()`)).rows;
 check(mineC.length === 1 && mineC[0].rank_position === 3, `user C (no games) is position 3 (${mineC[0]?.rank_position})`);
 await asServer();
 check((await q(`select * from public.my_leaderboard_row()`)).rows.length === 0, 'my_leaderboard_row without a session returns no rows');
+
+// ---- verified Privy account boundary (0009) ----
+const syncPrivy = (did, email) => q(
+  `select public.sync_privy_account($1, $2, $3, $4, 'google', $5, $6, $7::jsonb, $8::timestamptz)`,
+  [A, did, email, 'Captain Ada', 'SolanaAddress', 'wallet-1', '[{"type":"google_oauth"}]', '2023-11-14T22:13:20.000Z'],
+);
+await syncPrivy('did:privy:captain', 'captain@gmail.com');
+let privyRow = (await q(`select * from public.privy_accounts where profile_id = $1`, [A])).rows[0];
+check(privyRow?.privy_user_id === 'did:privy:captain' && privyRow?.solana_wallet_address === 'SolanaAddress', 'server stores the verified Privy DID and embedded Solana wallet');
+await syncPrivy('did:privy:captain', 'new@gmail.com');
+privyRow = (await q(`select email from public.privy_accounts where profile_id = $1`, [A])).rows[0];
+check(privyRow?.email === 'new@gmail.com', 'the same Privy user can refresh trusted account fields');
+check(await fails_with(
+  `select public.sync_privy_account($1, 'did:privy:attacker', 'x@example.com', null, 'email', null, null, '[]'::jsonb, now())`,
+  [A],
+  '23505',
+), 'a different Privy user cannot take over an existing gameplay profile');
+await asUser(A);
+check(await fails_with(`select * from public.privy_accounts`, [], '42501'), 'clients cannot read verified Privy account rows');
+check(await fails_with(
+  `select public.sync_privy_account($1, 'did:privy:client', null, null, 'email', null, null, '[]'::jsonb, now())`,
+  [A],
+  '42501',
+), 'clients cannot invoke the Privy sync function');
+
+// ---- universal points, wagers, and replay-safe trades (0010) ----
+await asServer();
+await q(
+  `select public.sync_privy_account($1, 'did:privy:challenger', 'b@example.com', 'Challenger', 'email', 'SolanaB', 'wallet-b', '[]'::jsonb, now())`,
+  [B],
+);
+let pointInit = (await q(`select * from public.ensure_point_account($1, 'did:privy:captain')`, [A])).rows[0];
+check(Number(pointInit.balance) === 100 && pointInit.welcome_awarded === true, 'a verified Privy user receives the one-time 100-point welcome award');
+pointInit = (await q(`select * from public.ensure_point_account($1, 'did:privy:captain')`, [A])).rows[0];
+check(Number(pointInit.balance) === 100 && pointInit.welcome_awarded === false, 're-syncing the same Privy user never repeats the welcome award');
+await q(`select * from public.ensure_point_account($1, 'did:privy:challenger')`, [B]);
+
+const HOLD_CANCEL = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+let hold = (await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, HOLD_CANCEL])).rows[0];
+check(hold.ok === true && Number(hold.balance) === 50, 'reserving a wager atomically deducts 50 points');
+hold = (await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, HOLD_CANCEL])).rows[0];
+check(hold.ok === true && Number(hold.balance) === 50, 'replaying the same wager reservation never deducts twice');
+let pointBalance = (await q(`select public.refund_point_wager($1, $2) as balance`, [A, HOLD_CANCEL])).rows[0].balance;
+check(Number(pointBalance) === 100, 'cancelling matchmaking restores the wager stake');
+pointBalance = (await q(`select public.refund_point_wager($1, $2) as balance`, [A, HOLD_CANCEL])).rows[0].balance;
+check(Number(pointBalance) === 100, 'replaying a wager refund never credits twice');
+
+const HOLD_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+const HOLD_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
+const WAGER_MATCH = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1';
+await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, HOLD_A]);
+await q(`select * from public.reserve_point_wager($1, $2, 50)`, [B, HOLD_B]);
+await q(`select public.create_wagered_match($1, 'classic', $2, $3, 99, false, $4, $5)`, [WAGER_MATCH, A, B, HOLD_A, HOLD_B]);
+r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [WAGER_MATCH, A]);
+const wagerBalances = (await q(`select privy_user_id, balance from public.point_accounts order by privy_user_id`)).rows;
+check(r.rows[0].ok === true && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:captain')?.balance) === 150 && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:challenger')?.balance) === 50, 'PvP wager settlement pays the 100-point pot to the winner exactly once');
+r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [WAGER_MATCH, A]);
+check(r.rows[0].ok === false && Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 150, 'replaying match settlement cannot pay the wager twice');
+
+const BOT_HOLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+const BOT_WAGER_MATCH = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2';
+await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, BOT_HOLD]);
+await q(`select public.create_wagered_match($1, 'advanced', $2, $3, 100, true, $4, null)`, [BOT_WAGER_MATCH, A, BOT, BOT_HOLD]);
+await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [BOT_WAGER_MATCH, A]);
+check(Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 200, 'winning a bot wager returns 100 points for a net 50-point profit');
+
+// ---- 0012: uint32 seeds, and wagers that settle without a match row ----
+// Every block below is balance-neutral overall, so the point trade checks
+// that follow still read against A's 200.
+const balanceOf = async (id) => Number((await q(`select public.get_point_balance($1) as balance`, [id])).rows[0].balance);
+
+// The match server's seeds are uint32; matches.seed is bigint (0002) but
+// 0010 declared the parameter `integer`, so half of them never inserted.
+const BIG_SEED_HOLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4';
+const BIG_SEED_MATCH = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd3';
+await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, BIG_SEED_HOLD]);
+await q(`select public.create_wagered_match($1, 'advanced', $2, $3, 2696002283, true, $4, null)`, [BIG_SEED_MATCH, A, BOT, BIG_SEED_HOLD]);
+check(Number((await q(`select seed from public.matches where id = $1`, [BIG_SEED_MATCH])).rows[0].seed) === 2696002283, 'a wagered match accepts a uint32 seed above the int4 ceiling');
+await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [BIG_SEED_MATCH, BOT]);
+
+// An offline wager is played against the device's own AI: no match row, one
+// hold, and the hold's status is the only idempotency key there is.
+const OFFLINE_WIN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5';
+const OFFLINE_LOSS = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6';
+const staked = await balanceOf(A);
+await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, OFFLINE_WIN]);
+r = (await q(`select * from public.settle_offline_wager($1, $2, true)`, [A, OFFLINE_WIN])).rows[0];
+check(r.settled === true && Number(r.balance) === staked + 50, 'winning an offline wager pays 100 for a net 50-point profit');
+r = (await q(`select * from public.settle_offline_wager($1, $2, true)`, [A, OFFLINE_WIN])).rows[0];
+check(r.settled === false && (await balanceOf(A)) === staked + 50, 'replaying an offline settlement never pays twice');
+await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, OFFLINE_LOSS]);
+r = (await q(`select * from public.settle_offline_wager($1, $2, false)`, [A, OFFLINE_LOSS])).rows[0];
+check(r.settled === true && Number(r.balance) === staked, 'losing an offline wager keeps the 50-point stake');
+
+const ROOM_HOLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7';
+const ROOM_MATCH = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd4';
+await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, ROOM_HOLD]);
+r = (await q(`select * from public.settle_offline_wager($1, $2, true)`, [B, ROOM_HOLD])).rows[0];
+check(r.settled === false && (await balanceOf(A)) === staked - 50, 'another profile cannot settle a wager it does not own');
+await q(`select public.create_wagered_match($1, 'classic', $2, $3, 7, true, $4, null)`, [ROOM_MATCH, A, BOT, ROOM_HOLD]);
+r = (await q(`select * from public.settle_offline_wager($1, $2, true)`, [A, ROOM_HOLD])).rows[0];
+check(r.settled === false, 'a hold owned by a server room is never settled as an offline wager');
+await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [ROOM_MATCH, A]);
+check((await balanceOf(A)) === 200, 'the offline wager checks left A’s balance where they found it');
+
+const BUY_REQUEST = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
+const BUY_REPLAY = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
+const BUY_SIGNATURE = 'confirmed-solana-signature-0000000000000001';
+pointBalance = (await q(`select public.complete_point_buy($1, $2, $3, 100, 1000000) as balance`, [A, BUY_REQUEST, BUY_SIGNATURE])).rows[0].balance;
+check(Number(pointBalance) === 300, 'a backend-verified 0.001 SOL purchase credits 100 points');
+pointBalance = (await q(`select public.complete_point_buy($1, $2, $3, 100, 1000000) as balance`, [A, BUY_REQUEST, BUY_SIGNATURE])).rows[0].balance;
+check(Number(pointBalance) === 300, 'replaying the same purchase request never credits twice');
+check(await fails_with(`select public.complete_point_buy($1, $2, $3, 100, 1000000)`, [A, BUY_REPLAY, BUY_SIGNATURE], '23505'), 'one Solana signature cannot fund two point purchases');
+
+const SELL_REQUEST = 'ffffffff-ffff-4fff-8fff-fffffffffff1';
+let sale = (await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, SELL_REQUEST])).rows[0];
+check(sale.ok === true && Number(sale.balance) === 200, 'starting a sale atomically reserves 100 points');
+sale = (await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, SELL_REQUEST])).rows[0];
+check(Number(sale.balance) === 200, 'replaying a point sale request never deducts twice');
+const SELL_SIGNATURE = 'treasury-solana-signature-000000000000001';
+await q(`select public.mark_point_sell_broadcast($1, $2, 'signed-transaction', 'blockhash', 12345)`, [SELL_REQUEST, SELL_SIGNATURE]);
+pointBalance = (await q(`select public.complete_point_sell($1, $2) as balance`, [SELL_REQUEST, SELL_SIGNATURE])).rows[0].balance;
+check(Number(pointBalance) === 200, 'a confirmed treasury payout completes without another balance mutation');
+
+const REFUND_REQUEST = 'ffffffff-ffff-4fff-8fff-fffffffffff2';
+await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, REFUND_REQUEST]);
+pointBalance = (await q(`select public.refund_point_sell($1, 'treasury unavailable') as balance`, [REFUND_REQUEST])).rows[0].balance;
+check(Number(pointBalance) === 200, 'a failed treasury payout restores every reserved point');
+pointBalance = (await q(`select public.refund_point_sell($1, 'retry') as balance`, [REFUND_REQUEST])).rows[0].balance;
+check(Number(pointBalance) === 200, 'replaying a sale refund never credits twice');
+
+await asUser(A);
+check(await fails_with(`select * from public.point_accounts`, [], '42501'), 'clients cannot read server-owned point balances directly');
+check(await fails_with(`select * from public.reserve_point_wager($1, $2, 50)`, [A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4'], '42501'), 'clients cannot reserve or mutate wager points directly');
 
 console.log(fails ? `\n${fails} FAILED` : '\nall database checks passed');
 process.exit(fails ? 1 : 0);

@@ -1,7 +1,10 @@
 # Empire of Bits: Sea Battle
 
 Battleship in a ballpoint-pen-on-graph-paper style. Expo SDK 57 · TypeScript strict ·
-Android · landscape only · **Expo Go compatible for the whole build**.
+Android/iOS · landscape only · Privy authentication and embedded Solana wallet.
+
+Privy uses native modules, so the app now requires an Expo development build; it
+does not run in Expo Go.
 
 Read [CLAUDE.md](CLAUDE.md) first — it holds the rules that must survive the build.
 The full spec is in [docs/brief.md](docs/brief.md), the build order in
@@ -14,8 +17,9 @@ final checklist are in [docs/DEMO.md](docs/DEMO.md).**
 
 ```bash
 npm install
-cp .env.example .env        # Supabase keys; apply supabase/migrations/*.sql to the project
-npm start                   # scan the QR with Expo Go on Android
+cp .env.example .env        # fill Supabase, Privy client and Solana RPC values
+npm run android             # first build: compile, install, and start Metro
+npm run android:metro       # later JS/TS-only sessions (uses the installed build)
 ```
 
 Match server (separate install, shares `src/engine` via `@engine/*`):
@@ -25,8 +29,23 @@ cd server && npm install && cd ..
 npm run server              # http://localhost:8080/health · ws://localhost:8080/ws
 ```
 
+Before running the app:
+
+1. Apply every SQL file in `supabase/migrations/`, including
+   `0009_privy_accounts.sql` and `0010_points_wallet_and_wagers.sql`.
+2. In Privy Dashboard, enable Email and Google login, create a native/mobile app
+   client, enable Solana embedded wallets, and allow the app scheme
+   `empireofbits`.
+3. Put the public app/client IDs in `EXPO_PUBLIC_PRIVY_APP_ID` and
+   `EXPO_PUBLIC_PRIVY_CLIENT_ID`. Put `PRIVY_APP_ID` and `PRIVY_APP_SECRET` only
+   on the server. Put `SOLANA_RPC_URL`, `TREASURY_PUBLIC_KEY`, and
+   `TREASURY_PRIVATE_KEY` only on the server. Use a private authenticated Solana RPC for production.
+4. Rebuild the development app whenever Privy native dependencies or native
+   configuration changes.
+
 Point the app at it with `EXPO_PUBLIC_WS_URL` in `.env`:
-- **Local network** (Expo Go on a phone, dev machine running the server): `ws://<your-lan-ip>:8080/ws` — plain `ws://` is fine, the phone and server share a trusted network.
+- **Android emulator:** `ws://10.0.2.2:8080/ws` and `EXPO_PUBLIC_API_URL=http://10.0.2.2:8080`.
+- **Local network** (development build on a phone, dev machine running the server): `ws://<your-lan-ip>:8080/ws` — plain `ws://` is fine, the phone and server share a trusted network.
 - **Production / anything off your LAN**: `wss://<deployed-host>/ws` — never plain `ws://` once traffic leaves the local network; it carries the Supabase access token in the `hello` message.
 
 ### Deploying the match server (Render)
@@ -50,7 +69,9 @@ Point the app at it with `EXPO_PUBLIC_WS_URL` in `.env`:
    | Instances | **1**, no autoscaling |
 
 3. Set env vars in the dashboard (never commit these): `SUPABASE_URL`,
-   `SUPABASE_SECRET_KEY`. Don't set `PORT` — Render injects it, and the server already
+   `SUPABASE_SECRET_KEY`, `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, and optionally
+   `PRIVY_JWT_VERIFICATION_KEY`, `SOLANA_RPC_URL`, `TREASURY_PUBLIC_KEY`, and
+   `TREASURY_PRIVATE_KEY`. Don't set `PORT` — Render injects it, and the server already
    reads `process.env.PORT` and binds `0.0.0.0`.
 4. Once live, Render gives you `https://<name>.onrender.com`; the match socket is at
    `wss://<name>.onrender.com/ws` (Render terminates TLS and proxies WebSocket upgrades

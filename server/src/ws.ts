@@ -12,7 +12,7 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
 import { verifyAccessToken } from './auth';
 import { decode, encode, PROTOCOL_VERSION, toMatchAction, toSubmitLayoutAction, type ErrorCode, type ServerMessage } from './protocol';
-import { dequeue, enqueue } from './matchmaker';
+import { cancelBeforeMatchStart, dequeue, enqueue } from './matchmaker';
 import { findRoomForPlayer, rooms } from './room';
 
 const MAX_MESSAGE_BYTES = 16 * 1024;
@@ -30,6 +30,8 @@ interface Connection {
   recentMessages: number[];
   /** Rejected actions + protocol violations; five and the socket is cut. */
   illegalCount: number;
+  /** Preserve wire order across handlers that await database work. */
+  messageChain: Promise<void>;
 }
 
 function send(conn: Connection, message: ServerMessage): void {
@@ -59,7 +61,15 @@ export function attachWebSocketServer(server: Server, log: (msg: string) => void
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_MESSAGE_BYTES });
 
   wss.on('connection', (socket: WebSocket) => {
-    const conn: Connection = { socket, playerId: null, isAlive: true, missedPongs: 0, recentMessages: [], illegalCount: 0 };
+    const conn: Connection = {
+      socket,
+      playerId: null,
+      isAlive: true,
+      missedPongs: 0,
+      recentMessages: [],
+      illegalCount: 0,
+      messageChain: Promise.resolve(),
+    };
     connections.set(socket, conn);
 
     socket.on('pong', () => {
@@ -68,14 +78,24 @@ export function attachWebSocketServer(server: Server, log: (msg: string) => void
     });
 
     socket.on('message', (raw, isBinary) => {
-      void handleMessage(conn, raw, isBinary, log);
+      conn.messageChain = conn.messageChain
+        .then(() => handleMessage(conn, raw, isBinary, log))
+        .catch((error: unknown) => {
+          log(`[ws] player=${conn.playerId ?? 'unauthenticated'} handler failed: ${String(error)}`);
+          sendError(conn, 'internal', 'the match server could not process that request');
+        });
     });
 
     socket.on('close', () => {
-      if (conn.playerId) {
-        dequeue(conn.playerId);
-        findRoomForPlayer(conn.playerId)?.handleDisconnect(conn.playerId);
-      }
+      void conn.messageChain
+        .then(async () => {
+          if (!conn.playerId) return;
+          await dequeue(conn.playerId);
+          findRoomForPlayer(conn.playerId)?.handleDisconnect(conn.playerId);
+        })
+        .catch((error: unknown) => {
+          log(`[ws] close cleanup failed for player=${conn.playerId ?? 'unknown'}: ${String(error)}`);
+        });
     });
   });
 
@@ -173,13 +193,27 @@ async function handleMessage(conn: Connection, raw: RawData, _isBinary: boolean,
         sendError(conn, 'not_in_room', 'already in a match');
         return;
       }
-      await enqueue(message.mode, playerId, conn.socket);
+      await enqueue(message.mode, playerId, conn.socket, {
+        wagered: message.wagered,
+        opponent: message.opponent,
+        ...(message.wagerRequestId ? { wagerRequestId: message.wagerRequestId } : {}),
+      });
       return;
     }
 
-    case 'cancelQueue':
-      dequeue(playerId);
+    case 'cancelQueue': {
+      const result = await cancelBeforeMatchStart(playerId);
+      if (!result.notifiedByRoom) {
+        send(conn, {
+          t: 'queue:cancelled',
+          v: 1,
+          refunded: result.refunded,
+          reason: 'cancelled',
+          ...(result.pointBalance === undefined ? {} : { pointBalance: result.pointBalance }),
+        });
+      }
       return;
+    }
 
     case 'ready': {
       const room = findRoomForPlayer(playerId);

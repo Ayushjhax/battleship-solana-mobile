@@ -1,6 +1,8 @@
 # Claude Code Prompt Pack — Empire of Bits: Sea Battle
 
-**FINAL — Web2 only.** No wallet, no crypto, no wagering, no Anchor/Rust, no Privy.
+**Historical build pack.** The original P00–P17 prompts below predate the current Privy
+authentication and embedded Solana wallet extension. Their Expo Go/no-wallet statements
+are superseded by `CLAUDE.md` and `docs/brief.md`; gameplay and engine constraints remain.
 18 prompts, P00 → P17. Every one is copy-pasteable straight into Claude Code.
 
 ### Before you run anything

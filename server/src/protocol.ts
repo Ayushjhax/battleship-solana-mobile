@@ -85,7 +85,14 @@ export const ClientMessageSchema = z.discriminatedUnion('t', [
     token: z.string().min(1).max(4096),
     resumeMatchId: z.string().uuid().optional(),
   }),
-  z.object({ t: z.literal('queue'), v: z.literal(1), mode: MatchModeSchema }),
+  z.object({
+    t: z.literal('queue'),
+    v: z.literal(1),
+    mode: MatchModeSchema,
+    wagered: z.boolean().default(false),
+    opponent: z.enum(['player', 'bot']).default('player'),
+    wagerRequestId: z.string().uuid().optional(),
+  }),
   z.object({ t: z.literal('cancelQueue'), v: z.literal(1) }),
   z.object({ t: z.literal('ready'), v: z.literal(1), layout: LayoutPayloadSchema }),
   z.object({ t: z.literal('action'), v: z.literal(1), seq: z.number().int().min(0), action: ActionPayloadSchema }),
@@ -116,7 +123,14 @@ export interface MatchRewards {
 
 export type ServerMessage =
   | { t: 'hello:ok'; v: 1; playerId: string }
-  | { t: 'queued'; v: 1; position: number; onlineCount: number }
+  | { t: 'queued'; v: 1; position: number; onlineCount: number; pointBalance?: number }
+  | {
+      t: 'queue:cancelled';
+      v: 1;
+      refunded: boolean;
+      reason: 'cancelled' | 'opponent_cancelled';
+      pointBalance?: number;
+    }
   | {
       t: 'matched';
       v: 1;
@@ -126,6 +140,8 @@ export type ServerMessage =
       mode: MatchMode;
       fuelBudget: number;
       layoutDeadline: number;
+      wagered: boolean;
+      wagerStake: number;
     }
   /**
    * Masked and authoritative — never MatchState. See CLAUDE.md > Engine
@@ -137,7 +153,14 @@ export type ServerMessage =
   /** The animation script the client replays, in order — see src/fx/EventPlayer.ts. */
   | { t: 'events'; v: 1; seq: number; events: readonly MatchEvent[] }
   | { t: 'turn'; v: 1; playerId: string; endsAt: number }
-  | { t: 'over'; v: 1; winnerId: string; reason: GameOverReason; rewards: MatchRewards }
+  | {
+      t: 'over';
+      v: 1;
+      winnerId: string;
+      reason: GameOverReason;
+      rewards: MatchRewards;
+      wager?: { stake: number; prize: number; balance: number };
+    }
   | { t: 'error'; v: 1; code: ErrorCode; message: string }
   | { t: 'pong'; v: 1 };
 
@@ -150,6 +173,7 @@ export type ErrorCode =
   | 'wrong_phase'
   | 'illegal_action'
   | 'already_queued'
+  | 'insufficient_points'
   | 'internal';
 
 export function encode(message: ServerMessage): string {

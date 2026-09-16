@@ -32,7 +32,7 @@ export interface SyncedProfileTotals {
 }
 
 export interface ProfileData {
-  /** Supabase auth user id once anonymous sign-in has happened; null offline. */
+  /** Supabase gameplay user id once verified Privy bootstrap finishes; null offline. */
   userId: string | null;
   name: string;
   avatarId: AvatarId;
@@ -89,6 +89,8 @@ export interface ProfileActions {
   resetTutorial: () => void;
   /** Overwrites local fields with what the server holds (P11 sync). */
   mergeRemote: (remote: Partial<ProfileData>) => void;
+  /** Clears identity/progress while keeping this device's audio preferences. */
+  clearAccount: () => void;
   reset: () => void;
 }
 
@@ -187,6 +189,15 @@ export const useProfile = create<ProfileState>()(
       markTutorialComplete: () => set({ hasCompletedTutorial: true }),
       resetTutorial: () => set({ hasCompletedTutorial: false }),
       mergeRemote: (remote) => set(remote),
+      clearAccount: () =>
+        set((state) => ({
+          ...DEFAULT_PROFILE,
+          soundOn: state.soundOn,
+          musicOn: state.musicOn,
+          hapticsOn: state.hapticsOn,
+          soundVolume: state.soundVolume,
+          musicVolume: state.musicVolume,
+        })),
       reset: () => set(DEFAULT_PROFILE),
     }),
     {

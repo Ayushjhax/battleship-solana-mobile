@@ -33,7 +33,19 @@ import { autoPlaceFleet } from '@engine/placement';
 import { chooseMove } from '@engine/ai';
 import { REWARD } from '@engine/ranks';
 
-import { appendMatchEvent, applyMatchResult, BOT_PLAYER_ID, dbEndReason, fetchOpponentSummary, insertMatch, type DbEndReason } from './db';
+import {
+  appendMatchEvent,
+  applyMatchResult,
+  BOT_PLAYER_ID,
+  cancelWageredMatchBeforeStart,
+  dbEndReason,
+  fetchOpponentSummary,
+  fetchPointBalance,
+  insertMatch,
+  insertWageredMatch,
+  type DbEndReason,
+  type CancelledWagerBalance,
+} from './db';
 import { envMs } from './env';
 import { encode, PROTOCOL_VERSION, type OpponentSummary, type ServerMessage } from './protocol';
 
@@ -58,6 +70,12 @@ interface Seat {
   lastAppliedActionSeq: number;
 }
 
+export interface RoomWagerInput {
+  readonly wagered: boolean;
+  readonly holdA: string | null;
+  readonly holdB: string | null;
+}
+
 export interface HandleResult {
   readonly ok: boolean;
   readonly reason?: string;
@@ -76,11 +94,13 @@ export class Room {
   private layoutTimer: NodeJS.Timeout | null = null;
   private botTurnTimer: NodeJS.Timeout | null = null;
   private finished = false;
+  private cancellingBeforeStart = false;
   /** Set just before a disconnect-forced RESIGN so the DB record says why. */
   private forcedDbReason: DbEndReason | null = null;
   /** What `matched` carried, re-sent on attach so a client that lost its store can rebuild the HUD. */
   private matched: { summaries: [OpponentSummary, OpponentSummary]; fuelBudget: number; layoutDeadline: number } | null = null;
   private readonly onFinished: (room: Room) => void;
+  private readonly wager: RoomWagerInput;
 
   constructor(
     matchId: string,
@@ -88,11 +108,13 @@ export class Room {
     seed: number,
     seatDefs: readonly [{ playerId: string; socket: WebSocket | null; isBot: boolean }, { playerId: string; socket: WebSocket | null; isBot: boolean }],
     onFinished: (room: Room) => void,
+    wager: RoomWagerInput = { wagered: false, holdA: null, holdB: null },
   ) {
     this.id = matchId;
     this.mode = mode;
     this.createdAt = Date.now();
     this.onFinished = onFinished;
+    this.wager = wager;
     this.seats = seatDefs.map((s) => ({
       playerId: s.playerId,
       isBot: s.isBot,
@@ -184,19 +206,81 @@ export class Room {
     }, DISCONNECT_GRACE_MS);
   }
 
+  /**
+   * A cancel sent from the matchmaking screen may cross the `matched` frame.
+   * It is still a true pre-game cancel while the engine is in placement, so
+   * refund every human hold atomically instead of turning it into a forfeit.
+   */
+  async cancelBeforeStart(playerId: string): Promise<readonly CancelledWagerBalance[] | null> {
+    if (
+      this.finished ||
+      this.cancellingBeforeStart ||
+      !this.wager.wagered ||
+      this.state.phase !== 'placing' ||
+      !this.seatOf(playerId)
+    ) {
+      return null;
+    }
+
+    this.cancellingBeforeStart = true;
+    try {
+      const balances = await cancelWageredMatchBeforeStart(this.id, playerId);
+      if (balances.length === 0) {
+        this.cancellingBeforeStart = false;
+        return null;
+      }
+
+      this.finished = true;
+      if (this.turnTimer) clearTimeout(this.turnTimer);
+      if (this.layoutTimer) clearTimeout(this.layoutTimer);
+      if (this.botTurnTimer) clearTimeout(this.botTurnTimer);
+      for (const seat of this.seats) if (seat.disconnectTimer) clearTimeout(seat.disconnectTimer);
+
+      const byProfile = new Map(balances.map((entry) => [entry.profileId, entry.balance]));
+      for (const seat of this.seats) {
+        if (seat.isBot) continue;
+        const balance = byProfile.get(seat.playerId);
+        this.send(seat.playerId, {
+          t: 'queue:cancelled',
+          v: 1,
+          refunded: balance !== undefined,
+          reason: seat.playerId === playerId ? 'cancelled' : 'opponent_cancelled',
+          ...(balance === undefined ? {} : { pointBalance: balance }),
+        });
+      }
+      this.onFinished(this);
+      return balances;
+    } catch (error) {
+      this.cancellingBeforeStart = false;
+      throw error;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------------
 
   async start(fuelBudget: number): Promise<void> {
-    await insertMatch({
+    const matchInput = {
       id: this.id,
       mode: this.mode,
       playerA: this.state.players[0].id,
       playerB: this.state.players[1].id,
       seed: this.state.seed,
       isBot: this.seats.some((s) => s.isBot),
-    });
+    };
+    if (this.wager.wagered) {
+      if (!this.wager.holdA) throw new Error('wagered room has no player A hold');
+      await insertWageredMatch(
+        matchInput,
+        { profileId: this.seats[0].playerId, requestId: this.wager.holdA },
+        this.wager.holdB
+          ? { profileId: this.seats[1].playerId, requestId: this.wager.holdB }
+          : null,
+      );
+    } else {
+      await insertMatch(matchInput);
+    }
 
     // A fixed-length array literal (not .map, which loses tuple-ness) keeps
     // this a real 2-tuple under noUncheckedIndexedAccess.
@@ -225,6 +309,8 @@ export class Room {
       mode: this.mode,
       fuelBudget: this.matched.fuelBudget,
       layoutDeadline: this.matched.layoutDeadline,
+      wagered: this.wager.wagered,
+      wagerStake: this.wager.wagered ? 50 : 0,
     });
   }
 
@@ -359,13 +445,55 @@ export class Room {
     // deliberate resign — both are RESIGN at the engine level (reason=
     // 'resign' either way), but the DB record should say which really happened.
     // The row and both profiles are settled in ONE transaction (0008).
-    void applyMatchResult(this.id, winnerId, this.forcedDbReason ?? dbEndReason(reason), REWARD);
+    void this.settleAndNotify(winnerId, reason);
+  }
 
-    for (const seat of this.seats) {
-      const won = seat.playerId === winnerId;
-      this.send(seat.playerId, { t: 'over', v: 1, winnerId, reason, rewards: won ? REWARD.win : REWARD.loss });
+  private async settleAndNotify(winnerId: string, reason: GameOverReason): Promise<void> {
+    try {
+      await applyMatchResult(
+        this.id,
+        winnerId,
+        this.forcedDbReason ?? dbEndReason(reason),
+        REWARD,
+      );
+    } catch (error) {
+      console.error(`[room ${this.id}] settlement failed`, error);
+      if (this.wager.wagered) {
+        for (const seat of this.seats) {
+          this.send(seat.playerId, {
+            t: 'error',
+            v: 1,
+            code: 'internal',
+            message: 'Wager settlement is delayed; the server is retrying safely.',
+          });
+        }
+        setTimeout(() => void this.settleAndNotify(winnerId, reason), 5_000).unref?.();
+        return;
+      }
     }
 
+    const balances = await Promise.all(
+      this.seats.map(async (seat) =>
+        seat.isBot || !this.wager.wagered
+          ? null
+          : fetchPointBalance(seat.playerId).catch(() => null),
+      ),
+    );
+    for (let index = 0; index < this.seats.length; index++) {
+      const seat = this.seats[index] as Seat;
+      const won = seat.playerId === winnerId;
+      const balance = balances[index] ?? null;
+      this.send(seat.playerId, {
+        t: 'over',
+        v: 1,
+        winnerId,
+        reason,
+        rewards: won ? REWARD.win : REWARD.loss,
+        ...(this.wager.wagered && balance !== null
+          ? { wager: { stake: 50, prize: won ? 100 : 0, balance } }
+          : {}),
+      });
+    }
     this.onFinished(this);
   }
 
@@ -397,6 +525,7 @@ export async function createRoom(
   seatA: RoomSeatInput,
   seatB: RoomSeatInput,
   fuelBudget: number,
+  wager: RoomWagerInput = { wagered: false, holdA: null, holdB: null },
 ): Promise<Room> {
   const matchId = randomUUID();
   const room = new Room(matchId, mode, seed, [seatA, seatB], (finished) => {
@@ -404,12 +533,19 @@ export async function createRoom(
     for (const seat of finished.seats) {
       if (roomIdForPlayer.get(seat.playerId) === finished.id) roomIdForPlayer.delete(seat.playerId);
     }
-  });
+  }, wager);
   rooms.set(matchId, room);
   roomIdForPlayer.set(seatA.playerId, matchId);
   roomIdForPlayer.set(seatB.playerId, matchId);
-  await room.start(fuelBudget);
-  return room;
+  try {
+    await room.start(fuelBudget);
+    return room;
+  } catch (error) {
+    rooms.delete(matchId);
+    if (roomIdForPlayer.get(seatA.playerId) === matchId) roomIdForPlayer.delete(seatA.playerId);
+    if (roomIdForPlayer.get(seatB.playerId) === matchId) roomIdForPlayer.delete(seatB.playerId);
+    throw error;
+  }
 }
 
 export function findRoomForPlayer(playerId: string): Room | undefined {

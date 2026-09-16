@@ -44,6 +44,8 @@ import type { Coord, GameOverReason, MatchEvent, MatchMode, PlayerView } from '@
 import { create } from 'zustand';
 
 import { isForcedOffline } from '@/state/demo';
+import { usePoints } from '@/state/points';
+import { randomUuid } from '@/util/uuid';
 import { getAccessToken } from './api';
 import {
   actionMessage,
@@ -73,6 +75,7 @@ export type MatchClientStatus =
   /** Socket opening, or hello sent and not yet acknowledged. */
   | 'connecting'
   | 'queued'
+  | 'cancelling'
   /** `matched` received; `ready` may or may not be acknowledged yet. */
   | 'matched'
   /** A live view is flowing. Placing or playing — see `view.phase`. */
@@ -92,6 +95,8 @@ export type FailureReason =
   | 'match_gone'
   | 'rate_limited'
   | 'kicked'
+  | 'insufficient_points'
+  | 'match_cancelled'
   | 'server_error';
 
 export interface MatchFailure {
@@ -103,6 +108,7 @@ export interface MatchOver {
   readonly winnerId: string;
   readonly reason: GameOverReason;
   readonly rewards: MatchRewards;
+  readonly wager?: { stake: number; prize: number; balance: number };
 }
 
 interface MatchClientData {
@@ -112,6 +118,10 @@ interface MatchClientData {
   playerId: string | null;
   matchId: string | null;
   mode: MatchMode | null;
+  wagered: boolean;
+  wagerStake: number;
+  queueOpponent: 'player' | 'bot';
+  wagerRequestId: string | null;
   you: OpponentSummary | null;
   opponent: OpponentSummary | null;
   fuelBudget: number;
@@ -144,8 +154,11 @@ interface MatchClientData {
 
 interface MatchClientActions {
   /** Open the socket, `hello`, then `queue` for `mode`. Idempotent while already queued. */
-  queue: (mode: MatchMode) => void;
-  cancelQueue: () => void;
+  queue: (
+    mode: MatchMode,
+    options?: { wagered?: boolean; opponent?: 'player' | 'bot' },
+  ) => void;
+  cancelQueue: () => Promise<void>;
   /** `ready` with the placed fleet. Re-sent automatically after a reconnect if it never landed. */
   ready: (layout: LayoutPayload) => void;
   fire: (at: Coord) => void;
@@ -204,6 +217,9 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let resyncTimer: ReturnType<typeof setTimeout> | null = null;
 let livenessTimer: ReturnType<typeof setInterval> | null = null;
 let deadTimer: ReturnType<typeof setTimeout> | null = null;
+let cancelTimer: ReturnType<typeof setTimeout> | null = null;
+let cancelResolve: (() => void) | null = null;
+let cancelInFlight: Promise<void> | null = null;
 let lastInboundAt = 0;
 let outboundSeq = 0;
 let lastStateSeq = -1;
@@ -211,7 +227,12 @@ let lastEventsSeq = -1;
 let resyncing = false;
 let authRetried = false;
 /** What `hello:ok` should be followed by when we are NOT resuming a match. */
-let intent: { mode: MatchMode } | null = null;
+let intent: {
+  mode: MatchMode;
+  wagered: boolean;
+  opponent: 'player' | 'bot';
+  wagerRequestId: string | null;
+} | null = null;
 /** The layout we sent (or tried to send) — re-sent after a resync if it never landed. */
 let lastLayout: LayoutPayload | null = null;
 /** disconnect() was called — every close from here on is expected and final. */
@@ -225,6 +246,10 @@ const EMPTY: MatchClientData = {
   playerId: null,
   matchId: null,
   mode: null,
+  wagered: false,
+  wagerStake: 0,
+  queueOpponent: 'player',
+  wagerRequestId: null,
   you: null,
   opponent: null,
   fuelBudget: 0,
@@ -266,6 +291,14 @@ function clearAllTimers(): void {
   resyncTimer = clearTimer(resyncTimer);
   deadTimer = clearTimer(deadTimer);
   stopLiveness();
+}
+
+function settlePendingCancellation(): void {
+  cancelTimer = clearTimer(cancelTimer);
+  const resolve = cancelResolve;
+  cancelResolve = null;
+  cancelInFlight = null;
+  resolve?.();
 }
 
 function stopLiveness(): void {
@@ -320,6 +353,7 @@ function send(message: ClientMessage): boolean {
 
 function fail(reason: FailureReason, detail: string): void {
   log(`failed: ${reason} — ${detail}`);
+  settlePendingCancellation();
   clearAllTimers();
   dropSocket();
   useMatchClient.setState({ status: 'failed', failure: { reason, detail }, reconnectDeadline: null });
@@ -441,6 +475,14 @@ async function connect(): Promise<void> {
     const s = useMatchClient.getState();
     if (s.status === 'over' || s.status === 'failed' || s.status === 'idle') return;
 
+    // The server refunds a queued wager when its socket closes. A reconnect
+    // is therefore a fresh reservation and must use a fresh idempotency key.
+    if (!s.matchId && intent?.wagered) {
+      const wagerRequestId = randomUuid();
+      intent = { ...intent, wagerRequestId };
+      useMatchClient.setState({ wagerRequestId });
+    }
+
     if (code === CLOSE_UNAUTHENTICATED) {
       if (!authRetried) {
         // Supabase refreshes an expired token on getSession(); one more try with a fresh one.
@@ -526,16 +568,72 @@ function handleMessage(message: ServerMessage): void {
       }
       if (intent) {
         set({ status: 'connecting' });
-        send(queueMessage(intent.mode));
+        send(
+          queueMessage(
+            intent.mode,
+            intent.wagered,
+            intent.opponent,
+            intent.wagerRequestId ?? undefined,
+          ),
+        );
       }
       return;
     }
 
     case 'queued':
-      set({ status: 'queued', queuePosition: message.position, onlineCount: message.onlineCount });
+      if (message.pointBalance !== undefined) usePoints.getState().sync(message.pointBalance);
+      set({
+        status: s.status === 'cancelling' ? 'cancelling' : 'queued',
+        queuePosition: message.position,
+        onlineCount: message.onlineCount,
+      });
       return;
 
+    case 'queue:cancelled': {
+      if (message.pointBalance !== undefined) usePoints.getState().sync(message.pointBalance);
+      const cancelledByOpponent = message.reason === 'opponent_cancelled';
+      closedOnPurpose = true;
+      clearAllTimers();
+      dropSocket();
+      intent = null;
+      lastLayout = null;
+      resyncing = false;
+      disconnectedAt = null;
+      outboundSeq = 0;
+      lastStateSeq = -1;
+      lastEventsSeq = -1;
+      set(
+        cancelledByOpponent
+          ? {
+              ...EMPTY,
+              status: 'failed',
+              failure: {
+                reason: 'match_cancelled',
+                detail: 'The other captain cancelled before the battle began. Your wager was refunded.',
+              },
+            }
+          : { ...EMPTY },
+      );
+      settlePendingCancellation();
+      return;
+    }
+
     case 'matched': {
+      if (s.status === 'cancelling') {
+        set({
+          status: 'cancelling',
+          matchId: message.matchId,
+          mode: message.mode,
+          you: message.you,
+          opponent: message.opponent,
+          fuelBudget: message.fuelBudget,
+          layoutDeadline: message.layoutDeadline,
+          wagered: message.wagered,
+          wagerStake: message.wagerStake,
+          queuePosition: null,
+        });
+        return;
+      }
       const resumed = message.matchId === s.matchId || s.status !== 'queued';
       if (resumed) {
         // The server attached us to a match already in progress — the normal
@@ -552,6 +650,8 @@ function handleMessage(message: ServerMessage): void {
           opponent: message.opponent,
           fuelBudget: message.fuelBudget,
           layoutDeadline: message.layoutDeadline,
+          wagered: message.wagered,
+          wagerStake: message.wagerStake,
           queuePosition: null,
         });
         return;
@@ -571,6 +671,8 @@ function handleMessage(message: ServerMessage): void {
         opponent: message.opponent,
         fuelBudget: message.fuelBudget,
         layoutDeadline: message.layoutDeadline,
+        wagered: message.wagered,
+        wagerStake: message.wagerStake,
         view: null,
         opponentDisconnected: false,
         opponentDroppedAt: null,
@@ -631,11 +733,17 @@ function handleMessage(message: ServerMessage): void {
       return;
 
     case 'over':
+      if (message.wager) usePoints.getState().sync(message.wager.balance);
       closedOnPurpose = true;
       clearAllTimers();
       set({
         status: 'over',
-        over: { winnerId: message.winnerId, reason: message.reason, rewards: message.rewards },
+        over: {
+          winnerId: message.winnerId,
+          reason: message.reason,
+          rewards: message.rewards,
+          ...(message.wager ? { wager: message.wager } : {}),
+        },
         turnEndsAt: null,
         opponentDisconnected: false,
         reconnectDeadline: null,
@@ -647,6 +755,13 @@ function handleMessage(message: ServerMessage): void {
     case 'error': {
       log(`server error ${message.code}: ${message.message}`);
       set({ lastError: { code: message.code, message: message.message }, errorNonce: s.errorNonce + 1 });
+      if (message.code === 'insufficient_points') {
+        set({
+          status: 'failed',
+          failure: { reason: 'insufficient_points', detail: message.message },
+        });
+        return;
+      }
       if (message.code === 'already_queued' && s.status === 'connecting') {
         // Our earlier queue survived a blip; we're still in line.
         set({ status: 'queued' });
@@ -666,9 +781,16 @@ function handleMessage(message: ServerMessage): void {
 export const useMatchClient = create<MatchClientState>((set, get) => ({
   ...EMPTY,
 
-  queue: (mode) => {
+  queue: (mode, options) => {
     const s = get();
-    if (s.status === 'queued' && s.mode === mode) return;
+    const wagered = options?.wagered ?? false;
+    const opponent = options?.opponent ?? 'player';
+    if (
+      s.status === 'queued' &&
+      s.mode === mode &&
+      s.wagered === wagered &&
+      s.queueOpponent === opponent
+    ) return;
     if (s.status !== 'idle' && s.status !== 'failed' && s.status !== 'over') {
       // Already busy with something — a second queue() is a screen re-mount, not a new intent.
       return;
@@ -676,9 +798,17 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
     closedOnPurpose = false;
     authRetried = false;
     disconnectedAt = null;
-    intent = { mode };
+    const wagerRequestId = wagered ? randomUuid() : null;
+    intent = { mode, wagered, opponent, wagerRequestId };
     lastLayout = null;
-    set({ ...EMPTY, status: 'connecting', mode });
+    set({
+      ...EMPTY,
+      status: 'connecting',
+      mode,
+      wagered,
+      queueOpponent: opponent,
+      wagerRequestId,
+    });
     void connect().catch((error: unknown) => {
       console.warn('[match] connect threw', error);
       scheduleReconnect('connect threw');
@@ -686,8 +816,26 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
   },
 
   cancelQueue: () => {
-    send(cancelQueueMessage());
-    get().disconnect();
+    if (cancelInFlight) return cancelInFlight;
+    const s = get();
+    if (s.status === 'idle') return Promise.resolve();
+
+    closedOnPurpose = true;
+    set({ status: 'cancelling' });
+    if (!send(cancelQueueMessage())) {
+      get().disconnect();
+      return Promise.resolve();
+    }
+
+    cancelInFlight = new Promise<void>((resolve) => {
+      cancelResolve = resolve;
+      cancelTimer = setTimeout(() => {
+        // Closing the socket makes the server's ordered close cleanup refund
+        // the queue. The HTTP confirmation on the screen then reads it back.
+        useMatchClient.getState().disconnect();
+      }, 4_000);
+    });
+    return cancelInFlight;
   },
 
   ready: (layout) => {
@@ -747,7 +895,12 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
     if (s.matchId) {
       set({ status: 'reconnecting', failure: null, reconnectAttempt: 0, reconnectDeadline: null });
     } else if (s.mode) {
-      intent = { mode: s.mode };
+      intent = {
+        mode: s.mode,
+        wagered: s.wagered,
+        opponent: s.queueOpponent,
+        wagerRequestId: s.wagerRequestId,
+      };
       set({ status: 'connecting', failure: null, reconnectAttempt: 0 });
     } else {
       set({ ...EMPTY });
@@ -760,6 +913,7 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
   },
 
   disconnect: () => {
+    settlePendingCancellation();
     closedOnPurpose = true;
     clearAllTimers();
     dropSocket();
@@ -794,6 +948,10 @@ export function failureCopy(failure: MatchFailure): string {
     case 'kicked':
       return 'The server cut the connection after rejecting what this app sent.';
     case 'server_error':
+      return failure.detail;
+    case 'insufficient_points':
+      return 'You need 50 points for this wager. Open the Points exchange to top up.';
+    case 'match_cancelled':
       return failure.detail;
   }
 }

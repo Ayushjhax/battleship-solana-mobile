@@ -26,3 +26,19 @@ services:
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
+      - key: PRIVY_APP_ID
+        sync: false
+      - key: PRIVY_APP_SECRET
+        sync: false
+      - key: PRIVY_JWT_VERIFICATION_KEY
+        sync: false
+      - key: SOLANA_RPC_URL
+        sync: false
+      - key: TREASURY_PUBLIC_KEY
+        sync: false
+      - key: TREASURY_PRIVATE_KEY
+        sync: false
+      - key: SELL_POINTS_COST
+        value: "100"
+      - key: SELL_SOL_PAYOUT
+        value: "0.001"

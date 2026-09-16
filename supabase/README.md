@@ -24,7 +24,9 @@ Dashboard → Realtime → Settings → turn **off** "Allow public access". `000
 puts RLS on `realtime.messages`; with public access off, every channel must be private
 and pass those policies. The client always subscribes with `{ private: true }`.
 
-Also enable **Anonymous sign-ins** under Auth → Providers (the game has no login screen).
+Anonymous sign-ins are not required. After Privy authentication, the app calls the match
+server's `/auth/privy/sync` route. The server verifies Privy, creates or finds the stable
+Supabase gameplay user with its secret key, and returns a one-use session handoff for RLS.
 
 ## Keys
 
@@ -40,6 +42,9 @@ The secret key never appears under `app/` or `src/`; `server/src/db.ts` is the o
 | `profiles` | any signed-in user | own row: `name`, `avatar_id`, `avatar_color`, `country_code`, `has_completed_tutorial`. Scores are rejected by a BEFORE UPDATE trigger unless the caller is the server (no user JWT). |
 | `matches` | your own matches | server only |
 | `match_events` | replay log of your own matches | server only |
+| `privy_accounts` | server only | server-only verified Privy sync; clients have no grants or RLS policy |
+| `point_accounts`, `point_ledger` | server only | one balance per verified Privy DID; append-only welcome, wager and exchange ledger |
+| `point_wager_holds`, `point_trades` | server only | idempotent wager reservations and replay-protected SOL trades |
 | `ranks` | public | — |
 | `leaderboard` (view) | signed-in users; only `name, avatar_id, avatar_color, country_code, rank_points, battles_won` | — |
 | `realtime.messages` | `lobby:{mode}` presence for everyone signed in; `match:{id}` broadcast for the two players | same |
@@ -53,7 +58,8 @@ migration twice and the acceptance scenarios:
 npm install --no-save @electric-sql/pglite && node supabase/verify-offline.mjs
 ```
 
-Live, against a dev project with the keys in `.env` (creates and deletes two anonymous users):
+Live RLS verification still creates and deletes two temporary anonymous test users, so
+enable Anonymous sign-ins only in a disposable project before running this optional script:
 
 ```bash
 npm run --prefix server verify:rls

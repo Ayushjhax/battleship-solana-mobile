@@ -10,6 +10,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { GameOverReason, MatchEvent, MatchMode } from '@engine/types';
 import type { Database, Json } from '../../src/net/database.types';
 import type { OpponentSummary } from './protocol';
+import type { TrustedPrivyAccount } from './privy';
 
 /** The fixed system profile from supabase/migrations/0006_bots.sql. */
 export const BOT_PLAYER_ID = 'b0000000-0000-4000-8000-000000000001';
@@ -29,6 +30,48 @@ export function db(): SupabaseClient<Database> {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   return client;
+}
+
+/** PostgREST's answer when the schema is behind the code calling it. */
+function isMissingFunction(error: { code?: string; message: string }): boolean {
+  return error.code === 'PGRST202' || /could not find the function/i.test(error.message);
+}
+
+function missingMigration(fn: string, file: string): Error {
+  return new Error(
+    `Supabase is missing public.${fn}. Apply supabase/migrations/${file} ` +
+      '(npx supabase db push), then reload the PostgREST schema cache.',
+  );
+}
+
+/**
+ * Fail fast when the backend cannot reach the required production schema.
+ *
+ * The table probes catch a missing migration wholesale; the RPC probe catches
+ * the nastier case of a schema one migration behind, where everything starts
+ * cleanly and only the call made at the end of a match fails. It is
+ * read-only: no hold carries this request id, so the function returns before
+ * it writes anything (and raises on the unknown profile, which still proves
+ * the function is there).
+ */
+export async function verifyDatabaseConnection(): Promise<void> {
+  const checks = await Promise.all([
+    db().from('profiles').select('id', { head: true, count: 'exact' }),
+    db().from('privy_accounts').select('profile_id', { head: true, count: 'exact' }),
+    db().from('point_accounts').select('privy_user_id', { head: true, count: 'exact' }),
+  ]);
+  const failed = checks.find((result) => result.error)?.error;
+  if (failed) throw new Error(`Supabase schema readiness check failed: ${failed.message}`);
+
+  const unused = '00000000-0000-4000-8000-000000000000';
+  const probe = await db().rpc('settle_offline_wager', {
+    p_profile_id: unused,
+    p_request_id: unused,
+    p_won: false,
+  });
+  if (probe.error && isMissingFunction(probe.error)) {
+    throw missingMigration('settle_offline_wager', '0012_offline_wagers.sql');
+  }
 }
 
 /** For matchmaking's rank window and the `matched` message's player cards. */
@@ -82,6 +125,11 @@ export interface InsertMatchInput {
   readonly isBot: boolean;
 }
 
+export interface WagerHoldInput {
+  readonly profileId: string;
+  readonly requestId: string;
+}
+
 export async function insertMatch(input: InsertMatchInput): Promise<void> {
   // `mode` is a CHECK constraint, not a Postgres enum, so gen-types widens
   // it to `string` — the migration already enforces 'classic' | 'advanced'.
@@ -93,7 +141,25 @@ export async function insertMatch(input: InsertMatchInput): Promise<void> {
     seed: input.seed,
     is_bot: input.isBot,
   });
-  if (error) console.warn(`[db] insertMatch(${input.id}) failed:`, error.message);
+  if (error) throw new Error(`insertMatch(${input.id}): ${error.message}`);
+}
+
+export async function insertWageredMatch(
+  input: InsertMatchInput,
+  holdA: WagerHoldInput,
+  holdB: WagerHoldInput | null,
+): Promise<void> {
+  const { error } = await db().rpc('create_wagered_match', {
+    p_match_id: input.id,
+    p_mode: input.mode,
+    p_player_a: input.playerA,
+    p_player_b: input.playerB,
+    p_seed: input.seed,
+    p_is_bot: input.isBot,
+    p_hold_a: holdA.requestId,
+    p_hold_b: holdB?.requestId ?? null,
+  });
+  if (error) throw new Error(`create_wagered_match(${input.id}): ${error.message}`);
 }
 
 export type DbEndReason = 'victory' | 'resign' | 'timeout' | 'disconnect';
@@ -124,10 +190,7 @@ export async function applyMatchResult(
     p_loss_points: reward.loss.points,
     p_loss_coins: reward.loss.coins,
   });
-  if (error) {
-    console.warn(`[db] applyMatchResult(${matchId}) failed:`, error.message);
-    return false;
-  }
+  if (error) throw new Error(`applyMatchResult(${matchId}): ${error.message}`);
   return data === true;
 }
 
@@ -189,4 +252,238 @@ export async function fetchProfileRewardTotals(userId: string): Promise<ProfileR
     battlesWon: data.battles_won,
     coins: data.coins,
   };
+}
+
+export interface SyncedPrivyAccountResult extends TrustedPrivyAccount {
+  readonly pointBalance: number;
+  readonly welcomeAwarded: boolean;
+}
+
+/** Server-only upsert after both the Supabase and Privy tokens are verified. */
+export async function upsertPrivyAccount(
+  profileId: string,
+  account: TrustedPrivyAccount,
+): Promise<SyncedPrivyAccountResult> {
+  const { error } = await db().rpc('sync_privy_account', {
+    p_profile_id: profileId,
+    p_privy_user_id: account.privyUserId,
+    p_email: account.email,
+    p_display_name: account.displayName,
+    p_auth_provider: account.authProvider,
+    p_solana_wallet_address: account.solanaWalletAddress,
+    p_solana_wallet_id: account.solanaWalletId,
+    p_linked_accounts: account.linkedAccounts,
+    p_privy_created_at: account.privyCreatedAt,
+  });
+  if (error) throw new Error(`privy account upsert(${profileId}): ${error.message}`);
+  const { data: pointRows, error: pointError } = await db().rpc('ensure_point_account', {
+    p_profile_id: profileId,
+    p_privy_user_id: account.privyUserId,
+  });
+  const point = pointRows?.[0];
+  if (pointError || !point) {
+    throw new Error(`point account init(${profileId}): ${pointError?.message ?? 'no result'}`);
+  }
+  return {
+    ...account,
+    pointBalance: Number(point.balance),
+    welcomeAwarded: point.welcome_awarded,
+  };
+}
+
+export async function fetchPointBalance(profileId: string): Promise<number> {
+  const { data, error } = await db().rpc('get_point_balance', { p_profile_id: profileId });
+  if (error || data === null) {
+    throw new Error(`point balance(${profileId}): ${error?.message ?? 'not found'}`);
+  }
+  return Number(data);
+}
+
+export async function fetchVerifiedWalletAddress(profileId: string): Promise<string> {
+  const { data, error } = await db()
+    .from('privy_accounts')
+    .select('solana_wallet_address')
+    .eq('profile_id', profileId)
+    .single<{ solana_wallet_address: string | null }>();
+  if (error || !data.solana_wallet_address) {
+    throw new Error(`verified Solana wallet(${profileId}): ${error?.message ?? 'not available'}`);
+  }
+  return data.solana_wallet_address;
+}
+
+export interface WagerReservation {
+  readonly ok: boolean;
+  readonly requestId: string;
+  readonly balance: number;
+  readonly reason: string | null;
+}
+
+export async function reservePointWager(
+  profileId: string,
+  requestId: string,
+): Promise<WagerReservation> {
+  const { data, error } = await db().rpc('reserve_point_wager', {
+    p_profile_id: profileId,
+    p_request_id: requestId,
+    p_stake: 50,
+  });
+  const row = data?.[0];
+  if (error || !row) throw new Error(`reserve wager(${profileId}): ${error?.message ?? 'no result'}`);
+  return {
+    ok: row.ok,
+    requestId: row.hold_id,
+    balance: Number(row.balance),
+    reason: row.reason,
+  };
+}
+
+export interface OfflineWagerSettlement {
+  readonly balance: number;
+  /** False when the hold was already settled, refunded, or belongs to a room. */
+  readonly settled: boolean;
+}
+
+/**
+ * Settles a wager played against the device's own AI (0012). There is no
+ * matches row to go through, so the hold itself is the idempotency key and a
+ * retried settlement pays the prize exactly once.
+ */
+export async function settleOfflineWager(
+  profileId: string,
+  requestId: string,
+  won: boolean,
+): Promise<OfflineWagerSettlement> {
+  const { data, error } = await db().rpc('settle_offline_wager', {
+    p_profile_id: profileId,
+    p_request_id: requestId,
+    p_won: won,
+  });
+  const row = data?.[0];
+  if (error && isMissingFunction(error)) {
+    throw missingMigration('settle_offline_wager', '0012_offline_wagers.sql');
+  }
+  if (error || !row) {
+    throw new Error(`settle offline wager(${requestId}): ${error?.message ?? 'no result'}`);
+  }
+  return { balance: Number(row.balance), settled: row.settled };
+}
+
+export async function refundPointWager(profileId: string, requestId: string): Promise<number> {
+  const { data, error } = await db().rpc('refund_point_wager', {
+    p_profile_id: profileId,
+    p_request_id: requestId,
+  });
+  if (error || data === null) throw new Error(`refund wager(${requestId}): ${error?.message ?? 'no result'}`);
+  return Number(data);
+}
+
+export interface CancelledWagerBalance {
+  readonly profileId: string;
+  readonly balance: number;
+}
+
+export async function cancelWageredMatchBeforeStart(
+  matchId: string,
+  cancelledBy: string,
+): Promise<readonly CancelledWagerBalance[]> {
+  const { data, error } = await db().rpc('cancel_wagered_match_before_start', {
+    p_match_id: matchId,
+    p_cancelled_by: cancelledBy,
+  });
+  if (error) throw new Error(`cancel wager match(${matchId}): ${error.message}`);
+  return (data ?? []).map((row) => ({
+    profileId: row.cancelled_profile_id,
+    balance: Number(row.balance),
+  }));
+}
+
+export async function completePointBuy(
+  profileId: string,
+  requestId: string,
+  signature: string,
+  points: number,
+  lamports: number,
+): Promise<number> {
+  const { data, error } = await db().rpc('complete_point_buy', {
+    p_profile_id: profileId,
+    p_request_id: requestId,
+    p_signature: signature,
+    p_points: points,
+    p_lamports: lamports,
+  });
+  if (error || data === null) throw new Error(`complete point buy(${requestId}): ${error?.message ?? 'no result'}`);
+  return Number(data);
+}
+
+export interface PointSellStart {
+  readonly ok: boolean;
+  readonly balance: number;
+  readonly status: string;
+  readonly reason: string | null;
+}
+
+export async function beginPointSell(
+  profileId: string,
+  requestId: string,
+  points: number,
+  lamports: number,
+): Promise<PointSellStart> {
+  const { data, error } = await db().rpc('begin_point_sell', {
+    p_profile_id: profileId,
+    p_request_id: requestId,
+    p_points: points,
+    p_lamports: lamports,
+  });
+  const row = data?.[0];
+  if (error || !row) throw new Error(`begin point sell(${requestId}): ${error?.message ?? 'no result'}`);
+  return { ok: row.ok, balance: Number(row.balance), status: row.status, reason: row.reason };
+}
+
+export type PointTradeRow = Database['public']['Tables']['point_trades']['Row'];
+
+export async function fetchPointTrade(requestId: string): Promise<PointTradeRow | null> {
+  const { data, error } = await db()
+    .from('point_trades')
+    .select('*')
+    .eq('request_id', requestId)
+    .maybeSingle<PointTradeRow>();
+  if (error) throw new Error(`point trade(${requestId}): ${error.message}`);
+  return data;
+}
+
+export async function markPointSellBroadcast(
+  requestId: string,
+  input: {
+    signature: string;
+    signedTransaction: string;
+    blockhash: string;
+    lastValidBlockHeight: number;
+  },
+): Promise<void> {
+  const { error } = await db().rpc('mark_point_sell_broadcast', {
+    p_request_id: requestId,
+    p_signature: input.signature,
+    p_signed_transaction: input.signedTransaction,
+    p_blockhash: input.blockhash,
+    p_last_valid_block_height: input.lastValidBlockHeight,
+  });
+  if (error) throw new Error(`mark point sell broadcast(${requestId}): ${error.message}`);
+}
+
+export async function completePointSell(requestId: string, signature: string): Promise<number> {
+  const { data, error } = await db().rpc('complete_point_sell', {
+    p_request_id: requestId,
+    p_signature: signature,
+  });
+  if (error || data === null) throw new Error(`complete point sell(${requestId}): ${error?.message ?? 'no result'}`);
+  return Number(data);
+}
+
+export async function refundPointSell(requestId: string, reason: string): Promise<number> {
+  const { data, error } = await db().rpc('refund_point_sell', {
+    p_request_id: requestId,
+    p_error: reason,
+  });
+  if (error || data === null) throw new Error(`refund point sell(${requestId}): ${error?.message ?? 'no result'}`);
+  return Number(data);
 }

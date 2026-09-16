@@ -16,7 +16,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -47,6 +47,8 @@ import {
   type PlacementMode,
   type PlacementPreviewCell,
 } from '@/state/placement';
+import { stakeOfflineWager } from '@/net/offlineWager';
+import { usePoints } from '@/state/points';
 import { InkButton } from '@/ui/InkButton';
 import { InkPanel } from '@/ui/InkPanel';
 import { Paper } from '@/ui/Paper';
@@ -924,7 +926,15 @@ const DraggableArsenal = memo(function DraggableArsenal({
   );
 });
 
-function PulsingBattleButton({ enabled, onPress }: { enabled: boolean; onPress: () => void }) {
+function PulsingBattleButton({
+  enabled,
+  label = 'Battle!',
+  onPress,
+}: {
+  enabled: boolean;
+  label?: string;
+  onPress: () => void;
+}) {
   const reduceMotion = useReducedMotion();
   const pulse = useSharedValue(1);
 
@@ -948,7 +958,7 @@ function PulsingBattleButton({ enabled, onPress }: { enabled: boolean; onPress: 
   return (
     <Animated.View style={[styles.battleButton, style]}>
       <InkButton
-        label="Battle!"
+        label={label}
         tone="confirm"
         size="xl"
         w={148}
@@ -1104,13 +1114,18 @@ function PlacementCanvas() {
   const params = useLocalSearchParams<{
     mode?: string | string[];
     ruleset?: string | string[];
+    wager?: string | string[];
   }>();
   const mode = parseMode(params.mode);
   const requestedRuleset = parseRuleset(params.ruleset);
+  const requestedWager = (Array.isArray(params.wager) ? params.wager[0] : params.wager) === '1';
   const sessionSeed = useRef((Date.now() ^ 0x5ea71e) >>> 0);
   const shuffleSeed = useRef(sessionSeed.current + 1);
   const previewRef = useRef<PreviewHandle>(null);
   const [fuelShakeNonce, setFuelShakeNonce] = useState(0);
+  const [wagered, setWagered] = useState(requestedWager);
+  /** The offline stake is in flight — Battle! stays down until it lands. */
+  const [staking, setStaking] = useState(false);
   const activeBand = useSharedValue(0);
   const hoverRow = useSharedValue(-1);
   const hoverCol = useSharedValue(-1);
@@ -1125,6 +1140,8 @@ function PlacementCanvas() {
   const hotseatPlayer = usePlacement((state) => state.hotseatPlayer);
   const handoffVisible = usePlacement((state) => state.handoffVisible);
   const playerTwoName = usePlacement((state) => state.playerTwoName);
+  const pointBalance = usePoints((state) => state.balance);
+  const pointsReady = usePoints((state) => state.ready);
 
   useEffect(() => {
     usePlacement.getState().initialize(mode, sessionSeed.current, requestedRuleset);
@@ -1210,9 +1227,44 @@ function PlacementCanvas() {
     }
   }, []);
 
+  const toggleWager = useCallback(() => {
+    if (wagered) {
+      setWagered(false);
+      return;
+    }
+    if (!pointsReady || pointBalance < 50) {
+      Alert.alert(
+        pointsReady ? 'Not enough points' : 'Points unavailable',
+        pointsReady
+          ? `A wager needs 50 points. Your balance is ${pointBalance}.`
+          : 'Your point balance has not loaded yet. Check the server connection or open the Points exchange.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open exchange', onPress: () => router.push('/points') },
+        ],
+      );
+      return;
+    }
+    setWagered(true);
+  }, [pointBalance, pointsReady, router, wagered]);
+
   const beginBattle = useCallback(() => {
+    if (staking) return;
     const state = usePlacement.getState();
     if (state.ships.length !== FLEET.length) return;
+    if (wagered && (!pointsReady || pointBalance < 50)) {
+      Alert.alert(
+        'Wager unavailable',
+        pointsReady
+          ? `A new wager needs 50 points. Your balance is ${pointBalance}.`
+          : 'Your point balance is unavailable. Reconnect to the game server before entering a wager.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open exchange', onPress: () => router.push('/points') },
+        ],
+      );
+      return;
+    }
     const submission = validateSubmission(state.ruleset, state.ships, state.arsenal);
     if (!submission.ok) {
       state.setValidationReason(submission.reason);
@@ -1226,11 +1278,38 @@ function PlacementCanvas() {
     if (state.mode === 'hotseat') state.finishSecondPlayer();
     if (state.mode === 'online') {
       // P13 owns the live socket; the placement store remains the payload source.
-      router.push('/searching');
+      router.push({
+        pathname: '/searching',
+        params: { wager: wagered ? '1' : '0', opponent: 'player' },
+      });
+      return;
+    }
+    if (state.mode === 'ai' && wagered) {
+      // Offline stays offline: the opponent is this device's AI, so there is
+      // nobody to find. Only the stake goes to the server, before the first
+      // shot — the result screen settles it once the match is decided.
+      setStaking(true);
+      void stakeOfflineWager().then((result) => {
+        setStaking(false);
+        if (result.ok) {
+          router.push('/battle');
+          return;
+        }
+        Alert.alert(
+          result.reason === 'insufficient_points' ? 'Not enough points' : 'Wager unavailable',
+          result.message,
+          result.reason === 'insufficient_points'
+            ? [
+                { text: 'Not now', style: 'cancel' },
+                { text: 'Open exchange', onPress: () => router.push('/points') },
+              ]
+            : [{ text: 'OK' }],
+        );
+      });
       return;
     }
     router.push('/battle');
-  }, [router]);
+  }, [pointBalance, pointsReady, router, staking, wagered]);
 
   return (
     <Scale>
@@ -1243,6 +1322,19 @@ function PlacementCanvas() {
         <FuelGauge spent={fuelSpent} budget={fuelBudget} shakeNonce={fuelShakeNonce} />
       ) : null}
       {mode === 'ai' ? <DifficultyPicker value={difficulty} /> : null}
+      {mode !== 'hotseat' ? (
+        <View style={styles.wagerButton}>
+          <InkButton
+            label={wagered ? 'Wager ON · 50 P' : 'Wager OFF'}
+            tone={wagered ? 'confirm' : 'ink'}
+            size="sm"
+            w={150}
+            h={42}
+            seedKey="placement-wager"
+            onPress={toggleWager}
+          />
+        </View>
+      ) : null}
 
       <TrayDock x={trayX} remaining={FLEET.length - ships.length} />
       <GridBoard
@@ -1303,7 +1395,8 @@ function PlacementCanvas() {
         <InkButton label="Shuffle" size="sm" w={116} h={48} onPress={shuffle} />
       </View>
       <PulsingBattleButton
-        enabled={ships.length === FLEET.length && pendingArsenalId === null}
+        enabled={ships.length === FLEET.length && pendingArsenalId === null && !staking}
+        label={staking ? 'Staking…' : 'Battle!'}
         onPress={beginBattle}
       />
 
@@ -1341,6 +1434,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
+  wagerButton: { position: 'absolute', left: 350, top: 3, zIndex: 50 },
   difficultyLabel: {
     color: color.ink,
     fontFamily: font.label,

@@ -18,6 +18,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import { toLayoutPayload, type ClientMessage, type ServerMessage } from '../protocol';
 
+vi.mock('expo-sqlite/localStorage/install', () => ({}));
 vi.mock('../api', () => ({
   getAccessToken: vi.fn(async () => ({ ok: true as const, value: 'alice' })),
 }));
@@ -161,6 +162,13 @@ function startFakeServer(port: number, initialRoom = new FakeRoom()): Promise<Fa
           server.send({ t: 'queued', v: 1, position: 1, onlineCount: 3 });
           return;
         case 'cancelQueue':
+          server.send({
+            t: 'queue:cancelled',
+            v: 1,
+            refunded: true,
+            reason: 'cancelled',
+            pointBalance: 100,
+          });
           return;
         case 'ready': {
           const mine = server.room.apply({ type: 'SUBMIT_LAYOUT', playerId: ALICE, ships: message.layout.ships, arsenal: message.layout.arsenal });
@@ -214,6 +222,8 @@ function sendMatched(server: FakeServer): void {
     mode: 'classic',
     fuelBudget: 260,
     layoutDeadline: Date.now() + 90_000,
+    wagered: false,
+    wagerStake: 0,
   });
 }
 
@@ -494,7 +504,7 @@ describe('match client', () => {
     const mc = await client();
     mc.getState().queue('classic');
     await until(() => mc.getState().status === 'queued', 5000, 'queued');
-    mc.getState().cancelQueue();
+    await mc.getState().cancelQueue();
     expect(mc.getState().status).toBe('idle');
     await until(() => server.alice === null, 5000, 'server saw the close');
     expect(server.received.some((m) => m.t === 'cancelQueue')).toBe(true);

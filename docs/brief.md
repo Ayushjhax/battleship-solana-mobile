@@ -1,8 +1,11 @@
 # Empire of Bits: Sea Battle — Brief, Rules & Architecture
 
-**FINAL — Web2 only.** No wallet, no crypto, no wagering, no Anchor, no Rust, no Privy.
+**CURRENT:** Privy is the mandatory front-door authentication layer and provides an
+embedded Solana wallet. Optional 50-point wagers and the 100-point/0.001-SOL exchange
+are server-authoritative; the server verifies buys on-chain and signs treasury payouts.
 
-**Stack:** Expo SDK 57 · React Native · TypeScript strict · Supabase (Postgres + Auth + Realtime) · Node WebSocket match server · landscape-only Android.
+**Stack:** Expo SDK 57 development build · React Native · TypeScript strict · Privy Auth +
+embedded Solana wallet · Supabase (Postgres + Auth + Realtime) · Node WebSocket match server · landscape mobile.
 
 **Deadline:** 48 hours to a showcase build.
 **Reference:** Sea Battle 2 by BYRIL (`com.byril.seabattle2`).
@@ -17,13 +20,14 @@ Game *mechanics* aren't copyrightable — clone the ruleset freely. The *art* is
 
 ## 1. The decision that shapes everything else
 
-**Keep the entire app Expo Go compatible.**
+**Use an Expo development build.** Privy's native mobile SDK and secure wallet modules
+are required and are not available in Expo Go.
 
-Every library in this build is either pure JS or bundled in Expo Go: `react-native-svg`, `react-native-reanimated`, `react-native-gesture-handler`, `expo-font`, `expo-audio`, `expo-haptics`, `expo-screen-orientation`, `expo-sqlite`, `@supabase/supabase-js`, `zustand`, `roughjs`, `zod`. Native WebSocket is built into React Native.
+Keep the native surface constrained to the Expo 57-compatible dependencies in
+`package.json`; engine and gameplay code remain pure TypeScript or existing Expo modules.
 
-That means: **no Gradle builds during development.** Save, see it on the phone in under a second. On a 48-hour timeline this is worth more than any library you'd gain by dropping it. You build one APK at the very end with EAS.
-
-The rule to enforce in `CLAUDE.md`: *if a dependency requires a custom dev build, don't add it — find another way.* This is exactly what removing the wallet bought you, so don't spend it.
+Build the native development client once, then use Metro for normal iteration. Changes
+to native dependencies or configuration require rebuilding the client.
 
 ---
 
@@ -130,7 +134,7 @@ There is no version of this that works with client-authoritative shots.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  Expo app (Android, landscape, Expo Go compatible)       │
+│  Expo development build (mobile, landscape)              │
 │  expo-router · react-native-svg + roughjs · Reanimated   │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  src/engine/ — pure TS, zero RN imports            │  │
@@ -158,7 +162,8 @@ There is no version of this that works with client-authoritative shots.
 | Match state, shot resolution, turn timer, board masking | Node WS server |
 | Auth, profiles, avatars, rank, match history, leaderboard | Supabase Postgres + RLS |
 | Lobby presence ("142 online"), chat and emotes | Supabase Realtime |
-| Offline AI matches and hot-seat | The client, running the same engine |
+| Normal offline AI matches and hot-seat | The client, running the same engine |
+| Online matches, wagered AI matches, point ledger and SOL exchange | Node WS/HTTP server + Postgres |
 
 **Why not Supabase Realtime for the match itself?** It's a pub/sub relay — (cite index="37-1">you control access with RLS policies on `realtime.messages`, and enforcing private channels means disabling 'Allow public access' in Realtime Settings</cite> — but it forwards what clients send. It can't resolve a shot, mask a board, or run a turn timer. Use it for what it's excellent at: presence and chat. The Node server owns authority.
 
@@ -167,11 +172,16 @@ There is no version of this that works with client-authoritative shots.
 - (cite index="58-1">In Expo, import `expo-sqlite/localStorage/install` and pass `storage: localStorage` to `createClient`, with `detectSessionInUrl: false` since mobile has no URL to read a session from</cite>. (cite index="54-1">You do **not** need `react-native-url-polyfill` — Expo already installs a URL global</cite>. A lot of tutorials still tell you to; ignore them.
 - (cite index="35-1">Supabase is deprecating the `anon` and `service_role` keys by the end of 2026 in favour of publishable (`sb_publishable_…`) and secret (`sb_secret_…`) keys</cite>. Use the new names from the start. Publishable in the app, secret on the Node server only.
 
-### 4.5 Auth without accounts
+### 4.5 Privy-backed gameplay session
 
-Supabase **anonymous sign-in** on first launch. The player gets a real `auth.users` row and a `profiles` row immediately, can play instantly, and never sees a login screen. A database trigger creates the profile.
+Privy authentication is required on first launch using Google or email OTP. Privy creates
+the embedded Solana wallet. The client then calls `/auth/privy/sync`; the Node server verifies
+the Privy token, creates or finds a stable Supabase Auth/profile row for that Privy DID,
+initializes the point account, and returns a one-use session handoff. Anonymous sign-in is
+not part of the production flow, and the Supabase secret key never enters the app bundle.
 
-Optional, only if time allows: an "Save my progress" button in settings that links an email to the existing anonymous user, so a reinstall recovers the account. This is the entire reason the Choose Game Progress screen from `IMG_9754` exists — local save vs cloud save.
+Privy therefore recovers the same human identity, wallet, gameplay UUID and point balance
+across installs. The progress chooser continues to compare local and cloud gameplay records.
 
 ---
 

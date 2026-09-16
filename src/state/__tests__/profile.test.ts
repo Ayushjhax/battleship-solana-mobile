@@ -69,4 +69,34 @@ describe('offline result queue', () => {
     expect(state.battlesPlayed).toBe(6);
     expect(state.battlesWon).toBe(3);
   });
+
+  it('clears account data on sign-out while keeping device preferences', () => {
+    useProfile.setState({
+      userId: 'previous-user',
+      name: 'Previous captain',
+      rankPoints: 900,
+      battlesPlayed: 12,
+      pendingResults: [
+        {
+          id: 'pending-old-account',
+          mode: 'ai',
+          won: true,
+          completedAt: '2026-09-12T00:00:00.000Z',
+        },
+      ],
+      soundOn: false,
+      musicVolume: 0.6,
+    });
+
+    useProfile.getState().clearAccount();
+
+    const state = useProfile.getState();
+    expect(state.userId).toBeNull();
+    expect(state.name).toBe('');
+    expect(state.rankPoints).toBe(0);
+    expect(state.battlesPlayed).toBe(0);
+    expect(state.pendingResults).toEqual([]);
+    expect(state.soundOn).toBe(false);
+    expect(state.musicVolume).toBe(0.6);
+  });
 });

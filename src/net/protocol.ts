@@ -167,6 +167,7 @@ export const ErrorCodeSchema = z.enum([
   'wrong_phase',
   'illegal_action',
   'already_queued',
+  'insufficient_points',
   'internal',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
@@ -182,6 +183,14 @@ export const ServerMessageSchema = z.discriminatedUnion('t', [
     v: z.literal(1),
     position: z.number().int(),
     onlineCount: z.number().int(),
+    pointBalance: z.number().int().nonnegative().optional(),
+  }),
+  z.object({
+    t: z.literal('queue:cancelled'),
+    v: z.literal(1),
+    refunded: z.boolean(),
+    reason: z.enum(['cancelled', 'opponent_cancelled']),
+    pointBalance: z.number().int().nonnegative().optional(),
   }),
   z.object({
     t: z.literal('matched'),
@@ -192,6 +201,8 @@ export const ServerMessageSchema = z.discriminatedUnion('t', [
     mode: MatchModeSchema,
     fuelBudget: z.number().int(),
     layoutDeadline: z.number(),
+    wagered: z.boolean().default(false),
+    wagerStake: z.number().int().nonnegative().default(0),
   }),
   z.object({
     t: z.literal('state'),
@@ -218,6 +229,13 @@ export const ServerMessageSchema = z.discriminatedUnion('t', [
     winnerId: z.string().min(1),
     reason: GameOverReasonSchema,
     rewards: MatchRewardsSchema,
+    wager: z
+      .object({
+        stake: z.number().int().nonnegative(),
+        prize: z.number().int().nonnegative(),
+        balance: z.number().int().nonnegative(),
+      })
+      .optional(),
   }),
   z.object({
     t: z.literal('error'),
@@ -247,7 +265,14 @@ export function decodeServerMessage(raw: unknown): { ok: true; message: ServerMe
 
 export type ClientMessage =
   | { t: 'hello'; v: 1; token: string; resumeMatchId?: string }
-  | { t: 'queue'; v: 1; mode: MatchMode }
+  | {
+      t: 'queue';
+      v: 1;
+      mode: MatchMode;
+      wagered: boolean;
+      opponent: 'player' | 'bot';
+      wagerRequestId?: string;
+    }
   | { t: 'cancelQueue'; v: 1 }
   | { t: 'ready'; v: 1; layout: LayoutPayload }
   | { t: 'action'; v: 1; seq: number; action: ActionPayload }
@@ -261,8 +286,20 @@ export function encodeClientMessage(message: ClientMessage): string {
 export function helloMessage(token: string, resumeMatchId?: string): ClientMessage {
   return resumeMatchId ? { t: 'hello', v: 1, token, resumeMatchId } : { t: 'hello', v: 1, token };
 }
-export function queueMessage(mode: MatchMode): ClientMessage {
-  return { t: 'queue', v: 1, mode };
+export function queueMessage(
+  mode: MatchMode,
+  wagered: boolean,
+  opponent: 'player' | 'bot',
+  wagerRequestId?: string,
+): ClientMessage {
+  return {
+    t: 'queue',
+    v: 1,
+    mode,
+    wagered,
+    opponent,
+    ...(wagerRequestId ? { wagerRequestId } : {}),
+  };
 }
 export function cancelQueueMessage(): ClientMessage {
   return { t: 'cancelQueue', v: 1 };

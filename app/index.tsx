@@ -5,17 +5,22 @@
  *
  * Tap anywhere to skip to the end state. The OS reduce-motion setting cuts
  * straight to the held logo for 900 ms. The network never gates the boot: the
- * anonymous sign-in runs with a 2.5 s cap and the route is decided from the
- * local profile.
+ * an existing gameplay session is read with a 2.5 s cap while verified Privy
+ * bootstrap runs independently, and routing remains local-first.
  */
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
 
 import { playSfx } from '@/audio/sfx';
 import { BOOT_TIMELINE, BootSequence, type BootMode } from '@/features/boot/BootSequence';
-import { BOOT_NETWORK_TIMEOUT_MS, ensureSession, withTimeout } from '@/net/auth';
+import {
+  BOOT_NETWORK_TIMEOUT_MS,
+  PRIVY_HANDOFF_TIMEOUT_MS,
+  ensureSession,
+  withTimeout,
+} from '@/net/auth';
 import {
   cloudAsLocal,
   cloudHasProgress,
@@ -25,32 +30,70 @@ import {
 } from '@/net/profileSync';
 import { useCloud } from '@/state/cloud';
 import { useProfile, waitForProfileHydration } from '@/state/profile';
+import { usePrivySync } from '@/state/privySync';
 import { Scale } from '@/ui/Scale';
+import { CANVAS_W, color, font, type as typeScale } from '@/ui/tokens';
 
 type Target = '/menu' | '/name' | '/progress';
 
+function waitForPrivyBootstrap(timeoutMs: number): Promise<void> {
+  const status = usePrivySync.getState().status;
+  if (status === 'synced' || status === 'error') return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve();
+    };
+    const unsubscribe = usePrivySync.subscribe((state) => {
+      if (state.status === 'synced' || state.status === 'error') finish();
+    });
+    const timer = setTimeout(finish, timeoutMs);
+  });
+}
+
+/**
+ * The gameplay user id for this launch. A session already on the device answers
+ * at once and boot never waits. Without one — a first install, or the first
+ * launch after a sign-out — PrivyProfileSync's verified handoff is the only
+ * thing that can install it, so that wait gets its own budget instead of
+ * sharing (and losing to) the Supabase read's. Returns null once it gives up.
+ */
+async function resolveGameplayUserId(): Promise<string | null> {
+  const existing = await withTimeout(ensureSession(), BOOT_NETWORK_TIMEOUT_MS, null);
+  if (existing) return existing;
+  await waitForPrivyBootstrap(PRIVY_HANDOFF_TIMEOUT_MS);
+  return withTimeout(ensureSession(), BOOT_NETWORK_TIMEOUT_MS, null);
+}
+
 /**
  * Decides the route. The local profile is the default; the network is
- * best-effort under one cap: sign in, pull the cloud row, and only if a
- * played-on cloud profile differs from a played-on local one show the
- * progress chooser. A reinstall (empty local, cloud has progress) adopts the
- * cloud silently.
+ * best-effort under one cap: read the handoff's session, pull the cloud row,
+ * and only if a played-on cloud profile differs from a played-on local one
+ * show the progress chooser. A reinstall (empty local, cloud has progress)
+ * adopts the cloud silently — as does a returning sign-in, which
+ * PrivyProfileSync has usually already merged by the time we get here.
  */
 async function runBootWork(): Promise<Target> {
   await waitForProfileHydration();
 
-  const cloud = await withTimeout<CloudProfile | null>(
-    (async () => {
-      const userId = await ensureSession();
-      if (!userId) return null;
-      useProfile.getState().setUserId(userId);
-      const row = await pullCloudProfile(userId);
-      useCloud.getState().setProfile(row);
-      return row;
-    })(),
-    BOOT_NETWORK_TIMEOUT_MS,
-    null,
-  );
+  const userId = await resolveGameplayUserId();
+  if (userId) useProfile.getState().setUserId(userId);
+
+  const cloud = userId
+    ? await withTimeout<CloudProfile | null>(
+        (async () => {
+          const row = await pullCloudProfile(userId);
+          useCloud.getState().setProfile(row);
+          return row;
+        })(),
+        BOOT_NETWORK_TIMEOUT_MS,
+        null,
+      )
+    : null;
 
   const local = useProfile.getState();
   if (cloud && profilesConflict(local, cloud)) return '/progress';
@@ -65,18 +108,34 @@ export default function Boot() {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
   const [mode, setMode] = useState<BootMode>(reduceMotion ? 'end' : 'play');
+  const [restoring, setRestoring] = useState(false);
   const work = useRef<Promise<Target> | null>(null);
   const leaving = useRef(false);
+  const mounted = useRef(true);
 
   // Kicked off once, before any timer or tap can ask for the result.
   useEffect(() => {
+    mounted.current = true;
     if (work.current === null) work.current = runBootWork();
+    return () => {
+      mounted.current = false;
+    };
   }, []);
 
   const leave = useCallback(async () => {
     if (leaving.current) return;
     leaving.current = true;
+    // The account handoff can outlast the timeline on a fresh sign-in, so say
+    // so rather than holding a silent sheet.
+    const caption = setTimeout(() => {
+      if (mounted.current) setRestoring(true);
+    }, 400);
     const target = await (work.current ?? runBootWork());
+    clearTimeout(caption);
+    // A sign-out unmounts this tree mid-wait; navigating then would drop the
+    // next account onto a stale route.
+    if (!mounted.current) return;
+    setRestoring(false);
     setMode('exit');
     // The native slide_from_right on the next screen starts on the next tick,
     // so the sheet's exit and the menu's entrance overlap.
@@ -111,7 +170,26 @@ export default function Boot() {
   return (
     <Scale backdrop="plain">
       <BootSequence mode={mode} />
+      {restoring ? (
+        <Text style={styles.restoring} accessibilityLiveRegion="polite">
+          Restoring your captain…
+        </Text>
+      ) : null}
       <Pressable onPress={skip} accessibilityLabel="Skip intro" style={StyleSheet.absoluteFill} />
     </Scale>
   );
 }
+
+const styles = StyleSheet.create({
+  // Under the held logo, on the sheet the boot sequence has already drawn.
+  restoring: {
+    position: 'absolute',
+    left: 0,
+    top: 258,
+    width: CANVAS_W,
+    color: color.inkSoft,
+    fontFamily: font.body,
+    fontSize: typeScale.xs,
+    textAlign: 'center',
+  },
+});

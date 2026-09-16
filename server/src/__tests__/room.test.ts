@@ -158,6 +158,52 @@ describe('a complete match', () => {
   });
 });
 
+describe('pre-game wager cancellation', () => {
+  it('refunds both holds and removes a matched room before either fleet is ready', async () => {
+    vi.resetModules();
+    installAuthMock();
+    const dbCalls = installDbMock().calls;
+    const server = await startTestServer();
+    const alice = await connectClient(server.port, 'alice');
+    const bob = await connectClient(server.port, 'bob');
+
+    alice.send({
+      t: 'queue',
+      v: 1,
+      mode: 'classic',
+      wagered: true,
+      opponent: 'player',
+      wagerRequestId: '11111111-1111-4111-8111-111111111111',
+    });
+    await alice.waitFor((message) => message.t === 'queued');
+    bob.send({
+      t: 'queue',
+      v: 1,
+      mode: 'classic',
+      wagered: true,
+      opponent: 'player',
+      wagerRequestId: '22222222-2222-4222-8222-222222222222',
+    });
+    await bob.waitFor((message) => message.t === 'queued');
+    await alice.waitFor((message) => message.t === 'matched');
+    await bob.waitFor((message) => message.t === 'matched');
+
+    alice.send({ t: 'cancelQueue', v: 1 });
+    const mine = await alice.waitFor((message) => message.t === 'queue:cancelled');
+    const theirs = await bob.waitFor((message) => message.t === 'queue:cancelled');
+
+    expect(mine).toMatchObject({ refunded: true, reason: 'cancelled', pointBalance: 100 });
+    expect(theirs).toMatchObject({ refunded: true, reason: 'opponent_cancelled', pointBalance: 100 });
+    expect(dbCalls.filter((call) => call.fn === 'cancelWageredMatchBeforeStart')).toHaveLength(1);
+    const { rooms } = await import('../room');
+    expect(rooms.size).toBe(0);
+
+    alice.close();
+    bob.close();
+    await server.close();
+  });
+});
+
 describe('turn timeout', () => {
   let server: TestServer;
 

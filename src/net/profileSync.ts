@@ -96,4 +96,10 @@ export async function pushProfile(userId: string, patch: ProfilePatch): Promise<
   return true;
 }
 
-export { cloudAsLocal, cloudHasProgress, localAsPatch, profilesConflict } from './profileMerge';
+export {
+  cloudAsLocal,
+  cloudHasProgress,
+  localAsPatch,
+  profilesConflict,
+  shouldRestoreCloudProfile,
+} from './profileMerge';

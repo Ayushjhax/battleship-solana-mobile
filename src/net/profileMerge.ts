@@ -60,6 +60,28 @@ export function cloudHasProgress(cloud: CloudProfile): boolean {
 }
 
 /**
+ * Does this cloud row belong to a captain who already exists, so a sign-in
+ * should restore it over the cleared local profile?
+ *
+ * `welcomeAwarded` is the server's answer to "did THIS sync create the points
+ * account", so it is true exactly once per Privy identity — a truly new Gmail,
+ * which must keep the blank local profile and go through onboarding. Its row
+ * does exist by then (the sign-up trigger writes a generated "Sailor 4821"),
+ * which is why the row's presence alone cannot decide this.
+ *
+ * The progress check is the safety net for a profile that predates the points
+ * table: its first sync also reports `welcomeAwarded`, and restoring it is far
+ * better than sending a played-on captain back through onboarding.
+ */
+export function shouldRestoreCloudProfile(
+  cloud: CloudProfile | null,
+  welcomeAwarded: boolean,
+): cloud is CloudProfile {
+  if (!cloud) return false;
+  return !welcomeAwarded || cloudHasProgress(cloud);
+}
+
+/**
  * The progress screen appears ONLY when both sides exist and differ. "Exist"
  * means played on: a local profile with a name, a cloud row with progress.
  */

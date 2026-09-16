@@ -40,6 +40,7 @@ import { EventPlayer, type PlayEvent } from '@/fx/EventPlayer';
 import { applyEvent, applyReveal } from '@/fx/applyEvent';
 import { LocalMatch, setLocalAiThinkTime } from '@/features/offline/LocalMatch';
 import { useMatchClient } from '@/net/match-client';
+import { usePoints } from '@/state/points';
 import { useProfile } from '@/state/profile';
 
 export type BattleMode = 'ai' | 'hotseat' | 'online' | 'tutorial';
@@ -84,6 +85,12 @@ interface BattleData {
   ownerId: string;
   /** Unique idempotency key for a locally awarded result. */
   resultId: string | null;
+  /**
+   * An offline wager is riding on this match — the stake was taken before the
+   * first shot. Captured at start() so a settlement still queued from an
+   * earlier match can never make this one look wagered.
+   */
+  wagered: boolean;
   /** Whose eyes we look through. Swaps in hotseat. */
   me: string;
   combatants: Record<string, Combatant>;
@@ -143,6 +150,7 @@ const EMPTY: BattleData = {
   matchId: null,
   ownerId: '',
   resultId: null,
+  wagered: false,
   me: '',
   combatants: {},
   shown: null,
@@ -208,12 +216,16 @@ function finishLocalResult(): void {
     state.ownerId &&
     state.shown?.winner
   ) {
+    const won = state.shown.winner === state.ownerId;
     useProfile.getState().queueResult({
       id: state.resultId,
       mode: state.mode,
-      won: state.shown.winner === state.ownerId,
+      won,
       completedAt: new Date().toISOString(),
     });
+    // A wager on this match becomes a settlement the result screen sends and
+    // the app retries until it lands. No-op when nothing was staked.
+    if (state.wagered) usePoints.getState().finishWager(won);
   }
   useBattle.setState({ finished: true });
 }
@@ -397,6 +409,7 @@ export const useBattle = create<BattleState>((set, get) => ({
       matchId: match.id,
       ownerId: setup.one.id,
       resultId: `${match.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+      wagered: setup.mode === 'ai' && usePoints.getState().activeWager !== null,
       me,
       combatants: { [setup.one.id]: setup.one, [setup.two.id]: setup.two },
       shown: projectView(match, me),

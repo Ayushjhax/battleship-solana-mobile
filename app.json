@@ -3,10 +3,17 @@
     "name": "Empire of Bits: Sea Battle",
     "slug": "empire-of-bits-seabattle",
     "version": "1.0.0",
+    "platforms": ["ios", "android"],
     "orientation": "landscape",
     "userInterfaceStyle": "light",
     "scheme": "empireofbits",
     "icon": "./assets/ink/brand/icon.png",
+    "ios": {
+      "bundleIdentifier": "com.empireofbits.seabattle",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
     "android": {
       "package": "com.empireofbits.seabattle",
       "softwareKeyboardLayoutMode": "pan",
@@ -47,7 +54,9 @@
             "enableShrinkResourcesInReleaseBuilds": true
           }
         }
-      ]
+      ],
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

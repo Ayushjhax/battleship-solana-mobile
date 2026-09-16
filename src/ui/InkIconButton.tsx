@@ -11,7 +11,16 @@ import { useScale } from './Scale';
 import { color } from './tokens';
 import { RoughShape, hashString, useRough, type PathInfo, type Point } from './useRough';
 
-export type InkIcon = 'settings' | 'sound-on' | 'sound-off' | 'home' | 'chat' | 'close' | 'back';
+export type InkIcon =
+  | 'settings'
+  | 'sound-on'
+  | 'sound-off'
+  | 'home'
+  | 'chat'
+  | 'close'
+  | 'back'
+  | 'profile'
+  | 'wallet';
 
 export interface InkIconButtonProps {
   icon: InkIcon;
@@ -167,6 +176,57 @@ export function InkIconButton({
         }),
       );
     }
+  } else if (icon === 'profile') {
+    layers.push(
+      roughCircle(c, c - s * 0.16, s * 0.22, {
+        seed,
+        stroke: color.ink,
+        strokeWidth: 1.6,
+        fill: color.inkFaint,
+        fillStyle: 'hachure',
+        hachureGap: 2.4,
+      }),
+    );
+    layers.push(
+      roughPath(
+        [
+          [c - s * 0.3, c + s * 0.3],
+          [c - s * 0.25, c + s * 0.1],
+          [c, c + s * 0.02],
+          [c + s * 0.25, c + s * 0.1],
+          [c + s * 0.3, c + s * 0.3],
+        ],
+        { seed: seed + 1, stroke: color.ink, strokeWidth: 1.8 },
+      ),
+    );
+  } else if (icon === 'wallet') {
+    layers.push(
+      roughRect(c - s * 0.3, c - s * 0.22, s * 0.6, s * 0.46, {
+        seed,
+        stroke: color.ink,
+        strokeWidth: 1.6,
+        fill: color.inkFaint,
+        fillStyle: 'hachure',
+        hachureGap: 2.8,
+      }),
+    );
+    layers.push(
+      roughRect(c + s * 0.05, c - s * 0.08, s * 0.3, s * 0.2, {
+        seed: seed + 1,
+        stroke: color.inkRed,
+        strokeWidth: 1.4,
+        fill: color.paper,
+        fillStyle: 'solid',
+      }),
+    );
+    layers.push(
+      roughCircle(c + s * 0.2, c + s * 0.02, 2.4, {
+        seed: seed + 2,
+        stroke: color.inkRed,
+        fill: color.inkRed,
+        fillStyle: 'solid',
+      }),
+    );
   } else if (icon === 'settings') {
     const r = s * 0.24;
     layers.push(roughCircle(c, c, r * 2, { seed, ...stroke }));

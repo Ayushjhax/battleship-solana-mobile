@@ -37,6 +37,8 @@ import { playSfx } from '@/audio/sfx';
 import { haptic } from '@/audio/haptics';
 import { AvatarCard, FlagChip } from '@/features/battle/Hud';
 import { useMatchClient } from '@/net/match-client';
+import { flushPendingWager } from '@/net/offlineWager';
+import { usePoints, WAGER_STAKE } from '@/state/points';
 import { useProfile } from '@/state/profile';
 import { COIN_GOLD } from '@/ui/CurrencyChip';
 import { chevronPoints, laurelBranch, shieldPoints } from '@/ui/geometry';
@@ -429,6 +431,7 @@ export default function ResultScreen() {
     mode?: string;
     ruleset?: string;
     matchId?: string;
+    wager?: string;
     oppName?: string;
     oppPoints?: string;
     oppAvatar?: string;
@@ -441,7 +444,13 @@ export default function ResultScreen() {
   const local = params.local !== '0';
   const mode = params.mode ?? (local ? 'ai' : 'online');
   const ruleset = params.ruleset === 'classic' ? 'classic' : 'advanced';
+  const wagered = params.wager === '1';
   const reduceMotion = useReducedMotion();
+  const pointBalance = usePoints((state) => state.balance);
+  // An offline payout is not real until the server has taken it. Until then
+  // the row says so rather than showing a total the backend never moved.
+  const settling = usePoints((state) => state.pendingWagerSettlement !== null);
+  const settlementFailed = usePoints((state) => state.wagerSettlementError !== null);
 
   // Applied exactly once per mount (and once per match across mounts).
   const [totals] = useState(() =>
@@ -478,6 +487,19 @@ export default function ResultScreen() {
     return () => clearTimeout(id);
   }, []);
 
+  // The result has already captured every server value it needs. Clear the
+  // completed socket state so a later local game can never reuse this match.
+  useEffect(() => {
+    if (!local) useMatchClient.getState().disconnect();
+  }, [local]);
+
+  // An offline wager is settled from here: the stake was taken before the
+  // first shot, so this is where a win is paid. It is idempotent and stays
+  // queued until it lands, so a failure now costs the player nothing.
+  useEffect(() => {
+    if (usePoints.getState().pendingWagerSettlement) void flushPendingWager();
+  }, []);
+
   // Ribbon drop
   const drop = useSharedValue(reduceMotion ? 0 : -80);
   useEffect(() => {
@@ -490,7 +512,7 @@ export default function ResultScreen() {
     else
       router.replace({
         pathname: '/placement',
-        params: { mode: mode === 'online' ? 'online' : 'ai', ruleset },
+        params: { mode: mode === 'online' ? 'online' : 'ai', ruleset, wager: wagered ? '1' : '0' },
       });
   };
 
@@ -528,6 +550,33 @@ export default function ResultScreen() {
                 <Text style={styles.label}>Coins</Text>
                 <Text style={[styles.value, { color: COIN_GOLD }]}>{coins}</Text>
               </View>
+              {wagered ? (
+                <View style={styles.row}>
+                  <Text style={styles.label} numberOfLines={1}>
+                    {settling
+                      ? settlementFailed
+                        ? won
+                          ? 'Wager won · payout pending'
+                          : 'Stake lost · confirming'
+                        : won
+                          ? 'Wager won · paying out…'
+                          : 'Stake lost · settling…'
+                      : won
+                        ? `Wager won · ${pointBalance} total`
+                        : `Stake lost · ${pointBalance} left`}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.value,
+                      { color: settlementFailed ? color.inkSoft : won ? color.inkGreen : color.inkRed },
+                    ]}
+                  >
+                    {/* The stake left the balance before the match; a win hands
+                        back twice it, so the swing on the night is +50 / -50. */}
+                    {won ? `+${WAGER_STAKE * 2}` : `-${WAGER_STAKE}`}
+                  </Text>
+                </View>
+              ) : null}
               {rankedUp ? (
                 <View style={styles.row}>
                   <Text style={styles.label}>New rank</Text>
