@@ -3,7 +3,10 @@
     "name": "Empire of Bits: Ocean Warfare",
     "slug": "empire-of-bits-seabattle",
     "version": "1.0.0",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "orientation": "landscape",
     "userInterfaceStyle": "light",
     "scheme": "empireofbits",
@@ -64,9 +67,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "a5ad1304-4b72-4923-9481-f5fc0bf3f9ee"
+        "projectId": "42c778a5-d4d5-4a6d-af3f-b160bc0fc9ed"
       }
     },
-    "owner": "ayushjhax"
+    "owner": "kunalempire"
   }
 }

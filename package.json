@@ -12,6 +12,9 @@
     "typecheck": "tsc --noEmit",
     "server": "cd server && npm run dev",
     "lint": "eslint .",
+    "eas:apk": "npx eas-cli build --platform android --profile preview",
+    "eas:aab": "npx eas-cli build --platform android --profile production",
+    "eas:dev": "npx eas-cli build --platform android --profile development",
     "check:bundle": "node scripts/check-bundle-secrets.mjs",
     "assets": "bash scripts/ink-assets.sh",
     "brand": "node scripts/make-brand.mjs"
@@ -31,7 +34,7 @@
     "expo-asset": "~57.0.16",
     "expo-audio": "~57.0.4",
     "expo-blur": "~57.0.3",
-    "expo-build-properties": "~57.0.18",
+    "expo-build-properties": "~57.0.20",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.17",
     "expo-crypto": "~57.0.3",
