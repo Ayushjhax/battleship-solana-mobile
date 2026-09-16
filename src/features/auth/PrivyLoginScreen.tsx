@@ -92,7 +92,7 @@ export function PrivyLoginScreen() {
       <Scale>
         <Paper variant="full" />
         <View style={styles.intro}>
-          <LogoMark w={330} h={70} subtitle="Sea Battle" />
+          <LogoMark w={330} h={70} subtitle="Ocean Warfare" />
           <Text style={styles.headline}>Captain’s log-in</Text>
           <Text style={styles.copy}>
             Sign in before setting sail. Your secure Solana wallet is created automatically.

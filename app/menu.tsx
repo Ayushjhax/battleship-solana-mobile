@@ -17,9 +17,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DemoMenu, useVersionTaps } from '@/features/demo/DemoMenu';
 import { useOnlineCount } from '@/net/presence';
-import { useProfile } from '@/state/profile';
 import { usePoints } from '@/state/points';
 import { usePrivySync } from '@/state/privySync';
+import { useProfile } from '@/state/profile';
 import { AVATARS } from '@/ui/assets';
 import { CurrencyChip } from '@/ui/CurrencyChip';
 import { InkButton } from '@/ui/InkButton';
@@ -116,7 +116,7 @@ export default function MenuScreen() {
       </View>
 
       <View style={styles.title} pointerEvents="none">
-        <LogoMark w={250} h={50} subtitle="Sea Battle" />
+        <LogoMark w={250} h={50} subtitle="Ocean Warfare" />
       </View>
 
       <View style={styles.stack}>

@@ -142,14 +142,14 @@ export default function SettingsScreen() {
         </View>
         <InkPanel w={340} h={132} seedKey="settings-credits" padding={space.xs} fill="none">
           <View style={styles.creditsBody}>
-            <Text style={styles.creditsTitle}>Sea Battle</Text>
+            <Text style={styles.creditsTitle}>Ocean Warfare</Text>
             <Text style={styles.credit}>An Empire of Bits game</Text>
             <Text style={styles.credit}>On Indies on Solana Season 2</Text>
           </View>
         </InkPanel>
       </View>
 
-      <Text style={styles.version}>Empire of Bits: Sea Battle v{version}</Text>
+      <Text style={styles.version}>Empire of Bits: Ocean Warfare v{version}</Text>
     </Scale>
   );
 }
