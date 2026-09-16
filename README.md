@@ -1,4 +1,4 @@
-# Empire of Bits: Sea Battle
+# Empire of Bits: Ocean Warfare
 
 Battleship in a ballpoint-pen-on-graph-paper style. Expo SDK 57 · TypeScript strict ·
 Android/iOS · landscape only · Privy authentication and embedded Solana wallet.
