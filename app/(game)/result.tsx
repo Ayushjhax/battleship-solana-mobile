@@ -79,6 +79,12 @@ interface Totals {
   readonly coinsBefore: number;
   readonly coinsAfter: number;
   readonly reward: { points: number; coins: number };
+  /**
+   * What the wager moved. Online this is the SERVER's own settlement, captured
+   * before the socket is dropped; offline it is the fixed stake, since the
+   * payout is still in flight when this screen opens.
+   */
+  readonly wager: { stake: number; prize: number } | null;
 }
 
 /** The demo menu's forced results: shown as given, nothing written to the profile. */
@@ -93,6 +99,7 @@ function prepare(
   won: boolean,
   local: boolean,
   matchId: string,
+  wagered: boolean,
   forced: ForcedTotals | null,
 ): Totals {
   if (forced) {
@@ -102,11 +109,12 @@ function prepare(
         points: forced.pointsAfter - forced.pointsBefore,
         coins: forced.coinsAfter - forced.coinsBefore,
       },
+      wager: null,
     };
   }
   const profile = useProfile.getState();
-  const serverSaid = !local ? useMatchClient.getState().over?.rewards : undefined;
-  const reward = serverSaid ?? (won ? REWARD.win : REWARD.loss);
+  const over = !local ? useMatchClient.getState().over : undefined;
+  const reward = over?.rewards ?? (won ? REWARD.win : REWARD.loss);
   if (!local && matchId) profile.recordOnlineResult(matchId, won, reward);
   const after = useProfile.getState();
   return {
@@ -115,6 +123,9 @@ function prepare(
     coinsBefore: after.coins - reward.coins,
     coinsAfter: after.coins,
     reward,
+    wager: wagered
+      ? (over?.wager ?? { stake: WAGER_STAKE, prize: won ? WAGER_STAKE * 2 : 0 })
+      : null,
   };
 }
 
@@ -454,7 +465,7 @@ export default function ResultScreen() {
 
   // Applied exactly once per mount (and once per match across mounts).
   const [totals] = useState(() =>
-    prepare(won, local, params.matchId ?? '', parseForced(params.forced)),
+    prepare(won, local, params.matchId ?? '', wagered, parseForced(params.forced)),
   );
   const rankedUp = rankFor(totals.pointsBefore).name !== rankFor(totals.pointsAfter).name;
 
@@ -550,7 +561,7 @@ export default function ResultScreen() {
                 <Text style={styles.label}>Coins</Text>
                 <Text style={[styles.value, { color: COIN_GOLD }]}>{coins}</Text>
               </View>
-              {wagered ? (
+              {totals.wager ? (
                 <View style={styles.row}>
                   <Text style={styles.label} numberOfLines={1}>
                     {settling
@@ -571,9 +582,10 @@ export default function ResultScreen() {
                       { color: settlementFailed ? color.inkSoft : won ? color.inkGreen : color.inkRed },
                     ]}
                   >
-                    {/* The stake left the balance before the match; a win hands
-                        back twice it, so the swing on the night is +50 / -50. */}
-                    {won ? `+${WAGER_STAKE * 2}` : `-${WAGER_STAKE}`}
+                    {/* Both sides staked before the first shot, so the winner's
+                        pot is twice the stake — a net +50 — and the loser is
+                        out the 50 they already paid. */}
+                    {won ? `+${totals.wager.prize}` : `-${totals.wager.stake}`}
                   </Text>
                 </View>
               ) : null}

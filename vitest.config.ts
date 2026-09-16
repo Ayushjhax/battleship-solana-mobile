@@ -19,6 +19,9 @@ export default defineConfig({
       'src/state/__tests__/*.test.ts',
       'src/features/offline/**/*.test.ts',
       'src/features/demo/**/*.test.ts',
+      // The placement -> match boundary: pure, and the one place a player's
+      // arranged board can be silently swapped for another.
+      'src/features/battle/**/*.test.ts',
       'src/net/__tests__/*.test.ts',
     ],
     environment: 'node',

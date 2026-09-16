@@ -27,6 +27,56 @@ afterEach(() => {
 });
 
 describe('LocalMatch', () => {
+  it('plays on the exact board each side submitted', () => {
+    // The end of the chain the placement screen starts: whatever reaches
+    // LocalMatch must be what sits on the board once the match begins.
+    const seed = 404;
+    const mine = autoPlaceFleet(createRng(seed + 1));
+    const theirs = autoPlaceFleet(createRng(seed + 2));
+    const local = new LocalMatch({
+      mode: 'ai',
+      ruleset: 'advanced',
+      seed,
+      difficulty: 'normal',
+      one: { id: 'player', ships: mine, arsenal: [{ id: 'torp-1', kind: 'torpedoBomber' }] },
+      two: { id: 'ai', ships: theirs, arsenal: [] },
+      onResolved: () => {},
+    });
+
+    const [player, ai] = local.state.players;
+    expect(player?.board.ships.map((s) => ({ ...s, hits: [] }))).toEqual(
+      mine.map((s) => ({ ...s, hits: [] })),
+    );
+    expect(ai?.board.ships.map((s) => ({ ...s, hits: [] }))).toEqual(
+      theirs.map((s) => ({ ...s, hits: [] })),
+    );
+    expect(player?.board.arsenal).toEqual([{ id: 'torp-1', kind: 'torpedoBomber' }]);
+    local.dispose();
+  });
+
+  it('reports the reason when it has to replace a rejected layout', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const seed = 505;
+    const local = new LocalMatch({
+      mode: 'ai',
+      ruleset: 'classic',
+      seed,
+      difficulty: 'normal',
+      // One ship short: the reducer refuses this composition.
+      one: { id: 'player', ships: autoPlaceFleet(createRng(seed)).slice(1), arsenal: [] },
+      two: { id: 'ai', ships: autoPlaceFleet(createRng(seed + 2)), arsenal: [] },
+      onResolved: () => {},
+    });
+
+    // The match still starts — an unplayable match is worse — but the swap is
+    // never silent, because it means the board the player arranged is gone.
+    expect(local.state.phase).toBe('playing');
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toContain('rejected');
+    error.mockRestore();
+    local.dispose();
+  });
+
   it('emits the exact reducer result for a player action', () => {
     const emitted: { action: MatchAction; events: readonly string[] }[] = [];
     const local = makeLocal(11, (action, result) => {

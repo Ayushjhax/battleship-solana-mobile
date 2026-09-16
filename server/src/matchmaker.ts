@@ -37,6 +37,12 @@ interface Waiting {
   readonly wagerRequestId: string | null;
 }
 
+/**
+ * The queues are mutated IN PLACE, never reassigned. `tryPair` holds a
+ * reference across an await while it builds a room, and swapping the array out
+ * from under it would let a player who had already left be paired anyway — and
+ * would lose the pairing's own removals.
+ */
 const queues: Record<QueueKey, Waiting[]> = {
   'classic:normal': [],
   'classic:wager': [],
@@ -46,6 +52,31 @@ const queues: Record<QueueKey, Waiting[]> = {
 const queueKeys = Object.keys(queues) as QueueKey[];
 let sweepTimer: NodeJS.Timeout | null = null;
 const pendingDequeues = new Map<string, Promise<QueueCancellation>>();
+/**
+ * One pairing pass per queue at a time. Every mutation inside a pass is
+ * synchronous, but the room build is not, and a second pass starting during
+ * that await would scan a queue whose players are already being seated.
+ */
+const pairing = new Set<QueueKey>();
+/** Queues that gained a player while a pass was running. */
+const rescan = new Set<QueueKey>();
+/**
+ * Players with an enqueue in flight. `enqueue` awaits the wager hold and the
+ * profile lookup before it pushes, and two sockets for the same account (a
+ * second device, or a reconnect racing the old socket's cleanup) could both
+ * clear the "already queued" check inside that window and be seated twice.
+ */
+const joining = new Set<string>();
+
+/** Removes every entry for a player from one queue, in place. Returns them. */
+function removeFrom(key: QueueKey, playerId: string): Waiting[] {
+  const queue = queues[key];
+  const removed: Waiting[] = [];
+  for (let i = queue.length - 1; i >= 0; i--) {
+    if (queue[i]?.playerId === playerId) removed.push(...queue.splice(i, 1));
+  }
+  return removed;
+}
 
 function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === socket.OPEN) socket.send(encode(message));
@@ -91,11 +122,29 @@ export async function enqueue(
     send(socket, { t: 'error', v: 1, code: 'already_queued', message: 'already in a match' });
     return;
   }
-  if (waitingFor(playerId)) {
+  if (waitingFor(playerId) || joining.has(playerId)) {
     send(socket, { t: 'error', v: 1, code: 'already_queued', message: 'already queued' });
     return;
   }
 
+  joining.add(playerId);
+  try {
+    await enqueueVerified(mode, playerId, socket, options);
+  } finally {
+    joining.delete(playerId);
+  }
+}
+
+async function enqueueVerified(
+  mode: MatchMode,
+  playerId: string,
+  socket: WebSocket,
+  options: {
+    wagered: boolean;
+    opponent: 'player' | 'bot';
+    wagerRequestId?: string;
+  },
+): Promise<void> {
   let wagerRequestId: string | null = null;
   let pointBalance: number | undefined;
   if (options.wagered) {
@@ -137,6 +186,14 @@ export async function enqueue(
     wagerRequestId,
   };
 
+  // The player can leave during the reservation and the profile read above.
+  // The socket's own close handler already ran `dequeue` and found nothing, so
+  // queueing a dead socket here would strand the entry — and the stake with it.
+  if (socket.readyState !== socket.OPEN) {
+    await refundEntries(entry);
+    return;
+  }
+
   if (options.opponent === 'bot') {
     send(socket, {
       t: 'queued',
@@ -175,11 +232,7 @@ export async function dequeue(playerId: string): Promise<QueueCancellation> {
   const work = (async (): Promise<QueueCancellation> => {
     await prior;
     const removedEntries: Waiting[] = [];
-    for (const key of queueKeys) {
-      const removed = queues[key].filter((entry) => entry.playerId === playerId);
-      queues[key] = queues[key].filter((entry) => entry.playerId !== playerId);
-      removedEntries.push(...removed);
-    }
+    for (const key of queueKeys) removedEntries.push(...removeFrom(key, playerId));
 
     let pointBalance: number | undefined;
     let refunded = false;
@@ -253,40 +306,78 @@ function ensureSweeping(): void {
   sweepTimer.unref?.();
 }
 
+/**
+ * Seats everyone it can from one queue, best rank match first.
+ *
+ * Non-reentrant per queue, and each pairing removes BOTH entries from the
+ * array synchronously before any await. Together those two rules are what let
+ * ten players hit `queue` in the same tick and come out as five matches: no
+ * entry can be handed to two pairings, and an odd player is simply left in
+ * line rather than double-booked.
+ */
 async function tryPair(key: QueueKey): Promise<void> {
+  if (pairing.has(key)) {
+    // A pass is mid-flight and may already have scanned past this queue's new
+    // arrival. Ask it to go round again rather than leaving them for the sweep.
+    rescan.add(key);
+    return;
+  }
+  pairing.add(key);
+  try {
+    do {
+      rescan.delete(key);
+      await pairPass(key);
+    } while (rescan.has(key));
+  } finally {
+    pairing.delete(key);
+  }
+}
+
+async function pairPass(key: QueueKey): Promise<void> {
   const queue = queues[key];
-  const now = Date.now();
-  for (let i = 0; i < queue.length; i++) {
-    const a = queue[i];
-    if (!a) continue;
-    let bestIndex = -1;
+  const mode: MatchMode = key.startsWith('classic') ? 'classic' : 'advanced';
+
+  // Each iteration seats at most one pair and then rescans, because building
+  // the room awaits and the queue may have changed underneath.
+  for (;;) {
+    const now = Date.now();
+    let foundA = -1;
+    let foundB = -1;
     let bestDiff = Infinity;
-    for (let j = i + 1; j < queue.length; j++) {
-      const b = queue[j];
-      if (!b) continue;
-      const window = Math.max(rankWindow(now - a.since), rankWindow(now - b.since));
-      const diff = Math.abs(a.rankPoints - b.rankPoints);
-      if (diff <= window && diff < bestDiff) {
-        bestDiff = diff;
-        bestIndex = j;
+    for (let i = 0; i < queue.length && foundA === -1; i++) {
+      const a = queue[i];
+      if (!a) continue;
+      for (let j = i + 1; j < queue.length; j++) {
+        const b = queue[j];
+        // A player must never be matched with themselves. Two live entries for
+        // one account should be impossible (see `joining`), but seating one
+        // against itself would corrupt a whole match, so it is checked here too.
+        if (!b || b.playerId === a.playerId) continue;
+        const window = Math.max(rankWindow(now - a.since), rankWindow(now - b.since));
+        const diff = Math.abs(a.rankPoints - b.rankPoints);
+        if (diff <= window && diff < bestDiff) {
+          bestDiff = diff;
+          foundA = i;
+          foundB = j;
+        }
       }
     }
-    if (bestIndex !== -1) {
-      const b = queue[bestIndex] as Waiting;
-      queue.splice(bestIndex, 1);
-      queue.splice(i, 1);
-      await pair(key.startsWith('classic') ? 'classic' : 'advanced', a, b);
-      return tryPair(key);
-    }
-  }
 
-  for (let i = 0; i < queue.length; i++) {
-    const entry = queue[i];
-    if (entry && now - entry.since >= BOT_AFTER_MS) {
-      queue.splice(i, 1);
-      await pairWithBot(key.startsWith('classic') ? 'classic' : 'advanced', entry);
-      return tryPair(key);
+    if (foundA !== -1 && foundB !== -1) {
+      const a = queue[foundA] as Waiting;
+      const b = queue[foundB] as Waiting;
+      // Highest index first so the lower one does not shift.
+      queue.splice(foundB, 1);
+      queue.splice(foundA, 1);
+      await pair(mode, a, b);
+      continue;
     }
+
+    const stale = queue.findIndex((entry) => now - entry.since >= BOT_AFTER_MS);
+    if (stale === -1) return;
+    const entry = queue[stale] as Waiting;
+    queue.splice(stale, 1);
+    await pairWithBot(mode, entry);
   }
 }
 

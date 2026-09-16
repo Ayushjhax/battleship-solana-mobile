@@ -97,6 +97,7 @@ export type FailureReason =
   | 'kicked'
   | 'insufficient_points'
   | 'match_cancelled'
+  | 'layout_rejected'
   | 'server_error';
 
 export interface MatchFailure {
@@ -161,6 +162,11 @@ interface MatchClientActions {
   cancelQueue: () => Promise<void>;
   /** `ready` with the placed fleet. Re-sent automatically after a reconnect if it never landed. */
   ready: (layout: LayoutPayload) => void;
+  /**
+   * Refuse to play on a layout the engine has already rejected, rather than
+   * sending it and letting the server's deadline auto-place a random fleet.
+   */
+  failLayout: (reason: string) => void;
   fire: (at: Coord) => void;
   useArsenal: (itemId: string, target: { at?: Coord; row?: number }) => void;
   resign: () => void;
@@ -235,6 +241,13 @@ let intent: {
 } | null = null;
 /** The layout we sent (or tried to send) — re-sent after a resync if it never landed. */
 let lastLayout: LayoutPayload | null = null;
+/**
+ * A `ready` is out and the server has not confirmed it. While this is true an
+ * `illegal_action` can only be about our layout — which cannot be read off
+ * `status` instead, because the OPPONENT's accepted layout broadcasts a state
+ * that moves us to `active` before our own rejection arrives.
+ */
+let layoutPending = false;
 /** disconnect() was called — every close from here on is expected and final. */
 let closedOnPurpose = false;
 /** Set when we lose the socket mid-match; cleared on resync. */
@@ -597,6 +610,7 @@ function handleMessage(message: ServerMessage): void {
       dropSocket();
       intent = null;
       lastLayout = null;
+      layoutPending = false;
       resyncing = false;
       disconnectedAt = null;
       outboundSeq = 0;
@@ -662,6 +676,7 @@ function handleMessage(message: ServerMessage): void {
       lastStateSeq = -1;
       lastEventsSeq = -1;
       lastLayout = null;
+      layoutPending = false;
       intent = null;
       set({
         status: 'matched',
@@ -690,6 +705,8 @@ function handleMessage(message: ServerMessage): void {
       if (message.seq < lastStateSeq) return; // stale
       lastStateSeq = message.seq;
       const gone = message.opponentDisconnected === true;
+      // The server has our board: nothing after this can be a layout refusal.
+      if (message.view.you.ready) layoutPending = false;
       const patch: Partial<MatchClientData> = {
         view: message.view,
         opponentDisconnected: gone,
@@ -762,9 +779,35 @@ function handleMessage(message: ServerMessage): void {
         });
         return;
       }
+      // An illegal action with a layout in flight can only be that layout.
+      // Left alone, the server's 90 s deadline would auto-place a random fleet
+      // and the player would walk into a board they never arranged — so say so
+      // instead. In-match rejections stay non-fatal: the battle store just
+      // unlocks input (see onOnlineError).
+      if (message.code === 'illegal_action' && layoutPending) {
+        layoutPending = false;
+        set({
+          status: 'failed',
+          failure: { reason: 'layout_rejected', detail: message.message },
+        });
+        return;
+      }
       if (message.code === 'already_queued' && s.status === 'connecting') {
         // Our earlier queue survived a blip; we're still in line.
         set({ status: 'queued' });
+        return;
+      }
+      // Before the match is live there is no screen that can absorb an error:
+      // the searching screen would spin on a queue the server has already
+      // given up on (a failed room build, a wager the database refused). Say
+      // so instead. In-match errors stay non-fatal.
+      if (
+        (s.status === 'connecting' || s.status === 'queued' || s.status === 'matched') &&
+        (message.code === 'internal' ||
+          message.code === 'not_in_room' ||
+          message.code === 'bad_message')
+      ) {
+        set({ status: 'failed', failure: { reason: 'server_error', detail: message.message } });
       }
       return;
     }
@@ -801,6 +844,7 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
     const wagerRequestId = wagered ? randomUuid() : null;
     intent = { mode, wagered, opponent, wagerRequestId };
     lastLayout = null;
+    layoutPending = false;
     set({
       ...EMPTY,
       status: 'connecting',
@@ -840,7 +884,17 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
 
   ready: (layout) => {
     lastLayout = layout;
+    layoutPending = true;
     if (!send(readyMessage(layout))) log('ready queued until the socket is back');
+  },
+
+  failLayout: (reason) => {
+    layoutPending = false;
+    useMatchClient.setState({
+      status: 'failed',
+      failure: { reason: 'layout_rejected', detail: reason },
+      reconnectDeadline: null,
+    });
   },
 
   fire: (at) => {
@@ -919,6 +973,7 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
     dropSocket();
     intent = null;
     lastLayout = null;
+    layoutPending = false;
     resyncing = false;
     disconnectedAt = null;
     outboundSeq = 0;
@@ -953,5 +1008,7 @@ export function failureCopy(failure: MatchFailure): string {
       return 'You need 50 points for this wager. Open the Points exchange to top up.';
     case 'match_cancelled':
       return failure.detail;
+    case 'layout_rejected':
+      return `The server would not accept your fleet: ${failure.detail}. Go back and arrange it again.`;
   }
 }

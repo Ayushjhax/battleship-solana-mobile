@@ -10,7 +10,14 @@ import { chooseMove, type Difficulty } from '@engine/ai';
 import { createMatch, projectView, reduce, type ReduceResult } from '@engine/match';
 import { autoPlaceFleet } from '@engine/placement';
 import { createRng } from '@engine/rng';
-import type { ArsenalItem, MatchAction, MatchMode, MatchState, Ship } from '@engine/types';
+import type {
+  ArsenalItem,
+  MatchAction,
+  MatchEvent,
+  MatchMode,
+  MatchState,
+  Ship,
+} from '@engine/types';
 
 export type LocalMatchMode = 'ai' | 'hotseat' | 'tutorial';
 
@@ -44,23 +51,35 @@ export function setLocalAiThinkTime(minMs: number, spreadMs: number): void {
   thinkSpreadMs = Math.max(0, spreadMs);
 }
 
+/**
+ * Submits one side's board. The last-resort fallback stays — a match that
+ * cannot start at all is worse than one on an auto-placed fleet — but it is
+ * NOT silent: substituting a board the player did not arrange is a bug
+ * upstream (see usableLayout in src/features/battle/setup.ts), and it says so
+ * with the reducer's own reason.
+ */
 function submitSide(state: MatchState, side: LocalCombatant, seed: number): MatchState {
-  let result = reduce(state, {
+  const result = reduce(state, {
     type: 'SUBMIT_LAYOUT',
     playerId: side.id,
     ships: side.ships,
     arsenal: side.arsenal,
   });
-  if (result.events.some((event) => event.type === 'REJECTED')) {
-    console.warn(`[local-match] layout for ${side.id} rejected; using a valid local fleet`);
-    result = reduce(state, {
-      type: 'SUBMIT_LAYOUT',
-      playerId: side.id,
-      ships: autoPlaceFleet(createRng(seed)),
-      arsenal: [],
-    });
-  }
-  return result.state;
+  const rejected = result.events.find(
+    (event): event is Extract<MatchEvent, { type: 'REJECTED' }> => event.type === 'REJECTED',
+  );
+  if (!rejected) return result.state;
+
+  console.error(
+    `[local-match] ${side.id}'s layout was rejected (${rejected.reason}). ` +
+      'Falling back to an auto-placed fleet with no arsenal — the arranged board is lost.',
+  );
+  return reduce(state, {
+    type: 'SUBMIT_LAYOUT',
+    playerId: side.id,
+    ships: autoPlaceFleet(createRng(seed)),
+    arsenal: [],
+  }).state;
 }
 
 export class LocalMatch {

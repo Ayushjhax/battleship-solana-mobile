@@ -204,6 +204,74 @@ describe('pre-game wager cancellation', () => {
   });
 });
 
+describe('a wagered match played to the end', () => {
+  it('tells the winner they won 100 and the loser they lost their stake', async () => {
+    vi.resetModules();
+    delete process.env.SEABATTLE_TURN_TIMEOUT_MS;
+    installAuthMock();
+    const dbCalls = installDbMock().calls;
+    const server = await startTestServer();
+    const alice = await connectClient(server.port, 'alice');
+    const bob = await connectClient(server.port, 'bob');
+
+    alice.send({
+      t: 'queue',
+      v: 1,
+      mode: 'classic',
+      wagered: true,
+      opponent: 'player',
+      wagerRequestId: '11111111-1111-4111-8111-111111111111',
+    });
+    await alice.waitFor((m) => m.t === 'queued');
+    bob.send({
+      t: 'queue',
+      v: 1,
+      mode: 'classic',
+      wagered: true,
+      opponent: 'player',
+      wagerRequestId: '22222222-2222-4222-8222-222222222222',
+    });
+    await bob.waitFor((m) => m.t === 'queued');
+
+    // Both sides are told this is a 50-point wager before they place.
+    const matched = await alice.waitFor((m) => m.t === 'matched');
+    const theirMatched = await bob.waitFor((m) => m.t === 'matched');
+    expect(matched).toMatchObject({ wagered: true, wagerStake: 50 });
+    expect(theirMatched).toMatchObject({ wagered: true, wagerStake: 50 });
+
+    await readyUpBoth(alice, bob);
+    await playToVictory(alice, bob);
+
+    // Each client's own `over` frame: same winner, opposite verdicts.
+    const overs = await Promise.all([
+      alice.waitFor((m) => m.t === 'over', 100).catch(() => null),
+      bob.waitFor((m) => m.t === 'over', 100).catch(() => null),
+    ]);
+    const seen = [
+      (overs[0] ?? alice.history().find((m) => m.t === 'over')) as Record<string, unknown>,
+      (overs[1] ?? bob.history().find((m) => m.t === 'over')) as Record<string, unknown>,
+    ];
+    const winnerId = seen[0]?.winnerId as string;
+    expect(['alice', 'bob']).toContain(winnerId);
+    expect(seen[1]?.winnerId).toBe(winnerId);
+
+    for (const [index, name] of ['alice', 'bob'].entries()) {
+      const over = seen[index] as Record<string, unknown>;
+      const won = name === winnerId;
+      // 50 in, 100 back on a win for a net +50; nothing back on a loss.
+      expect(over.wager).toEqual({ stake: 50, prize: won ? 100 : 0, balance: 100 });
+      expect(over.rewards).toEqual(won ? { points: 25, coins: 50 } : { points: 5, coins: 10 });
+    }
+
+    // One settlement, one transaction — the pot cannot be paid twice.
+    expect(dbCalls.filter((call) => call.fn === 'applyMatchResult')).toHaveLength(1);
+
+    alice.close();
+    bob.close();
+    await server.close();
+  }, 30000);
+});
+
 describe('turn timeout', () => {
   let server: TestServer;
 

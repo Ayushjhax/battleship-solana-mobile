@@ -60,7 +60,12 @@ function messageBytes(raw: RawData): number {
 export function attachWebSocketServer(server: Server, log: (msg: string) => void = console.log): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_MESSAGE_BYTES });
 
-  wss.on('connection', (socket: WebSocket) => {
+  wss.on('connection', (socket: WebSocket, request) => {
+    // Nagle batches small writes for up to ~40 ms waiting for more data. Every
+    // frame here is small and latency-sensitive — a shot and the verdict that
+    // follows it — so send them the moment they are written.
+    request.socket.setNoDelay(true);
+
     const conn: Connection = {
       socket,
       playerId: null,

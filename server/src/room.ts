@@ -91,6 +91,12 @@ export class Room {
   private outSeq = 0;
   private readonly eventLog: { seq: number; events: MatchEvent[] }[] = [];
   private turnTimer: NodeJS.Timeout | null = null;
+  /**
+   * When the live turn actually expires. Broadcast as-is, so a player who
+   * reconnects mid-turn is shown the time they really have left rather than a
+   * fresh countdown the server has no intention of honouring.
+   */
+  private turnEndsAt: number | null = null;
   private layoutTimer: NodeJS.Timeout | null = null;
   private botTurnTimer: NodeJS.Timeout | null = null;
   private finished = false;
@@ -163,8 +169,9 @@ export class Room {
 
   private broadcastTurn(): void {
     if (this.state.phase !== 'playing') return;
+    const endsAt = this.turnEndsAt ?? Date.now() + TURN_TIMEOUT_MS;
     for (const seat of this.seats) {
-      this.send(seat.playerId, { t: 'turn', v: 1, playerId: this.state.turn, endsAt: Date.now() + TURN_TIMEOUT_MS });
+      this.send(seat.playerId, { t: 'turn', v: 1, playerId: this.state.turn, endsAt });
     }
   }
 
@@ -373,8 +380,9 @@ export class Room {
     if (this.state.phase === 'over') {
       this.finish(events);
     } else if (this.state.phase === 'playing') {
-      this.broadcastTurn();
+      // Arm first: the broadcast carries the deadline the timer will enforce.
       this.rearmTurnTimer();
+      this.broadcastTurn();
       this.scheduleBotTurnIfNeeded();
     } else if (this.layoutTimer && this.state.players.every((p) => p.ready)) {
       clearTimeout(this.layoutTimer);
@@ -387,6 +395,7 @@ export class Room {
   private rearmTurnTimer(): void {
     if (this.turnTimer) clearTimeout(this.turnTimer);
     const turn = this.state.turn;
+    this.turnEndsAt = Date.now() + TURN_TIMEOUT_MS;
     this.turnTimer = setTimeout(() => {
       if (this.finished || this.state.turn !== turn || this.state.phase !== 'playing') return;
       this.applyAction({ type: 'TIMEOUT', playerId: turn });

@@ -2,6 +2,7 @@
  * Builds a BattleSetup from what the placement screen left behind and the
  * player's profile. Pure: the screen calls it once on mount.
  */
+import { validateSubmission } from '@engine/match';
 import { validateArsenalPlacement } from '@engine/placement';
 import { autoPlaceFleet } from '@engine/placement';
 import { createRng, type Rng } from '@engine/rng';
@@ -54,6 +55,43 @@ export function aiKit(rng: Rng, ships: readonly Ship[]): ArsenalItem[] {
   return items;
 }
 
+export interface Layout {
+  readonly ships: readonly Ship[];
+  readonly arsenal: readonly ArsenalItem[];
+}
+
+/**
+ * The layout a combatant actually takes into the match.
+ *
+ * It is checked with the SAME function the reducer will use, because that is
+ * the only test that matters: anything this returns must survive
+ * SUBMIT_LAYOUT. Ships and arsenal travel together and are replaced together
+ * — an arsenal validated against one fleet means nothing against another, and
+ * mixing a fresh fleet with the old defences is what produced boards with a
+ * random layout and no arsenal on them at all.
+ *
+ * A fallback here means the placement screen let something illegal through,
+ * so it is loud. It is never silent, and it is never partial.
+ */
+export function usableLayout(
+  ruleset: MatchMode,
+  ships: readonly Ship[],
+  arsenal: readonly ArsenalItem[],
+  rng: Rng,
+  who: string,
+): Layout {
+  // Classic carries no arsenal at all; the reducer rejects a submission that
+  // brings one, so drop it before asking.
+  const wanted = ruleset === 'advanced' ? arsenal : [];
+  const check = validateSubmission(ruleset, ships, wanted);
+  if (check.ok) return { ships, arsenal: wanted };
+  console.error(
+    `[battle] ${who}'s layout cannot be used (${check.reason}); auto-placing a fleet instead. ` +
+      'This is a bug: placement should not have allowed it.',
+  );
+  return { ships: autoPlaceFleet(rng), arsenal: [] };
+}
+
 export function buildBattleSetup(
   placement: PlacementSnapshot,
   profile: ProfileSnapshot,
@@ -70,6 +108,7 @@ export function buildBattleSetup(
   const myArsenal =
     (placement.mode === 'hotseat' ? placement.playerOneArsenal : placement.arsenal) ?? [];
   const advanced = placement.ruleset === 'advanced';
+  const mine = usableLayout(placement.ruleset, myShips, myArsenal, rng, 'player one');
 
   const one: Combatant = {
     id: 'p1',
@@ -78,13 +117,19 @@ export function buildBattleSetup(
     avatarId: profile.avatarId,
     avatarColor: profile.avatarColor,
     countryCode: profile.countryCode,
-    ships: myShips.length === 10 ? myShips : autoPlaceFleet(rng),
-    arsenal: advanced ? myArsenal : [],
+    ships: mine.ships,
+    arsenal: mine.arsenal,
   };
 
   let two: Combatant;
   if (placement.mode === 'hotseat') {
-    const ships = placement.playerTwoShips ?? [];
+    const theirs = usableLayout(
+      placement.ruleset,
+      placement.playerTwoShips ?? [],
+      placement.playerTwoArsenal ?? [],
+      rng,
+      'player two',
+    );
     two = {
       id: 'p2',
       name: placement.playerTwoName,
@@ -92,8 +137,8 @@ export function buildBattleSetup(
       avatarId: 2,
       avatarColor: '#8A5A2B',
       countryCode: profile.countryCode,
-      ships: ships.length === 10 ? ships : autoPlaceFleet(rng),
-      arsenal: advanced ? (placement.playerTwoArsenal ?? []) : [],
+      ships: theirs.ships,
+      arsenal: theirs.arsenal,
     };
   } else {
     const ships = autoPlaceFleet(rng);

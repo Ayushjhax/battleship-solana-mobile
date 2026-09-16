@@ -16,6 +16,7 @@
  * already joined when the battle starts; battle.tsx takes it over (chat.ts
  * ref-counts the subscription across the route change).
  */
+import { validateSubmission } from '@engine/match';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
@@ -236,9 +237,10 @@ export default function SearchingScreen() {
     return subscribeEmotes(matchId);
   }, [matchId]);
 
-  // matched: send the fleet at once, hold the reveal, then into battle.
+  // matched: send the fleet at once. Once per match id — the ref is the guard,
+  // so a re-render or a status change never re-sends it.
   useEffect(() => {
-    if (status === 'cancelling') return;
+    if (status === 'cancelling' || status === 'failed') return;
     if (!matchId || !you || !opponent) return;
     if (readySent.current === matchId) return;
     readySent.current = matchId;
@@ -247,15 +249,43 @@ export default function SearchingScreen() {
     const profile = useProfile.getState();
     // Keep the local identity in step with what the server just told us.
     if (profile.userId !== you.id) profile.setUserId(you.id);
-    useMatchClient
-      .getState()
-      .ready(toLayoutPayload(placement.ships, placement.ruleset === 'advanced' ? placement.arsenal : []));
 
+    // Classic carries no arsenal; the server's reducer rejects one that does.
+    const arsenal = placement.ruleset === 'advanced' ? placement.arsenal : [];
+    // Checked against the same rules the server will apply. Sending a layout
+    // it refuses would leave us waiting out the 90 s deadline, after which the
+    // server auto-places a fleet the player never arranged.
+    const check = validateSubmission(placement.ruleset, placement.ships, arsenal);
+    if (!check.ok) {
+      console.error(`[online] refusing to send an invalid layout: ${check.reason}`);
+      useMatchClient.getState().failLayout(check.reason);
+      return;
+    }
+    useMatchClient.getState().ready(toLayoutPayload(placement.ships, arsenal));
+  }, [matchId, you, opponent, status]);
+
+  /**
+   * The reveal holds, then the battle screen takes over. This MUST be its own
+   * effect: the server broadcasts a state the instant it accepts a layout, so
+   * `status` goes matched -> active well inside the hold. Sharing an effect
+   * with the `ready` send above meant that change tore the timer down, and the
+   * guard on the re-run returned before scheduling another — the reveal then
+   * sat on screen forever and the match never started.
+   *
+   * Arriving while the opponent is still placing is expected and handled:
+   * ConnectionOverlay shows "waiting for opponent" until the first turn.
+   */
+  const revealReady = Boolean(matchId && you && opponent) && status !== 'failed' && status !== 'cancelling';
+  useEffect(() => {
+    if (!revealReady || !matchId) return;
     const timer = setTimeout(() => {
-      if (useMatchClient.getState().matchId === matchId) router.replace('/battle');
+      const client = useMatchClient.getState();
+      if (client.matchId !== matchId) return;
+      if (client.status === 'failed' || client.status === 'cancelling') return;
+      router.replace('/battle');
     }, REVEAL_HOLD_MS);
     return () => clearTimeout(timer);
-  }, [matchId, you, opponent, router, status]);
+  }, [matchId, revealReady, router]);
 
   const onCancel = async () => {
     if (cancelling) return;
@@ -277,7 +307,8 @@ export default function SearchingScreen() {
   };
 
   const count = presenceCount ?? queuedCount;
-  const revealing = status !== 'failed' && status !== 'cancelling' && matchId && you && opponent;
+  // Same condition the reveal timer runs on, so the two can never disagree.
+  const revealing = revealReady && matchId && you && opponent;
 
   return (
     <Scale>
@@ -293,14 +324,22 @@ export default function SearchingScreen() {
                 ? 'Not enough points'
                 : failure?.reason === 'match_cancelled'
                   ? 'Match cancelled'
-                  : 'No connection'}
+                  : failure?.reason === 'layout_rejected'
+                    ? 'Fleet not accepted'
+                    : 'No connection'}
             </Text>
             <Text style={styles.failedBody}>
               {failure ? failureCopy(failure) : 'The match server is out of reach.'}
             </Text>
             <View style={styles.buttons}>
               <InkButton
-                label={failure?.reason === 'insufficient_points' ? 'Buy points' : 'Try again'}
+                label={
+                  failure?.reason === 'insufficient_points'
+                    ? 'Buy points'
+                    : failure?.reason === 'layout_rejected'
+                      ? 'Arrange fleet'
+                      : 'Try again'
+                }
                 tone="confirm"
                 w={150}
                 seedKey="search-retry"
@@ -308,6 +347,12 @@ export default function SearchingScreen() {
                   if (failure?.reason === 'insufficient_points') {
                     useMatchClient.getState().disconnect();
                     router.replace('/points');
+                  } else if (failure?.reason === 'layout_rejected') {
+                    // Retrying would send the same refused fleet. Back to the
+                    // board; disconnecting refunds a wager that never started.
+                    useMatchClient.getState().disconnect();
+                    if (router.canGoBack()) router.back();
+                    else router.replace('/placement?mode=online');
                   } else {
                     useMatchClient.getState().retry();
                   }
