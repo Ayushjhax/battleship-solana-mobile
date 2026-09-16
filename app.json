@@ -7,7 +7,7 @@
     "orientation": "landscape",
     "userInterfaceStyle": "light",
     "scheme": "empireofbits",
-    "icon": "./assets/ink/brand/icon.png",
+    "icon": "./assets/ink/brand/icon-hero.png",
     "ios": {
       "bundleIdentifier": "com.empireofbits.seabattle",
       "config": {
@@ -19,8 +19,8 @@
       "softwareKeyboardLayoutMode": "pan",
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/ink/brand/adaptive-icon.png",
-        "backgroundColor": "#FBFCFE"
+        "foregroundImage": "./assets/ink/brand/adaptive-icon-hero.png",
+        "backgroundColor": "#828B94"
       },
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS"
@@ -39,9 +39,9 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/ink/brand/splash.png",
-          "imageWidth": 240,
-          "backgroundColor": "#6B4527",
+          "image": "./assets/ink/brand/splash-hero.png",
+          "imageWidth": 288,
+          "backgroundColor": "#FBFCFE",
           "resizeMode": "contain"
         }
       ],

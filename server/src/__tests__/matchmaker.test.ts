@@ -7,10 +7,12 @@
  * The pairing pass removes both entries synchronously and is non-reentrant per
  * queue, which is what makes those hold while a room build is awaiting.
  */
+import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   connectClient,
+  type DbCall,
   installAuthMock,
   installDbMock,
   startTestServer,
@@ -66,11 +68,32 @@ function assertWellFormed(seats: readonly Seated[]): void {
   expect(new Set(seats.map((s) => s.playerId)).size).toBe(seats.length);
 }
 
+/** Connects one player and puts them in line with the options they chose. */
+async function queueUp(
+  server: TestServer,
+  playerId: string,
+  options: { wagered?: boolean; mode?: 'classic' | 'advanced' } = {},
+): Promise<TestClient> {
+  const client = await connectClient(server.port, playerId);
+  const wagered = options.wagered ?? false;
+  client.send({
+    t: 'queue',
+    v: 1,
+    mode: options.mode ?? 'classic',
+    wagered,
+    opponent: 'player',
+    ...(wagered ? { wagerRequestId: randomUUID() } : {}),
+  });
+  return client;
+}
+
 describe('matchmaking under concurrency', () => {
+  let dbCalls: DbCall[];
+
   beforeEach(() => {
     vi.resetModules();
     installAuthMock();
-    installDbMock();
+    dbCalls = installDbMock().calls;
   });
 
   it('seats ten simultaneous players as five clean matches', async () => {
@@ -134,6 +157,118 @@ describe('matchmaking under concurrency', () => {
     second.close();
     await server.close();
   }, 20000);
+
+  it('never seats a wagered captain against an unwagered one', async () => {
+    const server = await startTestServer();
+    const staked = await queueUp(server, 'staked', { wagered: true });
+    const free = await queueUp(server, 'free', { wagered: false });
+
+    // Both are in line, in the same ruleset, at the same rank — the only thing
+    // keeping them apart is the wager, and it has to be enough.
+    await staked.waitFor((m) => m.t === 'queued', 5000);
+    await free.waitFor((m) => m.t === 'queued', 5000);
+    await expect(staked.waitFor((m) => m.t === 'matched', 1500)).rejects.toThrow();
+    expect(free.history().some((m) => m.t === 'matched')).toBe(false);
+
+    staked.close();
+    free.close();
+    await server.close();
+  }, 20000);
+
+  it('seats wagered captains with each other, as a wagered match', async () => {
+    const server = await startTestServer();
+    const a = await queueUp(server, 'stake-a', { wagered: true });
+    const b = await queueUp(server, 'stake-b', { wagered: true });
+
+    const matched = await a.waitFor((m) => m.t === 'matched', 8000);
+    await b.waitFor((m) => m.t === 'matched', 8000);
+    expect(matched).toMatchObject({ wagered: true, wagerStake: 50 });
+
+    // The room was created through the wagered path, with both holds.
+    expect(dbCalls.filter((c) => c.fn === 'insertMatch')).toHaveLength(0);
+    const wagered = dbCalls.filter((c) => c.fn === 'insertWageredMatch');
+    expect(wagered).toHaveLength(1);
+    expect(wagered[0]?.args[1]).toMatchObject({ profileId: 'stake-a' });
+    expect(wagered[0]?.args[2]).toMatchObject({ profileId: 'stake-b' });
+
+    a.close();
+    b.close();
+    await server.close();
+  }, 20000);
+
+  it('seats unwagered captains with each other, as a plain match', async () => {
+    const server = await startTestServer();
+    const a = await queueUp(server, 'plain-a', { wagered: false });
+    const b = await queueUp(server, 'plain-b', { wagered: false });
+
+    const matched = await a.waitFor((m) => m.t === 'matched', 8000);
+    await b.waitFor((m) => m.t === 'matched', 8000);
+    expect(matched).toMatchObject({ wagered: false, wagerStake: 0 });
+    expect(dbCalls.filter((c) => c.fn === 'insertWageredMatch')).toHaveLength(0);
+    expect(dbCalls.filter((c) => c.fn === 'insertMatch')).toHaveLength(1);
+
+    a.close();
+    b.close();
+    await server.close();
+  }, 20000);
+
+  it('keeps the rulesets apart on the same axis', async () => {
+    const server = await startTestServer();
+    const classic = await queueUp(server, 'classic-only', { mode: 'classic' });
+    const advanced = await queueUp(server, 'advanced-only', { mode: 'advanced' });
+
+    await classic.waitFor((m) => m.t === 'queued', 5000);
+    await advanced.waitFor((m) => m.t === 'queued', 5000);
+    await expect(classic.waitFor((m) => m.t === 'matched', 1500)).rejects.toThrow();
+    expect(advanced.history().some((m) => m.t === 'matched')).toBe(false);
+
+    classic.close();
+    advanced.close();
+    await server.close();
+  }, 20000);
+
+  it('splits a mixed crowd into wagered and unwagered matches, never across', async () => {
+    const server = await startTestServer();
+    const staked = await Promise.all(
+      [0, 1, 2].map((n) => queueUp(server, `w${n}`, { wagered: true })),
+    );
+    const free = await Promise.all(
+      [0, 1, 2].map((n) => queueUp(server, `n${n}`, { wagered: false })),
+    );
+    const all = [...staked, ...free];
+    const isStaked = (playerId: string) => playerId.startsWith('w');
+
+    const seats = (
+      await Promise.all(
+        all.map(async (client) => {
+          try {
+            const m = await client.waitFor((msg) => msg.t === 'matched', 4000);
+            return {
+              playerId: client.playerId,
+              matchId: m.matchId as string,
+              opponentId: (m.opponent as { id: string }).id,
+              wagered: m.wagered as boolean,
+            };
+          } catch {
+            return null;
+          }
+        }),
+      )
+    ).filter((s): s is NonNullable<typeof s> => s !== null);
+
+    // Three of each means one pair per side, and one of each left in line.
+    expect(seats).toHaveLength(4);
+    expect(new Set(seats.map((s) => s.matchId)).size).toBe(2);
+    for (const seat of seats) {
+      expect(isStaked(seat.opponentId)).toBe(isStaked(seat.playerId));
+      expect(seat.wagered).toBe(isStaked(seat.playerId));
+    }
+    expect(seats.filter((s) => s.wagered)).toHaveLength(2);
+    expect(seats.filter((s) => !s.wagered)).toHaveLength(2);
+
+    for (const client of all) client.close();
+    await server.close();
+  }, 25000);
 
   it('does not strand a player who leaves while their queue is being processed', async () => {
     const server = await startTestServer();

@@ -13,7 +13,8 @@
     "server": "cd server && npm run dev",
     "lint": "eslint .",
     "check:bundle": "node scripts/check-bundle-secrets.mjs",
-    "assets": "bash scripts/ink-assets.sh"
+    "assets": "bash scripts/ink-assets.sh",
+    "brand": "node scripts/make-brand.mjs"
   },
   "dependencies": {
     "@ethersproject/shims": "^5.8.0",

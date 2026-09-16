@@ -84,6 +84,10 @@ magick "$TMP/paper.png" -fill none -stroke "$INK" -strokewidth 80 -draw "rectang
   "$TMP/big.png" -gravity center -compose over -composite -strip "$DST/brand/icon.png"
 magick "$TMP/rules.png" "$TMP/safe.png" -gravity center -compose over -composite -strip "$DST/brand/adaptive-icon.png"
 # Splash: a paper disc on the desk colour, ship inside the 66% zone Android 12 keeps.
+# NOTE: app.json points at the `-hero` files, not these — the launch screen and
+# both launcher icons are the colour captain art, built by `npm run brand`
+# (scripts/make-brand.mjs, no ImageMagick needed). The ink splash and icons
+# below are kept as the monochrome alternatives; nothing here writes -hero.png.
 magick "$TMP/paper.png" "$TMP/safe.png" -gravity center -compose over -composite \
   \( -size 1024x1024 xc:black -fill white -draw "circle 512,512 512,8" \) \
   -alpha off -compose copy_opacity -composite -strip "$DST/brand/splash.png"
