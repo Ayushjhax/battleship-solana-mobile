@@ -1,4 +1,4 @@
-# Empire of Bits: Sea Battle — Brief, Rules & Architecture
+# Empire of Bits: Ocean Warfare — Brief, Rules & Architecture
 
 **CURRENT:** Privy is the mandatory front-door authentication layer and provides an
 embedded Solana wallet. Optional 50-point wagers and the 100-point/0.001-SOL exchange
@@ -8,13 +8,13 @@ are server-authoritative; the server verifies buys on-chain and signs treasury p
 embedded Solana wallet · Supabase (Postgres + Auth + Realtime) · Node WebSocket match server · landscape mobile.
 
 **Deadline:** 48 hours to a showcase build.
-**Reference:** Sea Battle 2 by BYRIL (`com.byril.seabattle2`).
+**Reference:** Ocean Warfare 2 by BYRIL (`com.byril.seabattle2`).
 
 ---
 
 ## 0. Read this first
 
-Game *mechanics* aren't copyrightable — clone the ruleset freely. The *art* is. Don't rip sprites from the APK; make your own in the same "ballpoint pen on graph paper" idiom. Ship as **Empire of Bits: Sea Battle**, not "Sea Battle 2". The look is easy to reach legitimately (see `02-ASSET-GUIDE.md`); the exact assets aren't yours to take.
+Game *mechanics* aren't copyrightable — clone the ruleset freely. The *art* is. Don't rip sprites from the APK; make your own in the same "ballpoint pen on graph paper" idiom. Ship as **Empire of Bits: Ocean Warfare**, not "Ocean Warfare 2". The look is easy to reach legitimately (see `02-ASSET-GUIDE.md`); the exact assets aren't yours to take.
 
 ---
 
@@ -33,7 +33,7 @@ to native dependencies or configuration require rebuilding the client.
 
 ## 2. What the reference game is
 
-(cite index="5-1">Sea Battle 2 is a Battleship adaptation in a hand-drawn blue-pen style where players pick a name and country, and battle points feed a rank ladder running from seaman recruit up to admiral</cite>. (cite index="1-1">The arsenal covers battleships, airplanes, submarines, mines and radar, with a classic mode that strips the extras and an advanced mode that keeps them</cite>.
+(cite index="5-1">Ocean Warfare 2 is a Battleship adaptation in a hand-drawn blue-pen style where players pick a name and country, and battle points feed a rank ladder running from seaman recruit up to admiral</cite>. (cite index="1-1">The arsenal covers battleships, airplanes, submarines, mines and radar, with a classic mode that strips the extras and an advanced mode that keeps them</cite>.
 
 Two rule changes matter more than anything else, and both apply **in classic mode too**: (cite index="8-1">ships aren't allowed to touch, so once you sink something the surrounding blank squares are revealed automatically; and as long as you hit something — by any method — you get another turn</cite>. The second rule is what makes matches fast and swingy.
 

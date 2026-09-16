@@ -1,4 +1,4 @@
-# Claude Code Prompt Pack — Empire of Bits: Sea Battle
+# Claude Code Prompt Pack — Empire of Bits: Ocean Warfare
 
 **Historical build pack.** The original P00–P17 prompts below predate the current Privy
 authentication and embedded Solana wallet extension. Their Expo Go/no-wallet statements

@@ -12,7 +12,7 @@ export function AuthLoadingScreen({ label = 'Checking your logbook…' }: { labe
     <Scale>
       <Paper variant="full" />
       <View style={styles.logo}>
-        <LogoMark w={280} h={56} subtitle="Sea Battle" />
+        <LogoMark w={280} h={56} subtitle="Ocean Warfare" />
       </View>
       <View style={styles.panel}>
         <InkPanel w={330} h={120} seedKey="auth-loading">
@@ -31,7 +31,7 @@ export function AuthErrorScreen({ title, message }: { title: string; message: st
     <Scale>
       <Paper variant="full" />
       <View style={styles.logo}>
-        <LogoMark w={280} h={56} subtitle="Sea Battle" />
+        <LogoMark w={280} h={56} subtitle="Ocean Warfare" />
       </View>
       <View style={styles.errorPanel}>
         <InkPanel w={480} h={170} seedKey={`auth-error-${title}`}>

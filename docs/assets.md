@@ -1,4 +1,4 @@
-# Asset Guide — Empire of Bits: Sea Battle
+# Asset Guide — Empire of Bits: Ocean Warfare
 
 Everything you need to make or find, **exactly where to put it**, and every route to getting it.
 

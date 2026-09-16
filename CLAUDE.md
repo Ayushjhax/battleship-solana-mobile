@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# Empire of Bits: Sea Battle
+# Empire of Bits: Ocean Warfare
 
 Battleship clone in a ballpoint-pen-on-graph-paper style. Expo SDK 57, TypeScript
 strict, Android-first, **landscape only**. Full spec in [docs/brief.md](docs/brief.md);

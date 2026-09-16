@@ -18,7 +18,7 @@ export interface LogoMarkProps {
   h?: number;
   /** The wet-ink double print. On by default. */
   bleed?: boolean;
-  /** A small line under the mark, e.g. "Sea Battle". */
+  /** A small line under the mark, e.g. "Ocean Warfare". */
   subtitle?: string;
   style?: ViewStyle;
 }
@@ -59,7 +59,7 @@ function Wordmark({ w, h, tint }: { w: number; h: number; tint: string }) {
           marginTop: h * 0.1,
         }}
       >
-        Sea Battle
+        Ocean Warfare
       </Text>
     </View>
   );

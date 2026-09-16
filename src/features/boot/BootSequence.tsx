@@ -15,16 +15,16 @@
  * end state (skip / reduce-motion), 'exit' slides the sheet away.
  */
 import { useEffect, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, {
-  Easing,
-  cancelAnimation,
-  useAnimatedProps,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withSpring,
-  withTiming,
+    Easing,
+    cancelAnimation,
+    useAnimatedProps,
+    useAnimatedStyle,
+    useSharedValue,
+    withDelay,
+    withSpring,
+    withTiming,
 } from 'react-native-reanimated';
 import Svg, { ClipPath, Defs, G, Path, Rect } from 'react-native-svg';
 
@@ -222,7 +222,7 @@ export function BootSequence({ mode }: BootSequenceProps) {
         </Svg>
       </Animated.View>
       <Animated.View style={[styles.logo, logoStyle]}>
-        <LogoMark w={LOGO_W} h={LOGO_H} subtitle="Sea Battle" />
+        <LogoMark w={LOGO_W} h={LOGO_H} subtitle="Ocean Warfare" />
       </Animated.View>
     </Animated.View>
   );
