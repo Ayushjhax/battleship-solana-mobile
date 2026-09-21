@@ -6,8 +6,9 @@
  * The screen never inspects `match` to decide what to draw. It draws `shown`.
  *
  * Mode plumbing: 'ai' drives the opponent with src/engine/ai.ts on a
- * 900-1400 ms "thinking" delay; 'hotseat' swaps the viewer between turns
- * behind a pass-the-device curtain (P14 dresses it up); 'online' is fed by
+ * 900-1400 ms "thinking" delay; 'hotseat' swaps the viewer the moment the
+ * turn changes hands and drops a paper sheet over the incoming player's own
+ * board (`fleetCovered`) until they lift it; 'online' is fed by
  * src/net/match-client.ts. All of them feed the same EventPlayer.
  *
  * Online: there is no `match` here at all — the server owns both boards and
@@ -108,8 +109,21 @@ interface BattleData {
   pending: boolean;
   /** Online: our shell is away (or landed) and no verdict yet — the "…" cell. */
   pendingShotAt: Coord | null;
-  /** Hotseat: waiting for the device to be passed. */
-  curtain: boolean;
+  /**
+   * Online: an arsenal item is deployed and awaiting the server's events.
+   * FIRE has flown its shell locally since P13, so a shot reads as instant;
+   * USE_ARSENAL sent and then showed nothing at all until the round trip came
+   * back, which on a distant server is most of a second of dead screen.
+   */
+  pendingArsenalAt: Coord | null;
+  /**
+   * Hotseat: the device is changing hands. The incoming player's own board
+   * sits under an opaque paper sheet with their name on it, the turn clock
+   * waits, and nothing of theirs — a shot, the arsenal — goes until they lift
+   * it. Only the own board is covered: the enemy board shows nothing the
+   * outgoing player did not already know, so the game stays in view.
+   */
+  fleetCovered: boolean;
   /** GAME_OVER has played out; the screen may route to the result. */
   finished: boolean;
   difficulty: Difficulty;
@@ -133,7 +147,8 @@ interface BattleActions {
   act: (action: MatchAction) => void;
   tick: () => void;
   skip: () => void;
-  dismissCurtain: () => void;
+  /** Hotseat: the incoming player has the device — lift the sheet, start the clock. */
+  uncoverFleet: () => void;
   showEmote: (id: number) => void;
   setArsenalOpen: (open: boolean) => void;
   /** Enter targeting with one of your unused offensive items; null cancels. */
@@ -161,7 +176,8 @@ const EMPTY: BattleData = {
   aiming: null,
   pending: false,
   pendingShotAt: null,
-  curtain: false,
+  pendingArsenalAt: null,
+  fleetCovered: false,
   finished: false,
   difficulty: 'normal',
   emote: null,
@@ -265,7 +281,27 @@ function onIdle(): void {
     return;
   }
   if (match.turn === s.me) return;
-  if (s.mode === 'hotseat') useBattle.setState({ curtain: true });
+  if (s.mode === 'hotseat') {
+    // The turn changed hands. The view swaps to the next player here and
+    // now — `me` must move or player two could never act — and in the same
+    // commit their own board goes under the sheet, so no frame ever shows
+    // the incoming fleet to whoever is still holding the device.
+    //
+    // This used to raise a full-screen modal every single turn: three lines
+    // of the same instruction and a Ready button after every miss. The sheet
+    // covers only what is secret, says just whose it is, and lifts on a tap.
+    const next = match.turn;
+    useBattle.setState({
+      me: next,
+      shown: projectView(match, next),
+      seconds: TURN_SECONDS,
+      // The triangle is already pointing at the new player; do not rotate it
+      // a second time for a view that changed identity rather than turn.
+      snapTurn: true,
+      fleetCovered: true,
+    });
+    return;
+  }
   localMatch?.driveAi();
 }
 
@@ -310,7 +346,12 @@ function receiveOnlineEvents(events: readonly MatchEvent[]): void {
     shotLike && first.playerId !== s.me
       ? [{ type: 'SHOT_FIRED', playerId: first.playerId, at: first.at }]
       : [];
-  useBattle.setState({ pending: false, pendingShotAt: null, lastEvents: events });
+  useBattle.setState({
+    pending: false,
+    pendingShotAt: null,
+    pendingArsenalAt: null,
+    lastEvents: events,
+  });
   battlePlayer.enqueue([...prefix, ...events]);
 }
 
@@ -323,7 +364,7 @@ function onOnlineError(error: { code: string; message: string } | null): void {
     console.warn(
       `[battle] action refused by the server: ${error?.code ?? '?'} ${error?.message ?? ''}`,
     );
-    useBattle.setState({ pending: false, pendingShotAt: null });
+    useBattle.setState({ pending: false, pendingShotAt: null, pendingArsenalAt: null });
   }
 }
 
@@ -333,7 +374,7 @@ function wireOnline(): void {
     if (prev.status === 'reconnecting' && next.status === 'active') {
       // Resynced: whatever we had in flight is either applied or lost. The
       // fresh view (below) is the truth; drop the optimistic leftovers.
-      useBattle.setState({ pending: false, pendingShotAt: null });
+      useBattle.setState({ pending: false, pendingShotAt: null, pendingArsenalAt: null });
       battlePlayer.skip();
     }
     if (next.eventsNonce !== prev.eventsNonce) receiveOnlineEvents(next.takePendingEvents());
@@ -415,7 +456,9 @@ export const useBattle = create<BattleState>((set, get) => ({
       shown: projectView(match, me),
       difficulty: setup.difficulty ?? 'normal',
       seconds: TURN_SECONDS,
-      curtain: setup.mode === 'hotseat',
+      // Hotseat: player two placed last, so the device is in their hands and
+      // player one's fleet — whose turn it is — starts under the sheet.
+      fleetCovered: setup.mode === 'hotseat',
     });
     local.driveAi();
   },
@@ -423,7 +466,7 @@ export const useBattle = create<BattleState>((set, get) => ({
   aim: (at) => {
     const s = get();
     if (!s.shown || (s.mode !== 'online' && !s.match)) return;
-    if (s.animating || s.aiming || s.curtain || s.finished || s.pending) return;
+    if (s.animating || s.aiming || s.fleetCovered || s.finished || s.pending) return;
     if (s.shown.phase !== 'playing' || s.shown.turn !== s.me) return;
     if (s.targeting) {
       // A weapon is armed: the tap is its target. Rows for torpedo kinds.
@@ -438,6 +481,21 @@ export const useBattle = create<BattleState>((set, get) => ({
       return;
     }
     if (s.shown.enemy.marks[coordKey(at)]) return;
+
+    // Online, the crosshair's 260 ms ran BEFORE the request left the device,
+    // so it sat on top of the round trip rather than inside it: a tap cost
+    // AIM_MS + RTT before anything could resolve. The shell is the feedback
+    // that matters, and `act` flies it locally the moment it is called, so
+    // online skips straight to it and the network starts at the tap.
+    //
+    // Enqueuing before sending also keeps the order honest: the server's
+    // verdict can never be queued ahead of the shell that precedes it, which
+    // it could if the crosshair delayed the enqueue on a fast connection.
+    if (s.mode === 'online') {
+      get().fire(at);
+      return;
+    }
+
     set({ aiming: at });
     aimTimer = setTimeout(() => {
       aimTimer = null;
@@ -460,11 +518,15 @@ export const useBattle = create<BattleState>((set, get) => ({
       const client = useMatchClient.getState();
       if (action.type === 'FIRE') {
         // Optimistic: the shell flies now. The verdict is the server's alone.
-        set({ pending: true, pendingShotAt: action.at, lastAction: action });
+        set({ pending: true, pendingShotAt: action.at, pendingArsenalAt: null, lastAction: action });
         battlePlayer.enqueue([{ type: 'SHOT_FIRED', playerId: s.me, at: action.at }]);
         client.fire(action.at);
       } else if (action.type === 'USE_ARSENAL') {
-        set({ pending: true, lastAction: action });
+        // Mark the target immediately. This says "sent", never an outcome —
+        // the verdict is still the server's alone.
+        const mark: Coord | null =
+          action.at ?? (action.row === undefined ? null : { r: action.row, c: 0 });
+        set({ pending: true, pendingArsenalAt: mark, pendingShotAt: null, lastAction: action });
         client.useArsenal(action.itemId, { at: action.at, row: action.row });
       } else if (action.type === 'RESIGN') {
         client.resign();
@@ -485,7 +547,8 @@ export const useBattle = create<BattleState>((set, get) => ({
       if (seconds !== s.seconds) set({ seconds });
       return;
     }
-    if (!s.match || s.match.phase !== 'playing' || s.animating || s.curtain || s.aiming) return;
+    if (!s.match || s.match.phase !== 'playing' || s.animating || s.fleetCovered || s.aiming)
+      return;
     if (s.seconds > 1) {
       set({ seconds: s.seconds - 1 });
       return;
@@ -497,11 +560,10 @@ export const useBattle = create<BattleState>((set, get) => ({
 
   skip: () => battlePlayer.skip(),
 
-  dismissCurtain: () => {
-    const s = get();
-    if (!s.match) return;
-    const me = s.match.turn;
-    set({ curtain: false, me, shown: projectView(s.match, me), seconds: TURN_SECONDS });
+  uncoverFleet: () => {
+    // `me` already moved at the handover; this only lifts the sheet. The
+    // clock starts here: the seconds spent passing the phone were nobody's.
+    if (get().fleetCovered) set({ fleetCovered: false, seconds: TURN_SECONDS });
   },
 
   setArsenalOpen: (open) => {
@@ -514,7 +576,7 @@ export const useBattle = create<BattleState>((set, get) => ({
         state.shown.turn !== state.me ||
         state.animating ||
         state.pending ||
-        state.curtain ||
+        state.fleetCovered ||
         state.finished)
     )
       return;
@@ -535,7 +597,7 @@ export const useBattle = create<BattleState>((set, get) => ({
       s.shown.turn !== s.me ||
       s.animating ||
       s.pending ||
-      s.curtain ||
+      s.fleetCovered ||
       s.finished ||
       !item ||
       item.used ||

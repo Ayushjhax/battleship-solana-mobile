@@ -21,18 +21,25 @@ try {
   /* no env file — fine when the deployment platform injects variables */
 }
 
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import Fastify from 'fastify';
 import { z } from 'zod';
 
 import { verifyAccessToken } from './auth';
 import {
   applyOfflineResult,
+  checkDatabaseSchema,
   fetchProfileRewardTotals,
   reservePointWager,
   settleOfflineWager,
   upsertPrivyAccount,
+  verifyAuthAdminAccess,
   verifyDatabaseConnection,
+  type ReadinessCheck,
 } from './db';
+import { AuthFailure, detailOf, isAuthFailure } from './errors';
 import { cancelBeforeMatchStart, totalQueued } from './matchmaker';
 import { creditConfirmedPointPurchase, getPointQuote, sellPoints } from './points';
 import { verifyAndLoadPrivyUser } from './privy';
@@ -43,7 +50,9 @@ import { attachWebSocketServer } from './ws';
 const port = Number(process.env.PORT ?? 8080);
 const startedAt = Date.now();
 
-const app = Fastify({ logger: true });
+// Vitest drives these routes through `inject`; pino's output would bury the
+// assertion failures it is there to surface.
+const app = Fastify({ logger: process.env.VITEST ? { level: 'silent' } : true });
 
 app.get('/health', async () => ({
   ok: true,
@@ -52,6 +61,52 @@ app.get('/health', async () => ({
   queued: totalQueued(),
   uptime: Math.floor((Date.now() - startedAt) / 1000),
 }));
+
+/** Privy config is read straight from the environment; never echo the secret. */
+function privyConfigCheck(): ReadinessCheck {
+  const missing = (['PRIVY_APP_ID', 'PRIVY_APP_SECRET'] as const).filter(
+    (key) => !process.env[key]?.trim(),
+  );
+  if (missing.length > 0) {
+    return { name: 'privy_config', ok: false, detail: `missing ${missing.join(', ')}` };
+  }
+  const verificationKey = process.env.PRIVY_JWT_VERIFICATION_KEY?.trim();
+  if (verificationKey && !verificationKey.includes('BEGIN PUBLIC KEY')) {
+    // A PEM pasted into .env without quotes collapses to its first line, which
+    // silently breaks signature verification and looks like a bad token.
+    return {
+      name: 'privy_config',
+      ok: false,
+      detail: 'PRIVY_JWT_VERIFICATION_KEY is set but is not a PEM public key',
+    };
+  }
+  return { name: 'privy_config', ok: true, detail: null };
+}
+
+function treasuryConfigCheck(): ReadinessCheck {
+  const missing = (['SOLANA_RPC_URL', 'TREASURY_PUBLIC_KEY', 'TREASURY_PRIVATE_KEY'] as const)
+    .filter((key) => !process.env[key]?.trim());
+  return missing.length > 0
+    ? { name: 'treasury_config', ok: false, detail: `missing ${missing.join(', ')}` }
+    : { name: 'treasury_config', ok: true, detail: null };
+}
+
+/**
+ * Deep readiness. `/health` answers "is the process up", which stayed true all
+ * the way through a total sign-in outage; this answers "can a player actually
+ * log in and spend points". Kept off /health so monitoring stays cheap.
+ */
+app.get('/ready', async (_request, reply) => {
+  const checks: ReadinessCheck[] = [
+    privyConfigCheck(),
+    treasuryConfigCheck(),
+    await checkDatabaseSchema(),
+    await verifyAuthAdminAccess(),
+  ];
+  const ok = checks.every((check) => check.ok);
+  reply.header('Cache-Control', 'no-store');
+  return reply.code(ok ? 200 : 503).send({ ok, checks });
+});
 
 app.post('/auth/privy/sync', async (request, reply) => {
   const authorization = request.headers.authorization ?? '';
@@ -107,15 +162,21 @@ app.post('/auth/privy/sync', async (request, reply) => {
       session: bootstrapped.handoff,
     };
   } catch (error) {
-    request.log.error(error);
-    const message = error instanceof Error ? error.message : '';
-    if (/already linked to another Privy user/i.test(message)) {
-      return reply.code(409).send({ error: 'This game profile belongs to another Privy sign-in.' });
+    // Classification is carried by the error itself. Matching on message text
+    // here is what made every Supabase outage look like a bad credential.
+    if (isAuthFailure(error)) {
+      request.log.error({ code: error.code, detail: error.message }, 'Privy sync failed');
+      return reply.code(error.status).send({ error: error.publicMessage, code: error.code });
     }
-    if (/token|jwt|unauthorized|authentication/i.test(message)) {
-      return reply.code(401).send({ error: 'invalid Privy access token' });
+    if (/already linked to another Privy user/i.test(detailOf(error))) {
+      request.log.warn({ detail: detailOf(error) }, 'Privy sync hit a profile conflict');
+      const conflict = new AuthFailure('profile_conflict', detailOf(error));
+      return reply.code(conflict.status).send({ error: conflict.publicMessage, code: conflict.code });
     }
-    return reply.code(503).send({ error: 'could not sync Privy account' });
+    request.log.error(error, 'Privy sync failed for an unclassified reason');
+    return reply
+      .code(503)
+      .send({ error: 'could not sync Privy account', code: 'sync_failed' });
   }
 });
 
@@ -341,10 +402,15 @@ process.once('SIGINT', () => shutdown('SIGINT'));
 async function main(): Promise<void> {
   await verifyDatabaseConnection();
   app.log.info('database connected: Supabase profiles, Privy accounts, and points schema ready');
-  if (process.env.PRIVY_APP_ID?.trim() && process.env.PRIVY_APP_SECRET?.trim()) {
-    app.log.info('Privy server authentication configured');
-  } else {
-    app.log.warn('Privy server authentication is not configured');
+
+  // Table reads pass with a publishable key; sign-in needs service-role admin.
+  // Surfacing that at boot turns a silent per-request failure into one log line.
+  for (const check of [privyConfigCheck(), treasuryConfigCheck(), await verifyAuthAdminAccess()]) {
+    if (check.ok) {
+      app.log.info(`readiness ok: ${check.name}`);
+    } else {
+      app.log.error(`READINESS FAILED: ${check.name} - ${check.detail ?? 'unknown'}`);
+    }
   }
   await app.listen({ port, host: '0.0.0.0' });
   wss = attachWebSocketServer(app.server, (msg) => app.log.info(msg));
@@ -352,7 +418,27 @@ async function main(): Promise<void> {
   app.log.info(`backend ready: HTTP and WebSocket live on port ${port}`);
 }
 
-main().catch((error: unknown) => {
-  app.log.error(error);
-  process.exit(1);
-});
+/**
+ * Only boot when this module is the process entry point. Importing it (as the
+ * route tests do, via Fastify's `inject`) must not open a socket or require a
+ * live Supabase — that requirement is why every route here sat at 0% coverage
+ * while the sign-in bug shipped.
+ */
+const isEntrypoint = (() => {
+  const invoked = process.argv[1];
+  if (!invoked) return false;
+  try {
+    return resolve(invoked) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+})();
+
+if (isEntrypoint) {
+  main().catch((error: unknown) => {
+    app.log.error(error);
+    process.exit(1);
+  });
+}
+
+export { app, main };

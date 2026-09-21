@@ -23,9 +23,20 @@ export default defineConfig({
       // arranged board can be silently swapped for another.
       'src/features/battle/**/*.test.ts',
       'src/net/__tests__/*.test.ts',
+      // src/wallet/__tests__/solana.test.ts existed but matched nothing here,
+      // so it had never run once.
+      'src/wallet/__tests__/*.test.ts',
+      // The structured suite: tests/<area>/*.test.ts.
+      'tests/**/*.test.ts',
     ],
     environment: 'node',
     passWithNoTests: true,
     testTimeout: 15000,
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/__tests__/**', 'src/**/*.d.ts', 'src/net/database.types.ts'],
+      reporter: ['text-summary', 'json-summary'],
+    },
   },
 });

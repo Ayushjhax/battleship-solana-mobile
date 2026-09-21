@@ -18,7 +18,7 @@
  */
 import { validateSubmission } from '@engine/match';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -33,6 +33,7 @@ import Animated, {
 import Svg from 'react-native-svg';
 
 import { AvatarCard, FlagChip } from '@/features/battle/Hud';
+import { createMatchHandoff } from '@/features/matchmaking/handoff';
 import { subscribeEmotes } from '@/net/chat';
 import { failureCopy, useMatchClient } from '@/net/match-client';
 import { cancelPointWager } from '@/net/points';
@@ -50,7 +51,13 @@ import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/
 import { RoughShape, hashString, useRough, type Point } from '@/ui/useRough';
 
 const REVEAL_HOLD_MS = 2000;
-const ARENAS = ['Black Harbor', 'Gull Reach', 'The Narrows', 'Ironwater Sound', 'Saltmarsh'] as const;
+const ARENAS = [
+  'Black Harbor',
+  'Gull Reach',
+  'The Narrows',
+  'Ironwater Sound',
+  'Saltmarsh',
+] as const;
 
 function arenaFor(matchId: string): string {
   return ARENAS[hashString(matchId) % ARENAS.length] as string;
@@ -101,12 +108,22 @@ function RadarSweep({ size = 150 }: { size?: number }) {
       hachureGap: 4,
       roughness: 0.8,
     }),
-    roughLine(c, c, c, 6, { seed: seed + 10, stroke: color.inkRed, strokeWidth: 1.8, roughness: 0.6 }),
+    roughLine(c, c, c, 6, {
+      seed: seed + 10,
+      stroke: color.inkRed,
+      strokeWidth: 1.8,
+      roughness: 0.6,
+    }),
   ];
 
   return (
     <View style={{ width: size, height: size }}>
-      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={StyleSheet.absoluteFill}>
+      <Svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        style={StyleSheet.absoluteFill}
+      >
         {rings.map((p, i) => (
           <RoughShape key={i} paths={p} />
         ))}
@@ -211,7 +228,6 @@ export default function SearchingScreen() {
   const [elapsed, setElapsed] = useState(0);
   const [cancelling, setCancelling] = useState(false);
   const startedAt = useRef(Date.now());
-  const readySent = useRef<string | null>(null);
 
   // Queue once. The client is idempotent across a re-mount.
   useEffect(() => {
@@ -219,7 +235,10 @@ export default function SearchingScreen() {
   }, [opponentKind, ruleset, wagered]);
 
   useEffect(() => {
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt.current) / 1000)), 500);
+    const id = setInterval(
+      () => setElapsed(Math.floor((Date.now() - startedAt.current) / 1000)),
+      500,
+    );
     return () => clearInterval(id);
   }, []);
 
@@ -237,55 +256,50 @@ export default function SearchingScreen() {
     return subscribeEmotes(matchId);
   }, [matchId]);
 
-  // matched: send the fleet at once. Once per match id — the ref is the guard,
-  // so a re-render or a status change never re-sends it.
+  // matched -> ready -> reveal -> battle. The sequencing lives in
+  // src/features/matchmaking/handoff.ts so the race it once had is testable:
+  // sending the fleet is once per match, and the reveal timer must survive the
+  // `matched` -> `active` flip that lands inside the hold.
+  const handoff = useMemo(
+    () =>
+      createMatchHandoff({
+        holdMs: REVEAL_HOLD_MS,
+        currentMatchId: () => useMatchClient.getState().matchId,
+        onReady: () => {
+          const placement = usePlacement.getState();
+          const profile = useProfile.getState();
+          const self = useMatchClient.getState().you;
+          // Keep the local identity in step with what the server just told us.
+          if (self && profile.userId !== self.id) profile.setUserId(self.id);
+
+          // Classic carries no arsenal; the server's reducer rejects one that does.
+          const arsenal = placement.ruleset === 'advanced' ? placement.arsenal : [];
+          // Checked against the same rules the server will apply. Sending a
+          // layout it refuses would leave us waiting out the 90 s deadline,
+          // after which the server auto-places a fleet the player never
+          // arranged — the loss that made this worth checking twice.
+          const check = validateSubmission(placement.ruleset, placement.ships, arsenal);
+          if (!check.ok) {
+            console.error(`[online] refusing to send an invalid layout: ${check.reason}`);
+            useMatchClient.getState().failLayout(check.reason);
+            return;
+          }
+          useMatchClient.getState().ready(toLayoutPayload(placement.ships, arsenal));
+        },
+        onNavigate: () => router.replace('/battle'),
+      }),
+    [router],
+  );
+
+  useEffect(() => handoff.dispose, [handoff]);
+
   useEffect(() => {
-    if (status === 'cancelling' || status === 'failed') return;
-    if (!matchId || !you || !opponent) return;
-    if (readySent.current === matchId) return;
-    readySent.current = matchId;
-
-    const placement = usePlacement.getState();
-    const profile = useProfile.getState();
-    // Keep the local identity in step with what the server just told us.
-    if (profile.userId !== you.id) profile.setUserId(you.id);
-
-    // Classic carries no arsenal; the server's reducer rejects one that does.
-    const arsenal = placement.ruleset === 'advanced' ? placement.arsenal : [];
-    // Checked against the same rules the server will apply. Sending a layout
-    // it refuses would leave us waiting out the 90 s deadline, after which the
-    // server auto-places a fleet the player never arranged.
-    const check = validateSubmission(placement.ruleset, placement.ships, arsenal);
-    if (!check.ok) {
-      console.error(`[online] refusing to send an invalid layout: ${check.reason}`);
-      useMatchClient.getState().failLayout(check.reason);
-      return;
-    }
-    useMatchClient.getState().ready(toLayoutPayload(placement.ships, arsenal));
-  }, [matchId, you, opponent, status]);
-
-  /**
-   * The reveal holds, then the battle screen takes over. This MUST be its own
-   * effect: the server broadcasts a state the instant it accepts a layout, so
-   * `status` goes matched -> active well inside the hold. Sharing an effect
-   * with the `ready` send above meant that change tore the timer down, and the
-   * guard on the re-run returned before scheduling another — the reveal then
-   * sat on screen forever and the match never started.
-   *
-   * Arriving while the opponent is still placing is expected and handled:
-   * ConnectionOverlay shows "waiting for opponent" until the first turn.
-   */
-  const revealReady = Boolean(matchId && you && opponent) && status !== 'failed' && status !== 'cancelling';
-  useEffect(() => {
-    if (!revealReady || !matchId) return;
-    const timer = setTimeout(() => {
-      const client = useMatchClient.getState();
-      if (client.matchId !== matchId) return;
-      if (client.status === 'failed' || client.status === 'cancelling') return;
-      router.replace('/battle');
-    }, REVEAL_HOLD_MS);
-    return () => clearTimeout(timer);
-  }, [matchId, revealReady, router]);
+    handoff.sync({
+      matchId,
+      hasPlayers: Boolean(you && opponent),
+      cancelling: status === 'cancelling' || status === 'failed',
+    });
+  }, [handoff, matchId, you, opponent, status]);
 
   const onCancel = async () => {
     if (cancelling) return;
@@ -307,7 +321,10 @@ export default function SearchingScreen() {
   };
 
   const count = presenceCount ?? queuedCount;
-  // Same condition the reveal timer runs on, so the two can never disagree.
+  // Exactly what handoff.sync() schedules the reveal on, so the screen and
+  // the timer can never disagree about whether we are revealing. Left as a
+  // chain rather than a Boolean() so it still narrows matchId/you/opponent.
+  const revealReady = status !== 'failed' && status !== 'cancelling';
   const revealing = revealReady && matchId && you && opponent;
 
   return (
@@ -373,7 +390,9 @@ export default function SearchingScreen() {
       ) : (
         <View style={styles.centre}>
           <RadarSweep />
-          <Text style={styles.title}>{cancelling || status === 'cancelling' ? 'Returning your wager' : 'Finding an opponent'}</Text>
+          <Text style={styles.title}>
+            {cancelling || status === 'cancelling' ? 'Returning your wager' : 'Finding an opponent'}
+          </Text>
           <Text style={styles.meta}>
             {cancelling || status === 'cancelling'
               ? 'Confirming balance with the game server'
@@ -451,7 +470,12 @@ const styles = StyleSheet.create({
   cardText: { flex: 1, gap: 4 },
   cardName: { color: color.ink, fontFamily: font.display, fontSize: typeScale.md },
   cardPoints: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.xs },
-  failedTitle: { color: color.inkRed, fontFamily: font.display, fontSize: typeScale.lg, marginBottom: 4 },
+  failedTitle: {
+    color: color.inkRed,
+    fontFamily: font.display,
+    fontSize: typeScale.lg,
+    marginBottom: 4,
+  },
   failedBody: {
     color: color.ink,
     fontFamily: font.body,

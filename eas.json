@@ -19,15 +19,15 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://wckfbrosrslvqsnrthff.supabase.co",
         "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_4-KOGbGXpFA3tplFBvOoVA_LPsEvmpx",
-        "EXPO_PUBLIC_WS_URL": "wss://battleship-solana-mobile-backend.onrender.com/ws",
-        "EXPO_PUBLIC_API_URL": "https://battleship-solana-mobile-backend.onrender.com",
+        "EXPO_PUBLIC_WS_URL": "wss://api.empireofbits.xyz/ws",
+        "EXPO_PUBLIC_API_URL": "https://api.empireofbits.xyz",
         "EXPO_PUBLIC_PRIVY_APP_ID": "cmu2gry8r002d0cjnvn1uh29q",
         "EXPO_PUBLIC_PRIVY_CLIENT_ID": "client-WY6dnH5XxXP3YmKGCMnVVMm9TXsEC8ae6sB4D4WBrvVrF",
         "EXPO_PUBLIC_SOLANA_RPC_URL": "https://mainnet.helius-rpc.com/?api-key=b3efa1cb-e1e4-49ab-a739-158bbe4a7468",
         "EXPO_PUBLIC_SOLANA_CLUSTER": "mainnet-beta",
-        "TREASURY_PUBLIC_KEY":"HfYqSJrCeWwzKU2JMboEb7dPmQhT23Trqat1ch4ZwiUd",
-        "SELL_POINTS_COST":"100",
-        "SELL_SOL_PAYOUT":"0.001"
+        "TREASURY_PUBLIC_KEY": "HfYqSJrCeWwzKU2JMboEb7dPmQhT23Trqat1ch4ZwiUd",
+        "SELL_POINTS_COST": "100",
+        "SELL_SOL_PAYOUT": "0.001"
       }
     },
     "production": {
@@ -38,15 +38,15 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://wckfbrosrslvqsnrthff.supabase.co",
         "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_4-KOGbGXpFA3tplFBvOoVA_LPsEvmpx",
-        "EXPO_PUBLIC_WS_URL": "wss://battleship-solana-mobile-backend.onrender.com/ws",
-        "EXPO_PUBLIC_API_URL": "https://battleship-solana-mobile-backend.onrender.com",
+        "EXPO_PUBLIC_WS_URL": "wss://api.empireofbits.xyz/ws",
+        "EXPO_PUBLIC_API_URL": "https://api.empireofbits.xyz",
         "EXPO_PUBLIC_PRIVY_APP_ID": "cmu2gry8r002d0cjnvn1uh29q",
         "EXPO_PUBLIC_PRIVY_CLIENT_ID": "client-WY6dnH5XxXP3YmKGCMnVVMm9TXsEC8ae6sB4D4WBrvVrF",
         "EXPO_PUBLIC_SOLANA_RPC_URL": "https://mainnet.helius-rpc.com/?api-key=b3efa1cb-e1e4-49ab-a739-158bbe4a7468",
         "EXPO_PUBLIC_SOLANA_CLUSTER": "mainnet-beta",
-        "TREASURY_PUBLIC_KEY":"HfYqSJrCeWwzKU2JMboEb7dPmQhT23Trqat1ch4ZwiUd",
-        "SELL_POINTS_COST":"100",
-        "SELL_SOL_PAYOUT":"0.001"
+        "TREASURY_PUBLIC_KEY": "HfYqSJrCeWwzKU2JMboEb7dPmQhT23Trqat1ch4ZwiUd",
+        "SELL_POINTS_COST": "100",
+        "SELL_SOL_PAYOUT": "0.001"
       }
     }
   },

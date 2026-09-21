@@ -129,8 +129,11 @@ that looks like a rectangle from a UI kit.
 - Every timed step of an animation goes through `player.wait(ms)` so skip cuts it short;
   visuals in flight live in `src/fx/fxStore.ts` and remove themselves.
 - Modes plug in behind the store: `ai` schedules `chooseMove` on a 900-1400 ms delay,
-  `hotseat` raises the curtain and swaps `me`, `online` (P13) calls `act()` with server
-  events. The screen must not care which.
+  `hotseat` swaps `me` the moment the turn changes hands and covers only the incoming
+  player's own board (`fleetCovered`, the `FleetCover` sheet in `Hud.tsx`, lifted by one
+  tap — there is no modal between turns; the one full "pass the device" instruction is the
+  placement handoff), `online` (P13) calls `act()` with server events. The screen must not
+  care which.
 - The HIT camera shake is an animated style on `DualBoards` — boards only, never the HUD.
 
 ### The tutorial (`src/tutorial`, `app/tutorial.tsx`)

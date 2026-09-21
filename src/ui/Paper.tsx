@@ -35,6 +35,40 @@ export interface PaperProps {
 /** How far in from the right edge the tear runs, per variant. */
 const TEAR_INSET = { full: 12, panel: 6 } as const;
 
+/** The red margin rule's own geometry, shared so it can be drawn twice. */
+function marginRulePaths(w: number, seed: number) {
+  return roughLine(-2, PAPER_GRID.ruleY, w + 2, PAPER_GRID.ruleY, {
+    seed: seed + 7,
+    stroke: color.ruleRed,
+    strokeWidth: 1.3,
+    roughness: 0.9,
+    bowing: 0.7,
+  });
+}
+
+/**
+ * The red margin rule on its own, for screens that draw a strip over the top
+ * of the sheet. Battle's HUD sits across y = 0..78 and buried the line the rest
+ * of the game shows, so the one element meant to be constant was the one that
+ * disappeared mid-match. Render this above that strip with the same `seedKey`
+ * and the line is identical, wobble included.
+ */
+export function MarginRule({ w = CANVAS_W, seedKey = 'paper' }: { w?: number; seedKey?: string }) {
+  const seed = hashString(`${seedKey}-full`);
+  const paths = marginRulePaths(w, seed);
+  return (
+    <Svg
+      width={w}
+      height={PAPER_GRID.ruleY + 8}
+      viewBox={`0 0 ${w} ${PAPER_GRID.ruleY + 8}`}
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+    >
+      <RoughShape paths={paths} />
+    </Svg>
+  );
+}
+
 export interface RulesProps {
   w: number;
   h: number;
@@ -102,16 +136,7 @@ export function Paper({
   );
   const clipId = `sheet-${seed}`;
 
-  const rule =
-    variant === 'full'
-      ? roughLine(-2, PAPER_GRID.ruleY, w + 2, PAPER_GRID.ruleY, {
-          seed: seed + 7,
-          stroke: color.ruleRed,
-          strokeWidth: 1.3,
-          roughness: 0.9,
-          bowing: 0.7,
-        })
-      : null;
+  const rule = variant === 'full' ? marginRulePaths(w, seed) : null;
 
   return (
     <View style={{ width: w, height: h }}>

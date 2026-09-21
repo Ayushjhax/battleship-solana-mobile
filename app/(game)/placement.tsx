@@ -80,6 +80,10 @@ const SHOP_H = 226;
 const TRAY_SCALE = 0.5;
 const TRAY_HEADER = 20;
 const TRAY_PITCH = 24;
+/** What the dock knows about a drag: nothing, a ship in the hand, that ship over it. */
+const DOCK_IDLE = 0;
+const DOCK_LIVE = 1;
+const DOCK_HOVER = 2;
 const SPRING = { damping: 18, stiffness: 230, mass: 0.7 } as const;
 const SHIP_PLACE_SOURCE = 'shipPlace' as const;
 
@@ -224,23 +228,14 @@ function FuelGauge({
 }) {
   const remaining = Math.max(0, budget - spent);
   const reduceMotion = useReducedMotion();
-  const progress = useSharedValue(budget > 0 ? remaining / budget : 0);
   const shake = useSharedValue(0);
   const roll = useSharedValue(0);
-  const { roughCircle, roughLine, roughPolygon, roughRect } = useRough();
-  const barW = 244;
-  const barH = 32;
 
   useEffect(() => {
-    const next = budget > 0 ? remaining / budget : 0;
-    progress.value = reduceMotion
-      ? next
-      : withTiming(next, { duration: 400, easing: Easing.out(Easing.cubic) });
-    if (!reduceMotion) {
-      roll.value = -6;
-      roll.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
-    }
-  }, [budget, progress, reduceMotion, remaining, roll]);
+    if (reduceMotion) return;
+    roll.value = -6;
+    roll.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+  }, [reduceMotion, remaining, roll]);
 
   useEffect(() => {
     if (shakeNonce === 0 || reduceMotion) return;
@@ -253,94 +248,28 @@ function FuelGauge({
     );
   }, [reduceMotion, shake, shakeNonce]);
 
-  const clipStyle = useAnimatedStyle(() => ({ width: Math.max(0, (barW - 9) * progress.value) }));
   const gaugeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shake.value }] }));
   const numberStyle = useAnimatedStyle(() => ({
     opacity: 1 - Math.min(0.35, Math.abs(roll.value) / 20),
     transform: [{ translateY: roll.value }],
   }));
-  const frame = roughRect(1, 2, barW - 2, barH - 4, {
-    seed: hashString('fuel-frame'),
-    stroke: color.ink,
-    strokeWidth: 1.65,
-    roughness: 1,
-    bowing: 0.75,
-  });
-  const fill = roughRect(0, 0, barW - 9, barH - 11, {
-    seed: hashString('fuel-fill'),
-    stroke: color.inkGreen,
-    strokeWidth: 0.7,
-    fill: color.inkGreen,
-    fillStyle: 'hachure',
-    hachureGap: 2.5,
-    fillWeight: 1,
-  });
-  const barrel = roughRect(4, 4, 27, 31, {
-    seed: hashString('fuel-barrel'),
-    stroke: color.ink,
-    strokeWidth: 1.5,
-    fill: color.paper,
-    fillStyle: 'solid',
-  });
-  const rimTop = roughCircle(17.5, 5.5, 26, {
-    seed: hashString('fuel-rim-top'),
-    stroke: color.ink,
-    strokeWidth: 1.25,
-  });
-  const rimBottom = roughLine(5, 30, 30, 30, {
-    seed: hashString('fuel-rim-bottom'),
-    stroke: color.ink,
-    strokeWidth: 1,
-  });
-  const drop = roughPolygon(
-    [
-      [17.5, 14],
-      [13.5, 23],
-      [17.5, 27],
-      [21.5, 23],
-    ],
-    {
-      seed: hashString('fuel-drop'),
-      stroke: color.ink,
-      strokeWidth: 1.1,
-      fill: color.ink,
-      fillStyle: 'solid',
-    },
-  );
 
+  // Was an ink barrel beside a filling bar. The barrel read as a mailbox and
+  // the bar read as a health meter, so the number people actually needed —
+  // fuel left to spend — was the least legible thing on the strip. It is a
+  // plain readout now; the shake on an unaffordable buy is kept.
   return (
     <Animated.View
       style={[styles.fuelGauge, gaugeStyle]}
       accessibilityLabel={`${remaining} of ${budget} fuel remaining`}
     >
-      <View style={styles.fuelBarrel} pointerEvents="none">
-        <Svg width={36} height={40} viewBox="0 0 36 40">
-          <RoughShape paths={barrel} />
-          <RoughShape paths={rimTop} />
-          <RoughShape paths={rimBottom} />
-          <RoughShape paths={drop} />
-        </Svg>
-      </View>
-      <View style={{ width: barW, height: barH }}>
-        <Svg
-          width={barW}
-          height={barH}
-          viewBox={`0 0 ${barW} ${barH}`}
-          style={StyleSheet.absoluteFill}
-        >
-          <RoughShape paths={frame} />
-        </Svg>
-        <Animated.View style={[styles.fuelClip, clipStyle]}>
-          <Svg width={barW - 9} height={barH - 11} viewBox={`0 0 ${barW - 9} ${barH - 11}`}>
-            <RoughShape paths={fill} opacity={0.72} />
-          </Svg>
-        </Animated.View>
-        <Animated.View pointerEvents="none" style={[styles.fuelLabelBox, numberStyle]}>
-          <Text style={styles.fuelLabel}>
-            {remaining}/{budget}
-          </Text>
-        </Animated.View>
-      </View>
+      <Text style={styles.fuelCaption}>Fuel</Text>
+      <Animated.View style={numberStyle}>
+        <Text style={styles.fuelReadout}>
+          <Text style={remaining === 0 ? styles.fuelReadoutEmpty : undefined}>{remaining}</Text>
+          <Text style={styles.fuelReadoutBudget}>{` / ${budget}`}</Text>
+        </Text>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -364,6 +293,8 @@ interface DraggableShipProps {
   activeBand: SharedValue<number>;
   hoverRow: SharedValue<number>;
   hoverCol: SharedValue<number>;
+  /** DOCK_IDLE / DOCK_LIVE / DOCK_HOVER — what the dock shows during the drag. */
+  dockDrag: SharedValue<number>;
   previewRef: React.RefObject<PreviewHandle | null>;
 }
 
@@ -378,6 +309,7 @@ const DraggableShip = memo(function DraggableShip({
   activeBand,
   hoverRow,
   hoverCol,
+  dockDrag,
   previewRef,
 }: DraggableShipProps) {
   const { scale, ox, oy } = useScale();
@@ -538,6 +470,7 @@ const DraggableShip = memo(function DraggableShip({
     grabY.value = cy + (py - cy) / s - boxY;
     shipScale.value = withTiming(1, { duration: 140 });
     overTray.value = placed ? 0 : 1;
+    dockDrag.value = placed ? DOCK_LIVE : DOCK_HOVER;
     activeBand.value = 1;
     if (placed) {
       hoverRow.value = placed.origin.r;
@@ -569,6 +502,7 @@ const DraggableShip = memo(function DraggableShip({
     const shouldUnplace = overTray.value === 1;
     lifted.value = withSpring(0, SPRING);
     activeBand.value = 0;
+    dockDrag.value = DOCK_IDLE;
     hoverRow.value = -1;
     hoverCol.value = -1;
     hoverIndex.value = -1;
@@ -624,6 +558,9 @@ const DraggableShip = memo(function DraggableShip({
         desiredY + size.height / 2 <= TRAY_Y + TRAY_H + 20
           ? 1
           : 0;
+      // Written on the crossing only: the dock's frames animate off this value.
+      const dock = overTray.value ? DOCK_HOVER : DOCK_LIVE;
+      if (dockDrag.value !== dock) dockDrag.value = dock;
 
       if (nearBoard) {
         const index = candidateR * 10 + candidateC;
@@ -1002,26 +939,106 @@ function DifficultyPicker({ value }: { value: Difficulty }) {
  * The dock: a dashed rough frame left of the row letters holding the ships
  * still to be placed (drawn at half size by DraggableShip), with a running
  * count so a missed ship is never mistaken for a placed one.
+ *
+ * It is also where a placed ship goes back to, so it answers the drag. The
+ * frame used to fade to inkFaint as soon as the fleet was complete — which
+ * is exactly the state while a ship is being carried back, so the one place
+ * that would take it looked disabled until the drop had landed. The faint
+ * frame is now for an idle, complete dock only: a ship in the hand keeps it
+ * in ink, and a ship over it turns it green with "Drop here".
  */
-function TrayDock({ x, remaining }: { x: number; remaining: number }) {
+function TrayDock({
+  x,
+  remaining,
+  drag,
+}: {
+  x: number;
+  remaining: number;
+  drag: SharedValue<number>;
+}) {
   const { roughRect } = useRough();
-  const frame = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
-    seed: hashString('placement-dock'),
-    stroke: remaining > 0 ? color.ink : color.inkFaint,
-    strokeWidth: 1.3,
+  const reduceMotion = useReducedMotion();
+  const seed = hashString('placement-dock');
+  // One opaque paper fill under three stroke-only frames that cross-fade, so
+  // the sheet's grid never shows through mid-fade.
+  const sheet = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
+    seed,
+    stroke: 'none',
     roughness: 1.2,
     fill: color.paper,
     fillStyle: 'solid',
   });
+  const faintFrame = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
+    seed,
+    stroke: color.inkFaint,
+    strokeWidth: 1.3,
+    roughness: 1.2,
+  });
+  const inkFrame = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
+    seed,
+    stroke: color.ink,
+    strokeWidth: 1.3,
+    roughness: 1.2,
+  });
+  const hoverFrame = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
+    seed,
+    stroke: color.inkGreen,
+    strokeWidth: 2,
+    roughness: 1.2,
+    fill: color.inkGreen,
+    fillStyle: 'hachure',
+    hachureGap: 4.5,
+    fillWeight: 0.7,
+  });
+  const fade = { duration: reduceMotion ? 0 : 120 };
+  const faintStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(remaining === 0 && drag.value === DOCK_IDLE ? 1 : 0, fade),
+  }));
+  const inkStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(
+      drag.value === DOCK_HOVER ? 0 : remaining > 0 || drag.value === DOCK_LIVE ? 1 : 0,
+      fade,
+    ),
+  }));
+  const hoverStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(drag.value === DOCK_HOVER ? 1 : 0, fade),
+  }));
+  const countStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(drag.value === DOCK_HOVER ? 0 : 1, fade),
+  }));
+  const dropStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(drag.value === DOCK_HOVER ? 1 : 0, fade),
+  }));
+
   return (
     <View pointerEvents="none" style={[styles.dock, { left: x }]}>
       <Svg width={TRAY_W} height={TRAY_H} viewBox={`0 0 ${TRAY_W} ${TRAY_H}`}>
-        <RoughShape paths={frame} dash={[5, 4]} opacity={0.9} />
+        <RoughShape paths={sheet} opacity={0.9} />
       </Svg>
+      <Animated.View style={[StyleSheet.absoluteFill, faintStyle]}>
+        <Svg width={TRAY_W} height={TRAY_H} viewBox={`0 0 ${TRAY_W} ${TRAY_H}`}>
+          <RoughShape paths={faintFrame} dash={[5, 4]} opacity={0.9} />
+        </Svg>
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, inkStyle]}>
+        <Svg width={TRAY_W} height={TRAY_H} viewBox={`0 0 ${TRAY_W} ${TRAY_H}`}>
+          <RoughShape paths={inkFrame} dash={[5, 4]} opacity={0.9} />
+        </Svg>
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, hoverStyle]}>
+        <Svg width={TRAY_W} height={TRAY_H} viewBox={`0 0 ${TRAY_W} ${TRAY_H}`}>
+          <RoughShape paths={hoverFrame} dash={[5, 4]} opacity={0.9} />
+        </Svg>
+      </Animated.View>
       <Text style={styles.dockTitle}>Dock</Text>
-      <Text style={[styles.dockCount, remaining === 0 && styles.dockCountDone]}>
+      <Animated.Text
+        style={[styles.dockCount, remaining === 0 && styles.dockCountDone, countStyle]}
+      >
         {remaining === 0 ? 'All placed' : `${remaining} to place`}
-      </Text>
+      </Animated.Text>
+      <Animated.Text style={[styles.dockCount, styles.dockCountDone, dropStyle]}>
+        Drop here
+      </Animated.Text>
     </View>
   );
 }
@@ -1129,6 +1146,7 @@ function PlacementCanvas() {
   const activeBand = useSharedValue(0);
   const hoverRow = useSharedValue(-1);
   const hoverCol = useSharedValue(-1);
+  const dockDrag = useSharedValue(DOCK_IDLE);
 
   const ships = usePlacement((state) => state.ships);
   const arsenal = usePlacement((state) => state.arsenal);
@@ -1336,7 +1354,7 @@ function PlacementCanvas() {
         </View>
       ) : null}
 
-      <TrayDock x={trayX} remaining={FLEET.length - ships.length} />
+      <TrayDock x={trayX} remaining={FLEET.length - ships.length} drag={dockDrag} />
       <GridBoard
         x={boardX}
         y={BOARD_Y}
@@ -1369,6 +1387,7 @@ function PlacementCanvas() {
           activeBand={activeBand}
           hoverRow={hoverRow}
           hoverCol={hoverCol}
+          dockDrag={dockDrag}
           previewRef={previewRef}
         />
       ))}
@@ -1444,33 +1463,26 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 12,
     top: 3,
-    width: 284,
-    height: 44,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
+    gap: 6,
+    zIndex: 50,
   },
-  fuelBarrel: { width: 40, height: 42, zIndex: 2, marginRight: -2 },
-  fuelClip: {
-    position: 'absolute',
-    left: 5,
-    top: 6,
-    height: 22,
-    overflow: 'hidden',
+  fuelCaption: {
+    color: color.inkSoft,
+    fontFamily: font.label,
+    fontSize: typeScale.xs,
   },
-  fuelLabelBox: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fuelLabel: {
+  fuelReadout: {
     color: color.ink,
     fontFamily: font.display,
-    fontSize: typeScale.md,
-    fontVariant: ['tabular-nums'],
+    fontSize: typeScale.lg,
+  },
+  fuelReadoutEmpty: { color: color.inkRed },
+  fuelReadoutBudget: {
+    color: color.inkFaint,
+    fontFamily: font.label,
+    fontSize: typeScale.sm,
   },
   dock: { position: 'absolute', top: TRAY_Y, width: TRAY_W, height: TRAY_H },
   dockTitle: {

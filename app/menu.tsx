@@ -1,9 +1,9 @@
 /**
  * Main menu — the 800 x 360 composition:
- *   top-left      RankBadge with avatar thumb, player name, rank progress
+ *   top-left      RankBadge with avatar thumb (tap: profile), player name, rank progress
  *   top-right     point, coin and gem chips
  *   centre        the title mark, then the vertical stack of actions
- *   bottom-left   settings and sound toggle
+ *   bottom-left   settings, sound toggle and the wallet
  *   bottom-right  the version string (P17 makes it the demo-menu tap target)
  *
  * Menu actions deliberately stay as plain views so native-stack reattachment
@@ -78,6 +78,8 @@ function Staggered({ children }: { index: number; children: ReactNode }) {
 export default function MenuScreen() {
   const router = useRouter();
   const profile = useProfile();
+  /** The icon reflects "is anything audible", not just the effects channel. */
+  const audioOn = profile.soundOn || profile.musicOn;
   const pointBalance = usePoints((state) => state.balance);
   const onlineCount = useOnlineCount();
   const progress = rankProgress(profile.rankPoints);
@@ -105,6 +107,9 @@ export default function MenuScreen() {
           current={progress.current}
           total={progress.total}
           avatar={{ source: AVATARS[profile.avatarId], tint: profile.avatarColor }}
+          // The profile lives behind the avatar itself — there is no separate
+          // icon for it in the bottom-left row any more.
+          onAvatarPress={() => router.push('/profile' as Href)}
           seedKey="menu"
         />
       </View>
@@ -159,14 +164,17 @@ export default function MenuScreen() {
           onPress={() => router.push('/settings')}
         />
         <InkIconButton
-          icon={profile.soundOn ? 'sound-on' : 'sound-off'}
-          accessibilityLabel={profile.soundOn ? 'Sound on' : 'Sound off'}
-          onPress={() => profile.setSetting('soundOn', !profile.soundOn)}
-        />
-        <InkIconButton
-          icon="profile"
-          accessibilityLabel="Profile"
-          onPress={() => router.push('/profile' as Href)}
+          icon={audioOn ? 'sound-on' : 'sound-off'}
+          accessibilityLabel={audioOn ? 'Sound on' : 'Sound off'}
+          onPress={() => {
+            // One button, so it has to be a master mute. It only moved
+            // `soundOn`, which silences effects but not the menu loop — so
+            // turning "sound" off left music playing and looked like a
+            // decorative toggle. Settings still exposes the two separately.
+            const next = !audioOn;
+            profile.setSetting('soundOn', next);
+            profile.setSetting('musicOn', next);
+          }}
         />
         <InkIconButton
           icon="wallet"

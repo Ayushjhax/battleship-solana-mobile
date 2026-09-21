@@ -5,6 +5,7 @@
  */
 import { PrivyClient, type User } from '@privy-io/node';
 
+import { AuthFailure, detailOf } from './errors';
 import type { Json } from '../../src/net/database.types';
 
 export interface TrustedPrivyAccount {
@@ -25,7 +26,7 @@ function privyClient(): PrivyClient {
   const appId = process.env.PRIVY_APP_ID?.trim();
   const appSecret = process.env.PRIVY_APP_SECRET?.trim();
   if (!appId || !appSecret) {
-    throw new Error('PRIVY_APP_ID and PRIVY_APP_SECRET must be set');
+    throw new AuthFailure('privy_not_configured', 'PRIVY_APP_ID and PRIVY_APP_SECRET must be set');
   }
   const jwtVerificationKey = process.env.PRIVY_JWT_VERIFICATION_KEY?.trim() || undefined;
   client = new PrivyClient({ appId, appSecret, jwtVerificationKey });
@@ -83,9 +84,34 @@ export function normalizePrivyUser(user: User): TrustedPrivyAccount {
 
 export async function verifyAndLoadPrivyUser(accessToken: string): Promise<TrustedPrivyAccount> {
   const privy = privyClient();
-  const verified = await privy.utils().auth().verifyAccessToken(accessToken);
-  const user = await privy.users()._get(verified.user_id);
-  if (user.id !== verified.user_id) throw new Error('Privy user did not match token subject');
+
+  // Only the signature/audience check may report a bad credential. Everything
+  // after it has already proven the caller's identity, so a failure there is
+  // ours to own rather than theirs to re-authenticate against.
+  let userId: string;
+  try {
+    const verified = await privy.utils().auth().verifyAccessToken(accessToken);
+    userId = verified.user_id;
+  } catch (error) {
+    throw new AuthFailure('privy_token_invalid', detailOf(error), { cause: error });
+  }
+
+  let user: User;
+  try {
+    user = await privy.users()._get(userId);
+  } catch (error) {
+    // Privy accepted the token; their user API being unreachable is an outage
+    // on the identity provider, not an invalid credential.
+    throw new AuthFailure(
+      'identity_provider_unavailable',
+      `Privy user fetch failed: ${detailOf(error)}`,
+      { cause: error },
+    );
+  }
+
+  if (user.id !== userId) {
+    throw new AuthFailure('privy_token_invalid', 'Privy user did not match token subject');
+  }
   return normalizePrivyUser(user);
 }
 

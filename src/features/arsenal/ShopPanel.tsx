@@ -2,7 +2,7 @@ import { ARSENAL_SPEC, specFor } from '@engine/arsenal';
 import type { ArsenalKind } from '@engine/types';
 import { Image } from 'expo-image';
 import { memo, useEffect, useMemo, useState } from 'react';
-import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -22,11 +22,25 @@ import { color, font, space, type as typeScale } from '@/ui/tokens';
 import { RoughShape, hashString, useRough, type PathInfo } from '@/ui/useRough';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 
-// Two columns of cards: 2 * CARD_W + the 5 gap + 8 padding a side = PANEL_W.
+/**
+ * Three columns of cards, sized so all eight fit the panel at once.
+ *
+ * Two 189-wide columns needed ~270px of height for eight cards, so the grid
+ * scrolled and half the arsenal was out of sight — you had to know to swipe to
+ * find the submarine. 3 x 189 does not fit the width, so the cards narrow and
+ * the fourth row disappears: 3 columns x 3 rows holds all eight with one slot
+ * spare, and no scroll view at all.
+ *
+ * 3 * CARD_W + 2 * GRID_GAP + 2 * GRID_PAD = PANEL_W.
+ */
 const PANEL_W = 400;
 const PANEL_H = 226;
-const CARD_W = 189;
-const CARD_H = 62;
+const GRID_GAP = 5;
+const GRID_PAD = 8;
+const CARD_W = Math.floor((PANEL_W - GRID_PAD * 2 - GRID_GAP * 2) / 3);
+const GRID_ROWS = 3;
+/** Title strip is 28 high; the rest divides into three rows with the gaps. */
+const CARD_H = Math.floor((PANEL_H - 30 - GRID_GAP * (GRID_ROWS - 1) - 7) / GRID_ROWS);
 /** How long a "not enough fuel" / "you have them all" notice replaces the title. */
 const NOTICE_MS = 2200;
 
@@ -345,23 +359,35 @@ function ShopCard({
 
   // A press that cannot buy still answers: the gauge shakes for fuel, and the
   // title says why — a silent no-op reads as a broken button.
+  // Read the live store, never the props: `count` and `remaining` are a render
+  // behind, so two taps inside one frame both passed these guards and both
+  // bought. The store rejects the second, but the notices below would have lied
+  // about why. `buyArsenal` itself is the authority on whether it happened.
   const buy = () => {
-    if (atCap) {
+    const state = usePlacement.getState();
+    const owned = state.arsenal.filter((item) => item.kind === kind).length;
+    const fuelLeft = state.fuelBudget - state.fuelSpent;
+
+    if (owned >= spec.max) {
       onNotice({
         text: `${label}: you have all ${spec.max}${spec.max === 1 ? '' : ' of them'}`,
         tone: 'green',
       });
       return;
     }
-    if (!affordable) {
+    if (fuelLeft < spec.cost) {
       onUnaffordable();
       onNotice({
-        text: `Not enough fuel — ${label} costs ${spec.cost}, you have ${remaining}`,
+        text: `Not enough fuel — ${label} costs ${spec.cost}, you have ${fuelLeft}`,
         tone: 'red',
       });
       return;
     }
-    usePlacement.getState().buyArsenal(kind);
+
+    const result = state.buyArsenal(kind);
+    if (!result.ok && result.reason) {
+      onNotice({ text: result.reason, tone: 'red' });
+    }
   };
 
   return (
@@ -517,7 +543,7 @@ export function ShopPanel({ onUnaffordable }: ShopPanelProps) {
         pointerEvents={pendingArsenalId ? 'none' : 'auto'}
         style={[styles.scroller, { opacity: pendingArsenalId ? 0.32 : 1 }]}
       >
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.grid}>
+        <View style={styles.grid}>
           {ARSENAL_SPEC.map((spec) => (
             <ShopCard
               key={spec.kind}
@@ -529,7 +555,7 @@ export function ShopPanel({ onUnaffordable }: ShopPanelProps) {
               onNotice={setNotice}
             />
           ))}
-        </ScrollView>
+        </View>
       </Animated.View>
       {pendingArsenalId ? (
         <Text style={styles.pendingCopy}>Choose an open cell on your board.</Text>
@@ -558,7 +584,13 @@ const styles = StyleSheet.create({
   noticeRed: { color: color.inkRed },
   noticeGreen: { color: color.inkGreen },
   scroller: { height: PANEL_H - 30 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, paddingHorizontal: 8, paddingBottom: 7 },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: GRID_GAP,
+    paddingHorizontal: GRID_PAD,
+    paddingBottom: 7,
+  },
   maxTag: {
     position: 'absolute',
     right: 4,

@@ -20,7 +20,7 @@ import { Paper } from '@/ui/Paper';
 import { Scale } from '@/ui/Scale';
 import { TitleRibbon } from '@/ui/TitleRibbon';
 import { color, font, space, type as typeScale } from '@/ui/tokens';
-import { solanaConfig } from '@/wallet/solana';
+import { readBalanceAtLeastSlot, solanaConfig } from '@/wallet/solana';
 
 type DeskTab = 'buy' | 'sell';
 const NETWORK_FEE_RESERVE = 20_000;
@@ -51,22 +51,32 @@ export default function PointsScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const nextQuote = await fetchPointQuote();
-      setQuote(nextQuote);
-      usePoints.getState().sync(nextQuote.balance);
-      if (wallet?.address) {
-        setSolBalance(await connection.getBalance(new PublicKey(wallet.address), 'confirmed'));
+  const refresh = useCallback(
+    async (after?: { minContextSlot?: number; previousBalance?: number | null }) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const nextQuote = await fetchPointQuote();
+        setQuote(nextQuote);
+        usePoints.getState().sync(nextQuote.balance);
+        if (wallet?.address) {
+          // Same read-after-write trap as the wallet screen: without this the
+          // SOL figure can still be the pre-purchase one straight after a buy.
+          setSolBalance(
+            await readBalanceAtLeastSlot(connection, new PublicKey(wallet.address), {
+              minContextSlot: after?.minContextSlot,
+              differentFrom: after?.previousBalance ?? null,
+            }),
+          );
+        }
+      } catch (caught) {
+        setError(friendlyError(caught));
+      } finally {
+        setLoading(false);
       }
-    } catch (caught) {
-      setError(friendlyError(caught));
-    } finally {
-      setLoading(false);
-    }
-  }, [connection, wallet?.address]);
+    },
+    [connection, wallet?.address],
+  );
 
   useEffect(() => {
     void refresh();
@@ -141,7 +151,10 @@ export default function PointsScreen() {
       usePoints.getState().sync(result.balance);
       usePoints.getState().setPendingBuy(null);
       setNotice(`Purchase complete. ${quote.points} points were added.`);
-      await refresh();
+      await refresh({
+        minContextSlot: confirmation.context?.slot,
+        previousBalance: solBalance,
+      });
     } catch (caught) {
       setError(friendlyError(caught));
       setNotice(null);
@@ -170,7 +183,7 @@ export default function PointsScreen() {
               ? `${quote.sol} SOL was sent to your Privy wallet.`
               : 'The payout could not complete, so all reserved points were restored.',
           );
-          await refresh();
+          await refresh({ previousBalance: result.status === 'confirmed' ? solBalance : null });
         }
       } catch (caught) {
         if (/insufficient points/i.test(caught instanceof Error ? caught.message : String(caught))) {

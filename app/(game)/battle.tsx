@@ -25,11 +25,11 @@ import { BATTLE_BOARD_TOP, BOARD_SIZE, boardOrigins, cellCentre } from '@/board/
 import {
   ArsenalTab,
   AvatarCard,
-  Curtain,
   EmblemChip,
   EmoteFloat,
   EmotePanel,
   FlagChip,
+  FleetCover,
   PlayerBlock,
   PointsBlock,
   ShieldChip,
@@ -57,7 +57,7 @@ import { InkButton } from '@/ui/InkButton';
 import { InkIconButton } from '@/ui/InkIconButton';
 import { InkPanel } from '@/ui/InkPanel';
 import { InkSpinner } from '@/ui/InkSpinner';
-import { Paper } from '@/ui/Paper';
+import { MarginRule, Paper } from '@/ui/Paper';
 import { Scale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
 
@@ -130,7 +130,6 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   const seconds = useBattle((s) => s.seconds);
   const snapTurn = useBattle((s) => s.snapTurn);
   const aiming = useBattle((s) => s.aiming);
-  const curtain = useBattle((s) => s.curtain);
   const finished = useBattle((s) => s.finished);
   const emote = useBattle((s) => s.emote);
   const combatants = useBattle((s) => s.combatants);
@@ -138,6 +137,8 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   const targeting = useBattle((s) => s.targeting);
   const pending = useBattle((s) => s.pending);
   const pendingShotAt = useBattle((s) => s.pendingShotAt);
+  const pendingArsenalAt = useBattle((s) => s.pendingArsenalAt);
+  const fleetCovered = useBattle((s) => s.fleetCovered);
   const mode = useBattle((s) => s.mode);
   const opponent = useBattle(selectOpponent);
   const connection = useConnectionKind();
@@ -248,14 +249,15 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   }, [aiming]);
 
   // ---- online: "…" on the target once the shell has landed with no verdict yet ----
+  // An armed arsenal item marks its target the same way, so deploying reads as
+  // acknowledged the instant it is sent rather than after the server replies.
   useEffect(() => {
-    const show = pendingShotAt && !animating;
+    const target = pendingShotAt ?? pendingArsenalAt;
+    const show = target && !animating;
     useFx
       .getState()
-      .setPendingShot(
-        show ? { at: pendingShotAt, centre: cellCentre(pendingShotAt, ORIGINS.enemy) } : null,
-      );
-  }, [pendingShotAt, animating]);
+      .setPendingShot(show ? { at: target, centre: cellCentre(target, ORIGINS.enemy) } : null);
+  }, [pendingShotAt, pendingArsenalAt, animating]);
 
   // ---- online: dim the boards to 60 % while someone is out of contact ----
   const dimmed = connection === 'reconnecting' || connection === 'opponentDropped';
@@ -417,12 +419,27 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
           !arsenalOpen &&
           !targeting &&
           !resignOpen &&
+          !fleetCovered &&
           connection === 'none'
         }
         onEnemyCellPress={onEnemyPress}
         boardStyle={boardStyle}
       >
         <FxLayer />
+        {/*
+          Hotseat handover: the incoming player's fleet under a sheet with
+          their name, lifted by a tap. It shakes with the boards and sits
+          under the gutter buttons. Keyed by player so a fresh, fully opaque
+          sheet mounts for every handover — never one mid-lift from the last.
+        */}
+        {fleetCovered ? (
+          <FleetCover
+            key={me}
+            name={mine?.name ?? 'Player'}
+            origin={ORIGINS.own}
+            onLift={() => useBattle.getState().uncoverFleet()}
+          />
+        ) : null}
         <View style={styles.gutterTop}>
           <InkIconButton
             icon="chat"
@@ -521,6 +538,14 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         </View>
       </View>
 
+      {/*
+        The HUD strip covers y = 0..78, which buried the sheet's red margin
+        rule for the whole match — the one line meant to be constant across
+        every screen was missing exactly where players spend their time. Same
+        seed as Paper's, so it is the identical stroke, just drawn on top.
+      */}
+      <MarginRule />
+
       {arsenalOpen ? (
         <BattleArsenalPopover
           arsenal={shown.you.board.arsenal}
@@ -538,12 +563,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         />
       ) : null}
       {emotesOpen ? <EmotePanel onPick={onEmote} onClose={() => setEmotesOpen(false)} /> : null}
-      {curtain ? (
-        <Curtain
-          name={combatants[shown.turn]?.name ?? 'the other player'}
-          onReady={() => useBattle.getState().dismissCurtain()}
-        />
-      ) : null}
+
       {mode === 'online' ? <ConnectionOverlay /> : null}
       {resignOpen ? (
         <ResignDialog

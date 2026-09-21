@@ -104,20 +104,25 @@ export default function SettingsScreen() {
           <Toggle label="Music" setting="musicOn" />
           <VolumeControl label="Music volume" setting="musicVolume" enabled={musicOn} />
           <Toggle label="Haptics" setting="hapticsOn" />
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Tutorial</Text>
-            <InkButton
-              label={hasCompletedTutorial ? 'Reset' : 'Play'}
-              w={84}
-              h={34}
-              size="sm"
-              seedKey="reset-tutorial"
-              onPress={() => {
-                if (hasCompletedTutorial) resetTutorial();
-                else router.push('/tutorial');
-              }}
-            />
-          </View>
+          {/*
+            Playing the tutorial lives on the menu as "How to play"; offering it
+            here too was the same action in two places. What only Settings can
+            do is put it back, so that is all it offers — and only once there is
+            something to put back.
+          */}
+          {hasCompletedTutorial ? (
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Tutorial</Text>
+              <InkButton
+                label="Reset"
+                w={84}
+                h={34}
+                size="sm"
+                seedKey="reset-tutorial"
+                onPress={resetTutorial}
+              />
+            </View>
+          ) : null}
         </InkPanel>
       </View>
 

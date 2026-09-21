@@ -17,7 +17,8 @@
     "eas:dev": "npx eas-cli build --platform android --profile development",
     "check:bundle": "node scripts/check-bundle-secrets.mjs",
     "assets": "bash scripts/ink-assets.sh",
-    "brand": "node scripts/make-brand.mjs"
+    "brand": "node scripts/make-brand.mjs",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@ethersproject/shims": "^5.8.0",

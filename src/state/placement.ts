@@ -219,6 +219,14 @@ export const usePlacement = create<PlacementState>((set, get) => ({
     if (state.ruleset === 'classic') {
       return { ok: false, reason: 'classic mode has no arsenal' };
     }
+    // A second tap while one item is still waiting for its cell used to buy
+    // another and overwrite pendingArsenalId, stranding the first: fuel spent
+    // on an item with no square, invisible on the board and unplaceable.
+    if (state.pendingArsenalId) {
+      const reason = 'place the current item first';
+      set({ validationReason: reason });
+      return { ok: false, reason };
+    }
     const result = purchaseArsenalItem(boardOf(state), kind, state.fuelBudget);
     if (!result.ok) {
       set({ validationReason: result.reason });

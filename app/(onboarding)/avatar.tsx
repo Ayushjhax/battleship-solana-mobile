@@ -149,6 +149,7 @@ function AvatarCard({
 
 export default function AvatarScreen() {
   const router = useRouter();
+  const name = useProfile((state) => state.name);
   const choose = useCallback(
     (avatarId: AvatarId, avatarColor: AvatarTint) => {
       const profile = useProfile.getState();
@@ -165,7 +166,15 @@ export default function AvatarScreen() {
       <Paper variant="full" />
       <View style={styles.outer}>
         <InkPanel w={CANVAS_W - 48} h={330} seedKey="avatar-outer" padding={space.sm}>
-          <Text style={styles.title}>Select your avatar:</Text>
+          {/*
+            The menu shows the avatar with the captain's name beside it, but
+            this screen showed the portraits alone — so you picked a face with
+            no idea what the pairing would actually look like.
+          */}
+          <Text style={styles.title}>
+            Select your avatar
+            {name ? <Text style={styles.titleName}>{`, ${name}`}</Text> : null}
+          </Text>
           <View style={[styles.row, { width: rowW, alignSelf: 'center' }]}>
             {IDS.map((id) => (
               <AvatarCard key={id} id={id} onChoose={choose} />
@@ -186,6 +195,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 6,
   },
+  titleName: { color: color.inkRed, fontFamily: font.display },
   row: { flexDirection: 'row', gap: 12 },
   cardInner: { alignItems: 'center', gap: 8 },
   swatches: {

@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.empireofbits.seabattle",
+      "versionCode": 1,
       "softwareKeyboardLayoutMode": "pan",
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {

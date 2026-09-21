@@ -1,10 +1,7 @@
 import { z } from 'zod';
 
 import type { SyncedPrivyAccount } from '@/state/privySync';
-import {
-  getAccessToken as getSupabaseAccessToken,
-  installGameplaySession,
-} from './api';
+import { getAccessToken as getSupabaseAccessToken, installGameplaySession } from './api';
 import { hasInternet } from './connectivity';
 
 const AccountSchema = z.object({
@@ -29,10 +26,28 @@ const SYNC_TIMEOUT_MS = 30_000;
 
 const ResponseSchema = z.object({
   account: AccountSchema,
-  session: z
-    .object({ tokenHash: z.string().min(20), type: z.literal('magiclink') })
-    .nullable(),
+  session: z.object({ tokenHash: z.string().min(20), type: z.literal('magiclink') }).nullable(),
 });
+
+/**
+ * The server tags every sync failure with a stable `code` (server/src/errors.ts).
+ * Carrying it here lets the UI tell "sign in again" apart from "the server is
+ * broken, retrying will not help" — the two used to collapse into one message.
+ */
+export class PrivySyncError extends Error {
+  readonly code: string;
+  readonly status: number;
+  /** True when a fresh sign-in could plausibly fix it. */
+  readonly retryable: boolean;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = 'PrivySyncError';
+    this.code = code;
+    this.status = status;
+    this.retryable = status >= 500 || code === 'network_unreachable' || code === 'network_timeout';
+  }
+}
 
 function endpoint(): string | null {
   const explicit = process.env.EXPO_PUBLIC_API_URL?.trim();
@@ -51,19 +66,25 @@ function endpoint(): string | null {
   }
 }
 
-async function responseMessage(response: Response): Promise<string> {
+async function responseFailure(response: Response): Promise<PrivySyncError> {
+  let message = `server returned ${response.status}`;
+  let code = `http_${response.status}`;
   try {
-    const body = (await response.json()) as { error?: unknown };
-    return typeof body.error === 'string' ? body.error : `server returned ${response.status}`;
+    const body = (await response.json()) as { error?: unknown; code?: unknown };
+    if (typeof body.error === 'string') message = body.error;
+    if (typeof body.code === 'string') code = body.code;
   } catch {
-    return `server returned ${response.status}`;
+    /* a non-JSON body is still a failure; the status carries the meaning */
   }
+  return new PrivySyncError(message, code, response.status);
 }
 
 export async function syncPrivyAccount(privyAccessToken: string): Promise<SyncedPrivyAccount> {
   const url = endpoint();
-  if (!url) throw new Error('Match server URL is not configured');
-  if (!(await hasInternet())) throw new Error('You are offline. Account sync will retry later.');
+  if (!url) throw new PrivySyncError('Match server URL is not configured', 'not_configured', 0);
+  if (!(await hasInternet())) {
+    throw new PrivySyncError('You are offline. Account sync will retry later.', 'offline', 0);
+  }
 
   const supabaseToken = await getSupabaseAccessToken();
   const headers: Record<string, string> = {
@@ -87,27 +108,46 @@ export async function syncPrivyAccount(privyAccessToken: string): Promise<Synced
       signal: controller.signal,
     });
   } catch {
-    throw new Error(
-      controller.signal.aborted
-        ? 'The game server took too long to answer. Try again in a moment.'
-        : 'The game server could not be reached. Start the backend and retry.',
-    );
+    // A timeout and a refused connection are different problems with
+    // different fixes, and both carry a code so callers never have to match
+    // on the sentence.
+    throw controller.signal.aborted
+      ? new PrivySyncError(
+          'The game server took too long to answer. Try again in a moment.',
+          'network_timeout',
+          0,
+        )
+      : new PrivySyncError(
+          'The game server could not be reached. Start the backend and retry.',
+          'network_unreachable',
+          0,
+        );
   } finally {
     clearTimeout(timer);
   }
-  if (!response.ok) throw new Error(await responseMessage(response));
+  if (!response.ok) throw await responseFailure(response);
   const parsed = ResponseSchema.safeParse(await response.json());
-  if (!parsed.success) throw new Error('Account sync returned an invalid response');
+  if (!parsed.success) {
+    throw new PrivySyncError('Account sync returned an invalid response', 'bad_response', 200);
+  }
   if (parsed.data.session) {
     const installed = await installGameplaySession(
       parsed.data.session.tokenHash,
       parsed.data.session.type,
     );
     if (!installed.ok) {
-      throw new Error(`Could not open the gameplay session: ${installed.error.message}`);
+      throw new PrivySyncError(
+        `Could not open the gameplay session: ${installed.error.message}`,
+        'session_install_failed',
+        200,
+      );
     }
     if (installed.value.userId !== parsed.data.account.profileId) {
-      throw new Error('Gameplay session did not match the verified Privy account');
+      throw new PrivySyncError(
+        'Gameplay session did not match the verified Privy account',
+        'session_profile_mismatch',
+        200,
+      );
     }
   }
   return parsed.data.account;

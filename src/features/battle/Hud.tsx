@@ -4,27 +4,28 @@
  *   rank, name and points · the opponent's points, rank, name, shield and
  *   flag · their avatar card.
  * Plus the pieces that float over it: the emote sticker and picker, and the
- * hotseat curtain.
+ * hotseat fleet cover.
  */
 import { rankFor } from '@engine/ranks';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
+  runOnJS,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import Svg from 'react-native-svg';
 
+import { BOARD_SIZE } from '@/board/layout';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 import { AssetSlot } from '@/ui/AssetSlot';
 import { AVATARS, EMOTES, type Asset } from '@/ui/assets';
 import { chevronPoints, shieldPoints, tabOutline } from '@/ui/geometry';
-import { InkButton } from '@/ui/InkButton';
 import { InkPanel } from '@/ui/InkPanel';
-import { Paper } from '@/ui/Paper';
 import { color, font, space, type as typeScale } from '@/ui/tokens';
 import { RoughShape, hashString, roughCircle, roughPolygon, roughRect } from '@/ui/useRough';
 
@@ -368,57 +369,90 @@ export function EmotePanel({
 }
 
 // ---------------------------------------------------------------------------
-// Hotseat curtain — pass the device (P14 dresses it up)
+// Fleet cover — the hotseat handover
 // ---------------------------------------------------------------------------
 
-export function Curtain({
+/**
+ * The sheet overhangs the 280 board by this much on every side — enough that
+ * the paper beneath the strokes runs past the last column, and no more, so
+ * it stops short of the turn triangle in the gutter.
+ */
+const COVER_BLEED = 4;
+export const COVER_SIZE = BOARD_SIZE + COVER_BLEED * 2;
+
+/**
+ * Hotseat: the incoming player's own board under a sheet of paper with their
+ * name on it, laid over the board at `origin` in the same commit as the view
+ * swap. It is not a dialog. The enemy board beside it stays in view, there
+ * is nothing to read, and one tap anywhere on it lifts it — `onLift` is the
+ * store's `uncoverFleet`. It replaced a full-screen modal that repeated the
+ * same three lines and a Ready button after every miss.
+ *
+ * Opaque by construction, never by style: a plain paper View sits under the
+ * rough strokes, so no frame of the fleet shows through a wobble in the ink.
+ */
+export function FleetCover({
   name,
-  onReady,
-  children,
+  origin,
+  onLift,
 }: {
   name: string;
-  onReady: () => void;
-  children?: ReactNode;
+  origin: { x: number; y: number };
+  onLift: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
+  const lift = useSharedValue(0);
+  const lifting = useRef(false);
+  const style = useAnimatedStyle(() => ({
+    opacity: 1 - lift.value,
+    transform: [{ translateY: -14 * lift.value }],
+  }));
+
+  const press = () => {
+    if (lifting.current) return;
+    lifting.current = true;
+    if (reduceMotion) {
+      onLift();
+      return;
+    }
+    lift.value = withTiming(1, { duration: 160, easing: Easing.in(Easing.quad) }, (done) => {
+      if (done) runOnJS(onLift)();
+    });
+  };
+
   return (
-    <View
-      style={[StyleSheet.absoluteFill, styles.curtain]}
-      accessibilityViewIsModal
-      importantForAccessibility="yes"
+    <Animated.View
+      style={[styles.cover, { left: origin.x - COVER_BLEED, top: origin.y - COVER_BLEED }, style]}
     >
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Paper variant="full" />
-      </View>
-      <InkPanel w={300} h={132} seedKey="curtain" padding={space.md}>
-        <View style={styles.centre}>
-          <Text style={styles.curtainEyebrow}>Pass the device</Text>
-          <Text
-            style={{
-              color: color.ink,
-              fontFamily: font.display,
-              fontSize: typeScale.md,
-              textAlign: 'center',
-            }}
-          >
-            {name}&apos;s turn
-          </Text>
-          <Text
-            style={{
-              color: color.inkSoft,
-              fontFamily: font.body,
-              fontSize: typeScale.xs,
-              marginTop: 4,
-              textAlign: 'center',
-            }}
-          >
-            Tap Ready when only {name} can see the screen.
-          </Text>
-          <View style={{ height: space.sm }} />
-          <InkButton label="Ready" tone="confirm" seedKey="curtain-ready" onPress={onReady} />
-          {children}
-        </View>
-      </InkPanel>
-    </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${name}'s fleet is covered. Tap to lift the sheet.`}
+        onPress={press}
+        style={StyleSheet.absoluteFill}
+      >
+        <View style={styles.coverPaper} />
+        <InkPanel
+          w={COVER_SIZE}
+          h={COVER_SIZE}
+          seedKey="fleet-cover"
+          padding={space.md}
+          fill="none"
+        >
+          <View style={styles.coverCopy}>
+            <Text style={styles.coverEyebrow}>Fleet of</Text>
+            <Text
+              style={styles.coverName}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {name}
+            </Text>
+            <Text style={styles.coverHint}>Tap to lift</Text>
+          </View>
+        </InkPanel>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -434,16 +468,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  curtain: {
-    zIndex: 100,
+  cover: { position: 'absolute', width: COVER_SIZE, height: COVER_SIZE, zIndex: 20 },
+  // Under the panel's strokes and a unit past the board on every side.
+  coverPaper: {
+    position: 'absolute',
+    left: 1,
+    top: 1,
+    right: 3,
+    bottom: 3,
     backgroundColor: color.paper,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  curtainEyebrow: {
-    color: color.inkRed,
+  coverCopy: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  coverEyebrow: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.sm },
+  coverName: {
+    color: color.ink,
+    fontFamily: font.display,
+    fontSize: typeScale.xl,
+    textAlign: 'center',
+    maxWidth: COVER_SIZE - space.md * 2 - 12,
+  },
+  coverHint: {
+    marginTop: space.sm,
+    color: color.inkGreen,
     fontFamily: font.label,
     fontSize: typeScale.xs,
-    marginBottom: 2,
   },
 });

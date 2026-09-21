@@ -469,8 +469,17 @@ export function TutorialOverlay({ onSkip }: { onSkip: () => void }) {
           drag={req?.kind === 'drag-ship'}
         />
       ) : null}
+      {/*
+        Pinned top-right over whatever screen the tutorial is riding on — the
+        placement fuel strip, battle's opponent card — so the ink button drew
+        straight onto busy line art and vanished into it. A paper plate behind
+        it keeps it readable on every beat, and an explicit zIndex keeps it
+        above the spotlight dim.
+      */}
       <View style={styles.skip}>
-        <InkButton label="Skip" size="sm" w={80} h={34} seedKey="tutorial-skip" onPress={onSkip} />
+        <View style={styles.skipPlate}>
+          <InkButton label="Skip" size="sm" w={80} h={34} seedKey="tutorial-skip" onPress={onSkip} />
+        </View>
       </View>
     </Scale>
   );
@@ -492,5 +501,10 @@ function aroundRects(r: TargetRect): TargetRect[] {
 
 const styles = StyleSheet.create({
   hand: { position: 'absolute', left: 0, top: 0, width: HAND, height: HAND },
-  skip: { position: 'absolute', right: 14, top: 6 },
+  skip: { position: 'absolute', right: 14, top: 8, zIndex: 100, elevation: 100 },
+  skipPlate: {
+    backgroundColor: color.paper,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+  },
 });

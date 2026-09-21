@@ -25,6 +25,7 @@ import {
   explorerAddressUrl,
   explorerTransactionUrl,
   parseSolToLamports,
+  readBalanceAtLeastSlot,
   shortAddress,
   solanaConfig,
 } from '@/wallet/solana';
@@ -58,24 +59,32 @@ export default function WalletScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (!address) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const publicKey = new PublicKey(address);
-      const [nextBalance, signatures] = await Promise.all([
-        connection.getBalance(publicKey, 'confirmed'),
-        connection.getSignaturesForAddress(publicKey, { limit: 5 }, 'confirmed'),
-      ]);
-      setBalance(nextBalance);
-      setActivity(signatures);
-    } catch (caught) {
-      setError(errorText(caught));
-    } finally {
-      setLoading(false);
-    }
-  }, [address, connection]);
+  const refresh = useCallback(
+    async (after?: { minContextSlot?: number; previousBalance?: number | null }) => {
+      if (!address) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const publicKey = new PublicKey(address);
+        const [nextBalance, signatures] = await Promise.all([
+          // After a send this waits for a node that has actually seen the
+          // transaction, instead of trusting whichever replica answers first.
+          readBalanceAtLeastSlot(connection, publicKey, {
+            minContextSlot: after?.minContextSlot,
+            differentFrom: after?.previousBalance ?? null,
+          }),
+          connection.getSignaturesForAddress(publicKey, { limit: 5 }, 'confirmed'),
+        ]);
+        setBalance(nextBalance);
+        setActivity(signatures);
+      } catch (caught) {
+        setError(errorText(caught));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [address, connection],
+  );
 
   useEffect(() => {
     void refresh();
@@ -156,7 +165,10 @@ export default function WalletScreen() {
       setAmount('');
       setNotice(`Sent successfully: ${shortAddress(result.signature, 7)}`);
       setTab('activity');
-      await refresh();
+      await refresh({
+        minContextSlot: confirmation.context?.slot,
+        previousBalance: balance,
+      });
     } catch (caught) {
       setError(errorText(caught));
     } finally {

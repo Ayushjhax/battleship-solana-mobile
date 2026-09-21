@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { db, upsertPrivyAccount, type SyncedPrivyAccountResult } from './db';
+import { AuthFailure, detailOf } from './errors';
 import type { TrustedPrivyAccount } from './privy';
 
 export interface PrivySessionBootstrap {
@@ -38,7 +39,9 @@ async function mappedProfileId(privyUserId: string): Promise<string | null> {
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle<{ profile_id: string }>();
-  if (error) throw new Error(`Privy profile lookup failed: ${error.message}`);
+  if (error) {
+    throw new AuthFailure('database_unavailable', `Privy profile lookup failed: ${error.message}`);
+  }
   return data?.profile_id ?? null;
 }
 
@@ -46,7 +49,10 @@ async function ensureAuthUser(profileId: string, account: TrustedPrivyAccount): 
   const email = authEmailForPrivyUser(account.privyUserId);
   const existing = await db().auth.admin.getUserById(profileId);
   if (existing.error && existing.error.status !== 404) {
-    throw new Error(`Supabase Auth lookup failed: ${existing.error.message}`);
+    throw new AuthFailure(
+      'supabase_admin_failed',
+      `Supabase Auth lookup failed: ${existing.error.message}`,
+    );
   }
 
   if (!existing.data.user) {
@@ -62,13 +68,19 @@ async function ensureAuthUser(profileId: string, account: TrustedPrivyAccount): 
       // deterministic, so a racing winner is safe to reuse after one lookup.
       const raced = await db().auth.admin.getUserById(profileId);
       if (raced.error || !raced.data.user) {
-        throw new Error(`Supabase Auth user creation failed: ${created.error.message}`);
+        throw new AuthFailure(
+          'supabase_admin_failed',
+          `Supabase Auth user creation failed: ${created.error.message}`,
+        );
       }
     }
   } else {
     const linkedPrivyId = existing.data.user.app_metadata?.privy_user_id;
     if (linkedPrivyId && linkedPrivyId !== account.privyUserId) {
-      throw new Error('Supabase Auth profile belongs to another Privy identity');
+      throw new AuthFailure(
+        'profile_conflict',
+        'Supabase Auth profile belongs to another Privy identity',
+      );
     }
     if (existing.data.user.email !== email || linkedPrivyId !== account.privyUserId) {
       const updated = await db().auth.admin.updateUserById(profileId, {
@@ -77,7 +89,12 @@ async function ensureAuthUser(profileId: string, account: TrustedPrivyAccount): 
         app_metadata: { identity_provider: 'privy', privy_user_id: account.privyUserId },
         user_metadata: { display_name: account.displayName, verified_email: account.email },
       });
-      if (updated.error) throw new Error(`Supabase Auth user update failed: ${updated.error.message}`);
+      if (updated.error) {
+        throw new AuthFailure(
+          'supabase_admin_failed',
+          `Supabase Auth user update failed: ${updated.error.message}`,
+        );
+      }
     }
   }
   return email;
@@ -95,12 +112,27 @@ export async function bootstrapPrivySession(
     profileIdForPrivyUser(trustedAccount.privyUserId);
   const authEmail = await ensureAuthUser(profileId, trustedAccount);
   const account = await upsertPrivyAccount(profileId, trustedAccount);
-  const generated = await db().auth.admin.generateLink({ type: 'magiclink', email: authEmail });
+  let generated;
+  try {
+    generated = await db().auth.admin.generateLink({ type: 'magiclink', email: authEmail });
+  } catch (error) {
+    throw new AuthFailure('session_handoff_failed', `generateLink threw: ${detailOf(error)}`, {
+      cause: error,
+    });
+  }
   if (generated.error || !generated.data.properties.hashed_token) {
-    throw new Error(`Gameplay session handoff failed: ${generated.error?.message ?? 'no token'}`);
+    // This is the line that used to surface as "invalid Privy access token":
+    // the literal fallback text below contains the word "token".
+    throw new AuthFailure(
+      'session_handoff_failed',
+      `Gameplay session handoff failed: ${generated.error?.message ?? 'link carried no hashed_token'}`,
+    );
   }
   if (generated.data.user.id !== profileId) {
-    throw new Error('Gameplay session handoff resolved to the wrong profile');
+    throw new AuthFailure(
+      'session_handoff_failed',
+      'Gameplay session handoff resolved to the wrong profile',
+    );
   }
   return {
     profileId,

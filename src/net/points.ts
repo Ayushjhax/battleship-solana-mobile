@@ -76,8 +76,12 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   }
   const access = await getAccessToken();
   if (!access.ok) throw new Error('Your gameplay session is not ready. Please try again.');
+  // Resolved outside the try: a missing or malformed server address is a build
+  // configuration fault, and reporting it as "could not be reached" sends
+  // people to restart a backend that was never the problem.
+  const url = `${apiBase()}${path}`;
   try {
-    return await fetch(`${apiBase()}${path}`, {
+    return await fetch(url, {
       ...init,
       headers: {
         Authorization: `Bearer ${access.value}`,

@@ -1,9 +1,16 @@
 /**
  * The shield rank chip — docs/brief.md 3.5 — with an optional progress bar
  * reading "current/total" (IMG_9754: 10/100 Seaman Recruit).
+ *
+ * With `onAvatarPress` the avatar thumb is the way into the profile: it gets
+ * a rough portrait frame so it reads as a button, and presses like the other
+ * ink buttons. The menu uses this instead of a separate profile icon.
  */
-import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Svg from 'react-native-svg';
+
+import { haptic } from '@/audio/haptics';
 
 import { AssetSlot } from './AssetSlot';
 import type { Asset } from './assets';
@@ -17,6 +24,8 @@ export interface RankBadgeProps {
   name?: string;
   /** Avatar thumb to the left of the shield; tinted line art. */
   avatar?: { source?: Asset; tint: string };
+  /** Makes the avatar a button (framed, haptic) — the menu's way into the profile. */
+  onAvatarPress?: () => void;
   /** Points into the current rank band. Omit both to hide the bar. */
   current?: number;
   total?: number;
@@ -28,11 +37,83 @@ const SHIELD_W = 30;
 const SHIELD_H = 36;
 const BAR_W = 120;
 const BAR_H = 9;
+const AVATAR = 40;
+/** The portrait frame runs this far outside the 40-unit thumb. */
+const FRAME_PAD = 3;
+
+function AvatarButton({
+  avatar,
+  seed,
+  onPress,
+}: {
+  avatar: NonNullable<RankBadgeProps['avatar']>;
+  seed: number;
+  onPress: () => void;
+}) {
+  const { roughRect } = useRough();
+  const [pressed, setPressed] = useState(false);
+  const size = AVATAR + FRAME_PAD * 2;
+  // The same double stroke as the battle HUD's avatar card, at thumb size.
+  const outer = roughRect(1, 1, size - 2, size - 2, {
+    seed: seed + 4,
+    strokeWidth: 1.4,
+    roughness: 1.1,
+    fill: color.paper,
+    fillStyle: 'solid',
+  });
+  const inner = roughRect(3.5, 3.5, size - 7, size - 7, {
+    seed: seed + 5,
+    stroke: color.inkSoft,
+    strokeWidth: 0.9,
+    roughness: 1,
+  });
+  const onPressIn = useCallback(() => {
+    setPressed(true);
+    haptic('buttonPress');
+  }, []);
+  const onPressOut = useCallback(() => setPressed(false), []);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Open your profile"
+      hitSlop={6}
+      onPress={onPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      style={{
+        width: size,
+        height: size,
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: [{ translateY: pressed ? 1 : 0 }],
+      }}
+    >
+      <Svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        style={StyleSheet.absoluteFill}
+      >
+        <RoughShape paths={outer} />
+        <RoughShape paths={inner} />
+      </Svg>
+      <AssetSlot
+        source={avatar.source}
+        w={AVATAR}
+        h={AVATAR}
+        label="avatar"
+        tintColor={avatar.tint}
+      />
+    </Pressable>
+  );
+}
 
 export function RankBadge({
   rank,
   name,
   avatar,
+  onAvatarPress,
   current,
   total,
   seedKey = 'rank',
@@ -75,8 +156,16 @@ export function RankBadge({
 
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: space.xs }, style]}>
-      {avatar ? (
-        <AssetSlot source={avatar.source} w={40} h={40} label="avatar" tintColor={avatar.tint} />
+      {avatar && onAvatarPress ? (
+        <AvatarButton avatar={avatar} seed={seed} onPress={onAvatarPress} />
+      ) : avatar ? (
+        <AssetSlot
+          source={avatar.source}
+          w={AVATAR}
+          h={AVATAR}
+          label="avatar"
+          tintColor={avatar.tint}
+        />
       ) : null}
       <Svg width={SHIELD_W} height={SHIELD_H} viewBox={`0 0 ${SHIELD_W} ${SHIELD_H}`}>
         <RoughShape paths={shield} />

@@ -54,6 +54,56 @@ function missingMigration(fn: string, file: string): Error {
  * it writes anything (and raises on the unknown profile, which still proves
  * the function is there).
  */
+/**
+ * Result of one readiness probe. Deliberately non-throwing: a readiness report
+ * that dies on the first failure hides every later problem, and the whole point
+ * of this probe is to show all of them at once.
+ */
+export interface ReadinessCheck {
+  readonly name: string;
+  readonly ok: boolean;
+  readonly detail: string | null;
+}
+
+/**
+ * Proves the secret key can actually drive Supabase Auth admin.
+ *
+ * `verifyDatabaseConnection` only reads gameplay tables, which the publishable
+ * key can also do. That is why a server whose SUPABASE_SECRET_KEY lacks admin
+ * rights still logged "database connected" while every sign-in failed inside
+ * `bootstrapPrivySession`. Listing users with perPage=1 is the cheapest call
+ * that exercises the same service-role path as createUser/generateLink.
+ */
+export async function verifyAuthAdminAccess(): Promise<ReadinessCheck> {
+  try {
+    const { error } = await db().auth.admin.listUsers({ page: 1, perPage: 1 });
+    if (error) {
+      return { name: 'supabase_auth_admin', ok: false, detail: error.message };
+    }
+    return { name: 'supabase_auth_admin', ok: true, detail: null };
+  } catch (error) {
+    return {
+      name: 'supabase_auth_admin',
+      ok: false,
+      detail: error instanceof Error ? error.message : 'unknown error',
+    };
+  }
+}
+
+/** Non-throwing wrapper around the schema probe, for the readiness report. */
+export async function checkDatabaseSchema(): Promise<ReadinessCheck> {
+  try {
+    await verifyDatabaseConnection();
+    return { name: 'supabase_schema', ok: true, detail: null };
+  } catch (error) {
+    return {
+      name: 'supabase_schema',
+      ok: false,
+      detail: error instanceof Error ? error.message : 'unknown error',
+    };
+  }
+}
+
 export async function verifyDatabaseConnection(): Promise<void> {
   const checks = await Promise.all([
     db().from('profiles').select('id', { head: true, count: 'exact' }),
