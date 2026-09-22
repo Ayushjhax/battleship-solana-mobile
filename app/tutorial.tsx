@@ -51,7 +51,7 @@ export default function TutorialRoute() {
   // Both are <Scale> roots (flex: 1); as siblings they would split the height.
   return (
     <View style={styles.root}>
-      {screen === 'battle' ? <BattleScreen setup={setup} tutorial /> : <PlacementScreen />}
+      {screen === 'battle' ? <BattleScreen setup={setup} tutorial /> : <PlacementScreen tutorial />}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         <TutorialOverlay onSkip={finish} />
       </View>

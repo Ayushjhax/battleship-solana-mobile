@@ -1126,7 +1126,17 @@ function HandoffCurtain({ name, onReady }: { name: string; onReady: () => void }
   );
 }
 
-function PlacementCanvas() {
+/**
+ * `tutorial` hides every control that would end or derail the lesson. The
+ * overlay cannot do it: a drag step has to leave the whole screen tappable
+ * (`inputRect` returns 'all'), so its tap-guards are down exactly when the
+ * dock, the board and all of this chrome are live at once. Without this a
+ * player could tap Battle! mid-lesson and land in a real AI match, or take
+ * the back arrow and leave the tutorial unfinished — `markTutorialComplete`
+ * never runs, so it would greet them again on the next launch.
+ * The shop stays: the lesson's `place-item` beats need it.
+ */
+function PlacementCanvas({ tutorial = false }: { tutorial?: boolean }) {
   const router = useRouter();
   const params = useLocalSearchParams<{
     mode?: string | string[];
@@ -1168,7 +1178,9 @@ function PlacementCanvas() {
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (usePlacement.getState().pendingArsenalId) usePlacement.getState().cancelPendingArsenal();
-      else router.back();
+      // In the tutorial the only way out is the overlay's Skip, which ends the
+      // lesson properly. Swallow the press rather than dropping out half-taught.
+      else if (!tutorial) router.back();
       return true;
     });
     return () => subscription.remove();
@@ -1231,8 +1243,9 @@ function PlacementCanvas() {
       usePlacement.getState().cancelPendingArsenal();
       return;
     }
+    if (tutorial) return;
     router.back();
-  }, [router]);
+  }, [router, tutorial]);
 
   const placePendingArsenal = useCallback((r: number, c: number) => {
     const result = usePlacement.getState().placePendingArsenal({ r, c });
@@ -1333,14 +1346,16 @@ function PlacementCanvas() {
     <Scale>
       <Paper variant="full" />
 
-      <View style={styles.backButton}>
-        <InkButton label="↩" size="lg" w={54} h={48} seedKey="placement-back" onPress={back} />
-      </View>
+      {tutorial ? null : (
+        <View style={styles.backButton}>
+          <InkButton label="↩" size="lg" w={54} h={48} seedKey="placement-back" onPress={back} />
+        </View>
+      )}
       {ruleset === 'advanced' ? (
         <FuelGauge spent={fuelSpent} budget={fuelBudget} shakeNonce={fuelShakeNonce} />
       ) : null}
-      {mode === 'ai' ? <DifficultyPicker value={difficulty} /> : null}
-      {mode !== 'hotseat' ? (
+      {mode === 'ai' && !tutorial ? <DifficultyPicker value={difficulty} /> : null}
+      {mode !== 'hotseat' && !tutorial ? (
         <View style={styles.wagerButton}>
           <InkButton
             label={wagered ? 'Wager ON · 50 P' : 'Wager OFF'}
@@ -1407,17 +1422,32 @@ function PlacementCanvas() {
         ) : null,
       )}
 
-      <View style={[styles.resetButton, ruleset === 'classic' && styles.resetButtonClassic]}>
-        <InkButton label="↻" size="lg" w={50} h={52} seedKey="placement-reset" onPress={reset} />
-      </View>
-      <View style={[styles.shuffleButton, ruleset === 'classic' && styles.shuffleButtonClassic]}>
-        <InkButton label="Shuffle" size="sm" w={116} h={48} onPress={shuffle} />
-      </View>
-      <PulsingBattleButton
-        enabled={ships.length === FLEET.length && pendingArsenalId === null && !staking}
-        label={staking ? 'Staking…' : 'Battle!'}
-        onPress={beginBattle}
-      />
+      {/* Shuffle and Reset would wipe the board the lesson is building; Battle!
+          would leave it for a real match. The tutorial drives its own steps. */}
+      {tutorial ? null : (
+        <>
+          <View style={[styles.resetButton, ruleset === 'classic' && styles.resetButtonClassic]}>
+            <InkButton
+              label="↻"
+              size="lg"
+              w={50}
+              h={52}
+              seedKey="placement-reset"
+              onPress={reset}
+            />
+          </View>
+          <View
+            style={[styles.shuffleButton, ruleset === 'classic' && styles.shuffleButtonClassic]}
+          >
+            <InkButton label="Shuffle" size="sm" w={116} h={48} onPress={shuffle} />
+          </View>
+          <PulsingBattleButton
+            enabled={ships.length === FLEET.length && pendingArsenalId === null && !staking}
+            label={staking ? 'Staking…' : 'Battle!'}
+            onPress={beginBattle}
+          />
+        </>
+      )}
 
       {confirmClear ? (
         <ConfirmClearDialog
@@ -1439,8 +1469,8 @@ function PlacementCanvas() {
   );
 }
 
-export default function PlacementScreen() {
-  return <PlacementCanvas />;
+export default function PlacementScreen({ tutorial = false }: { tutorial?: boolean } = {}) {
+  return <PlacementCanvas tutorial={tutorial} />;
 }
 
 const styles = StyleSheet.create({
