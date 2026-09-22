@@ -1,0 +1,17 @@
+{
+  "name": "portcity-reference",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "vitest run",
+    "sim:raid": "tsx sim/raid-calibration.ts",
+    "sim:economy": "tsx sim/economy-pacing.ts",
+    "sim:puzzle": "tsx sim/puzzle-par.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}
