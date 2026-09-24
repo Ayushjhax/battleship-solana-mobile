@@ -396,6 +396,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
       <DualBoards
         top={BATTLE_BOARD_TOP}
         columnLabels={false}
+        terrain={shown.terrain}
         own={{
           cells: shown.you.board.marks,
           ships: shown.you.board.ships,
@@ -501,6 +502,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
             points={mine?.points ?? 0}
             align="left"
             maxWidth={116}
+            captain={shown.you.captainId}
           />
         </View>
         <View style={{ position: 'absolute', left: 340, top: HUD_Y }}>
@@ -516,6 +518,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
             points={opponent?.points ?? 0}
             align="right"
             maxWidth={100}
+            captain={shown.enemy.captainId}
           />
         </View>
         <View

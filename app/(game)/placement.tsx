@@ -34,12 +34,19 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { G } from 'react-native-svg';
 
+import { CAPTAINS, captainFuel } from '@engine/captains';
+import { terrainForSea, seaSpec, unlockedSeasFor, isSeaId, type SeaId } from '@engine/terrain';
+import type { CaptainId } from '@engine/types';
 import { haptic } from '@/audio/haptics';
 import { playSfx } from '@/audio/sfx';
+import { loadFlags, seasonSea } from '@/city/features';
+import { useCity } from '@/city/store';
 import { GridBoard, LABEL_MARGIN } from '@/board/GridBoard';
 import { BOARD_SIZE, CELL } from '@/board/layout';
 import { ShipBacking, ShipSprite, shipSpriteSize } from '@/board/ShipSprite';
 import { ARSENAL_NAMES, ArsenalInkSprite, ShopPanel } from '@/features/arsenal/ShopPanel';
+import { useHarbourEditor } from '@/raid/ui/useHarbourEditor';
+import { UNDER_ATTACK_LINE } from '@/raid/ui/captainCopy';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 import {
   buildPlacementPreview,
@@ -75,7 +82,9 @@ const CLASSIC_TRAY_X = CLASSIC_BOARD_X - LABEL_MARGIN - TRAY_GAP - TRAY_W;
 const SHOP_X = 388;
 const SHOP_Y = 62;
 const SHOP_W = 400;
-const SHOP_H = 226;
+// Part 5: 270, not 226 — the shop now holds 11 kinds in a 3 x 4 grid
+// without scrolling. See src/features/arsenal/shopGrid.ts.
+const SHOP_H = 270;
 /** Ships in the dock are drawn at this scale and grow to 1 as they are picked up. */
 const TRAY_SCALE = 0.5;
 const TRAY_HEADER = 20;
@@ -92,7 +101,9 @@ const FLEET = makeFleet();
 
 function parseMode(value: string | string[] | undefined): PlacementMode {
   const mode = Array.isArray(value) ? value[0] : value;
-  return mode === 'online' || mode === 'hotseat' ? mode : 'ai';
+  // 'harbour' is Part 7's defence editor: the same screen with a different
+  // budget, a filtered shop and a Save button.
+  return mode === 'online' || mode === 'hotseat' || mode === 'harbour' ? mode : 'ai';
 }
 
 function parseRuleset(value: string | string[] | undefined): 'classic' | 'advanced' {
@@ -221,10 +232,13 @@ function FuelGauge({
   spent,
   budget,
   shakeNonce,
+  /** Part 7 §2.1 — "Harbour fuel 74 / 90" in the defence editor. */
+  caption = 'Fuel',
 }: {
   spent: number;
   budget: number;
   shakeNonce: number;
+  caption?: string;
 }) {
   const remaining = Math.max(0, budget - spent);
   const reduceMotion = useReducedMotion();
@@ -261,9 +275,9 @@ function FuelGauge({
   return (
     <Animated.View
       style={[styles.fuelGauge, gaugeStyle]}
-      accessibilityLabel={`${remaining} of ${budget} fuel remaining`}
+      accessibilityLabel={`${remaining} of ${budget} ${caption.toLowerCase()} remaining`}
     >
-      <Text style={styles.fuelCaption}>Fuel</Text>
+      <Text style={styles.fuelCaption}>{caption}</Text>
       <Animated.View style={numberStyle}>
         <Text style={styles.fuelReadout}>
           <Text style={remaining === 0 ? styles.fuelReadoutEmpty : undefined}>{remaining}</Text>
@@ -333,9 +347,10 @@ const DraggableShip = memo(function DraggableShip({
   const hitH = Math.max(size.height, 44 / scale);
   const padX = (hitW - size.width) / 2;
   const padY = (hitH - size.height) / 2;
+  const seaId = usePlacement((state) => state.seaId);
   const previews = useMemo(
-    () => buildPlacementPreview(ships, arsenal, shipId, orientation),
-    [arsenal, orientation, shipId, ships],
+    () => buildPlacementPreview(ships, arsenal, shipId, orientation, terrainForSea(seaId)),
+    [arsenal, orientation, shipId, seaId, ships],
   );
   // The worklets read the store's truth through shared values and refs, never
   // through their render closure: a ship that moved a moment ago must be gone
@@ -936,6 +951,92 @@ function DifficultyPicker({ value }: { value: Difficulty }) {
 }
 
 /**
+ * Part 10A — one captain, priced in fuel out of the same 260. The full
+ * Officers' Club roster screen is not built; this is the placement-flow picker:
+ * tap to cycle through none and the six captains, and the store refuses one
+ * that does not fit the budget (or Classic).
+ */
+const CAPTAIN_CYCLE: readonly (CaptainId | null)[] = [
+  null,
+  'berhan',
+  'mara',
+  'ivo',
+  'tomas',
+  'rosa',
+  'oldCaptain',
+];
+
+function CaptainPicker() {
+  const captainId = usePlacement((state) => state.captainId);
+  const spec = captainId ? CAPTAINS.find((captain) => captain.id === captainId) : null;
+  const short = spec ? spec.name.split(',')[0]!.replace('The ', '').slice(0, 8) : null;
+  const label = short ? `⚓ ${short} ${spec?.fuel}` : '⚓ none';
+  return (
+    <View style={styles.captainPicker}>
+      <InkButton
+        label={label}
+        tone={captainId ? 'confirm' : 'ink'}
+        size="sm"
+        w={76}
+        h={42}
+        seedKey="placement-captain"
+        accessibilityLabel={`Captain: ${spec?.name ?? 'none'}. Tap to change.`}
+        onPress={() => {
+          const index = CAPTAIN_CYCLE.indexOf(captainId);
+          const next = CAPTAIN_CYCLE[(index + 1) % CAPTAIN_CYCLE.length] ?? null;
+          usePlacement.getState().setCaptain(next);
+        }}
+      />
+    </View>
+  );
+}
+
+/**
+ * Part 10B — the sea picker. Only shown when the Lighthouse has unlocked more
+ * than Open Sea (ranked shows just the season sea, so the control collapses to
+ * a label there). Everything that follows — placement legality, the board art
+ * and the AI — comes from the store's sea.
+ */
+function SeaPicker() {
+  const seaId = usePlacement((state) => state.seaId);
+  const unlockedSeas = usePlacement((state) => state.unlockedSeas);
+  const name = seaSpec(seaId).name;
+  if (unlockedSeas.length <= 1) {
+    return (
+      <View style={styles.seaPicker}>
+        <InkButton
+          label={name.slice(0, 11)}
+          size="sm"
+          w={84}
+          h={42}
+          seedKey="placement-sea"
+          accessibilityLabel={`Sea: ${name}.`}
+          onPress={() => {}}
+        />
+      </View>
+    );
+  }
+  return (
+    <View style={styles.seaPicker}>
+      <InkButton
+        label={name.slice(0, 11)}
+        tone={seaId === 'open' ? 'ink' : 'confirm'}
+        size="sm"
+        w={84}
+        h={42}
+        seedKey="placement-sea"
+        accessibilityLabel={`Sea: ${name}. Tap to change.`}
+        onPress={() => {
+          const index = unlockedSeas.indexOf(seaId);
+          const next = unlockedSeas[(index + 1) % unlockedSeas.length] ?? 'open';
+          usePlacement.getState().setSea(next);
+        }}
+      />
+    </View>
+  );
+}
+
+/**
  * The dock: a dashed rough frame left of the row letters holding the ships
  * still to be placed (drawn at half size by DraggableShip), with a running
  * count so a missed ship is never mistaken for a placed one.
@@ -1162,6 +1263,9 @@ function PlacementCanvas({ tutorial = false }: { tutorial?: boolean }) {
   const arsenal = usePlacement((state) => state.arsenal);
   const fuelSpent = usePlacement((state) => state.fuelSpent);
   const fuelBudget = usePlacement((state) => state.fuelBudget);
+  const fuelLabel = usePlacement((state) => state.fuelLabel);
+  const captainId = usePlacement((state) => state.captainId);
+  const seaId = usePlacement((state) => state.seaId);
   const ruleset = usePlacement((state) => state.ruleset);
   const difficulty = usePlacement((state) => state.difficulty);
   const pendingArsenalId = usePlacement((state) => state.pendingArsenalId);
@@ -1171,9 +1275,48 @@ function PlacementCanvas({ tutorial = false }: { tutorial?: boolean }) {
   const pointBalance = usePoints((state) => state.balance);
   const pointsReady = usePoints((state) => state.ready);
 
+  const harbour = mode === 'harbour';
+  const { readOnly, saving, saveError, saveHarbourLayout, dismissSaveError } = useHarbourEditor(
+    harbour,
+    sessionSeed.current,
+  );
+
   useEffect(() => {
-    usePlacement.getState().initialize(mode, sessionSeed.current, requestedRuleset);
-  }, [mode, requestedRuleset]);
+    // The harbour editor sets itself up in useHarbourEditor, which needs the
+    // server's levels before it knows the budget. Everything else initialises
+    // straight away, exactly as it did.
+    if (harbour) return;
+    let cancelled = false;
+    const start = async () => {
+      // Part 10B — non-ranked play is gated by the Lighthouse; ranked plays
+      // the season sea from /config and ignores the Lighthouse entirely
+      // (the integrity rule). The sea has to be known before the first autoplace,
+      // or the layout can be illegal where the match will actually be played.
+      let unlockedSeas: readonly SeaId[] = ['open'];
+      let seaId: SeaId = 'open';
+      if (mode === 'online') {
+        await loadFlags();
+        const season = seasonSea();
+        if (season && isSeaId(season.id)) {
+          seaId = season.id;
+          unlockedSeas = [season.id];
+        }
+      } else {
+        const lighthouse =
+          (useCity.getState().snapshot?.city?.buildings as Record<string, { level?: number }> | undefined)
+            ?.lighthouse?.level ?? 0;
+        unlockedSeas = unlockedSeasFor(lighthouse);
+      }
+      if (cancelled) return;
+      usePlacement
+        .getState()
+        .initialize(mode, sessionSeed.current, requestedRuleset, { unlockedSeas, seaId });
+    };
+    void start();
+    return () => {
+      cancelled = true;
+    };
+  }, [harbour, mode, requestedRuleset]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -1352,9 +1495,16 @@ function PlacementCanvas({ tutorial = false }: { tutorial?: boolean }) {
         </View>
       )}
       {ruleset === 'advanced' ? (
-        <FuelGauge spent={fuelSpent} budget={fuelBudget} shakeNonce={fuelShakeNonce} />
+        <FuelGauge
+          spent={fuelSpent + captainFuel(captainId)}
+          budget={fuelBudget}
+          shakeNonce={fuelShakeNonce}
+          caption={fuelLabel}
+        />
       ) : null}
       {mode === 'ai' && !tutorial ? <DifficultyPicker value={difficulty} /> : null}
+      {ruleset === 'advanced' && mode !== 'harbour' && !tutorial ? <CaptainPicker /> : null}
+      {ruleset === 'advanced' && mode !== 'harbour' && !tutorial ? <SeaPicker /> : null}
       {mode !== 'hotseat' && !tutorial ? (
         <View style={styles.wagerButton}>
           <InkButton
@@ -1376,6 +1526,7 @@ function PlacementCanvas({ tutorial = false }: { tutorial?: boolean }) {
         revealShips
         hideShips
         seedKey="placement"
+        terrain={terrainForSea(seaId)}
         onPressCell={pendingArsenalId ? placePendingArsenal : undefined}
       />
       <AlignmentBands active={activeBand} hoverRow={hoverRow} hoverCol={hoverCol} boardX={boardX} />
@@ -1442,12 +1593,40 @@ function PlacementCanvas({ tutorial = false }: { tutorial?: boolean }) {
             <InkButton label="Shuffle" size="sm" w={116} h={48} onPress={shuffle} />
           </View>
           <PulsingBattleButton
-            enabled={ships.length === FLEET.length && pendingArsenalId === null && !staking}
-            label={staking ? 'Staking…' : 'Battle!'}
-            onPress={beginBattle}
+            enabled={
+              ships.length === FLEET.length &&
+              pendingArsenalId === null &&
+              !staking &&
+              !saving &&
+              !readOnly
+            }
+            label={
+              harbour
+                ? saving
+                  ? 'Filing…'
+                  : 'Save harbour'
+                : staking
+                  ? 'Staking…'
+                  : 'Battle!'
+            }
+            onPress={harbour ? saveHarbourLayout : beginBattle}
           />
         </>
       )}
+
+      {/* Part 7 §2 — "While a raid on you is running, the editor is read-only
+          with an ink banner". The banner is drawn over everything and the
+          gestures are already disabled by the button's `enabled`. */}
+      {readOnly ? (
+        <View style={styles.harbourBanner} pointerEvents="none">
+          <Text style={styles.harbourBannerText}>{UNDER_ATTACK_LINE}</Text>
+        </View>
+      ) : null}
+      {saveError ? (
+        <Pressable style={styles.harbourError} onPress={dismissSaveError}>
+          <Text style={styles.harbourErrorText}>{saveError}</Text>
+        </Pressable>
+      ) : null}
 
       {confirmClear ? (
         <ConfirmClearDialog
@@ -1474,6 +1653,43 @@ export default function PlacementScreen({ tutorial = false }: { tutorial?: boole
 }
 
 const styles = StyleSheet.create({
+  harbourBanner: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 30,
+    backgroundColor: color.paper,
+    borderBottomWidth: 2,
+    borderBottomColor: color.inkRed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  harbourBannerText: {
+    color: color.inkRed,
+    fontFamily: font.label,
+    fontSize: typeScale.xs,
+  },
+  harbourError: {
+    position: 'absolute',
+    left: CANVAS_W / 2 - 200,
+    bottom: 8,
+    width: 400,
+    minHeight: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: color.paper,
+    borderWidth: 1.5,
+    borderColor: color.inkRed,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  harbourErrorText: {
+    color: color.inkRed,
+    fontFamily: font.body,
+    fontSize: typeScale.xs,
+    textAlign: 'center',
+  },
   backButton: { position: 'absolute', left: 8, top: 0 },
   difficultyPicker: {
     position: 'absolute',
@@ -1484,6 +1700,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   wagerButton: { position: 'absolute', left: 350, top: 3, zIndex: 50 },
+  captainPicker: { position: 'absolute', left: 502, top: 3, zIndex: 50 },
+  seaPicker: { position: 'absolute', left: 584, top: 3, zIndex: 50 },
   difficultyLabel: {
     color: color.ink,
     fontFamily: font.label,

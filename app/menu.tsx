@@ -12,7 +12,7 @@
 import { rankProgress } from '@engine/ranks';
 import Constants from 'expo-constants';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DemoMenu, useVersionTaps } from '@/features/demo/DemoMenu';
@@ -20,8 +20,14 @@ import { useOnlineCount } from '@/net/presence';
 import { usePoints } from '@/state/points';
 import { usePrivySync } from '@/state/privySync';
 import { useProfile } from '@/state/profile';
+import { cityEnabled, loadFlags } from '@/city/features';
+import { collectable, useCity } from '@/city/store';
+import { getCity } from '@/city/api';
 import { AVATARS } from '@/ui/assets';
 import { CurrencyChip } from '@/ui/CurrencyChip';
+import { attentionCard } from '@/raid/ui/defenceLog';
+import { raidedWhileAwayLine } from '@/raid/ui/captainCopy';
+import { useRaid } from '@/raid/store';
 import { InkButton } from '@/ui/InkButton';
 import { InkIconButton } from '@/ui/InkIconButton';
 import { LogoMark } from '@/ui/LogoMark';
@@ -84,6 +90,9 @@ export default function MenuScreen() {
   const onlineCount = useOnlineCount();
   const progress = rankProgress(profile.rankPoints);
   const version = Constants.expoConfig?.version ?? '0.0.0';
+  // part-07 §4 — the one-time card for a raid taken while away.
+  const raidLog = useRaid((state) => state.log);
+  const raidCard = attentionCard(raidLog);
   const onVersionTap = useVersionTaps();
 
   // Returning home is a safe retry point for an account sync that failed
@@ -95,6 +104,49 @@ export default function MenuScreen() {
       if (sync.status === 'error') sync.retry();
     }, []),
   );
+
+  /**
+   * The Port City dot (part-02 §8): red ink when anything is collectable or a
+   * job has finished. Reads the CACHED snapshot immediately so the dot is
+   * right on a cold open, then refreshes on focus — throttled to once a
+   * minute, because this is a nicety and not worth a request per navigation.
+   */
+  const citySnapshot = useCity((state) => state.snapshot);
+  const cityOffset = useCity((state) => state.serverOffset);
+  const lastCityPoll = useRef(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void loadFlags().then(() => {
+        if (cancelled || !cityEnabled()) return;
+        const now = Date.now();
+        if (now - lastCityPoll.current < 60_000) return;
+        lastCityPoll.current = now;
+        void getCity()
+          .then((response) => {
+            if (!cancelled) useCity.getState().applyResponse(response);
+          })
+          .catch(() => {
+            /* the cached snapshot is good enough for a dot */
+          });
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
+  const cityDot = useMemo(() => {
+    if (!citySnapshot) return false;
+    if (collectable({ snapshot: citySnapshot }).total > 0) return true;
+    // A job whose endsAt has passed is "finished" as far as the dot cares,
+    // even before the server has settled it.
+    const now = Date.now() + cityOffset;
+    return Object.values(citySnapshot.city.buildings).some(
+      (b) => b.upgrading !== undefined && b.upgrading.endsAt <= now,
+    );
+  }, [citySnapshot, cityOffset]);
 
   return (
     <Scale>
@@ -142,6 +194,10 @@ export default function MenuScreen() {
                     {onlineCount !== null ? `${onlineCount} sailors online` : ' '}
                   </Text>
                 ) : null}
+                {/* part-02 §8 — something is waiting in the Port City. */}
+                {action.label === 'Port city' && cityDot ? (
+                  <View style={styles.cityDot} pointerEvents="none" />
+                ) : null}
               </Staggered>
             ))}
           </View>
@@ -156,6 +212,23 @@ export default function MenuScreen() {
           />
         </View>
       </View>
+
+      {/* part-07 §4 — "a raid that took >= 2 stars while the player was away
+          also shows a one-time card on the menu". It reads the cached defence
+          log, so it is right the moment the menu opens rather than after a
+          round trip; opening the log marks it read and it does not come back. */}
+      {raidCard ? (
+        <Pressable
+          style={styles.raidCard}
+          accessibilityRole="button"
+          onPress={() => router.push('/harbour-log')}
+        >
+          <Text style={styles.raidCardText} numberOfLines={2}>
+            {raidedWhileAwayLine(raidCard.stars, raidCard.takenSteel)}
+          </Text>
+          <Text style={styles.raidCardAction}>Revenge →</Text>
+        </Pressable>
+      ) : null}
 
       <View style={styles.bottomLeft}>
         <InkIconButton
@@ -216,6 +289,19 @@ const styles = StyleSheet.create({
     gap: ROW_GAP,
   },
   actionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.xs },
+  /**
+   * A small red ink dot on the Port city button. Square, not round: this
+   * design has no rounded corners, so a 6x6 ink square reads as a pen mark
+   * rather than a UI-kit badge.
+   */
+  cityDot: {
+    position: 'absolute',
+    right: 4,
+    top: 4,
+    width: 6,
+    height: 6,
+    backgroundColor: color.inkRed,
+  },
   exchangeRow: { alignItems: 'center' },
   online: {
     color: color.inkSoft,
@@ -231,6 +317,24 @@ const styles = StyleSheet.create({
     bottom: space.sm,
     flexDirection: 'row',
     gap: space.xs,
+  },
+  raidCard: {
+    position: 'absolute',
+    left: space.md,
+    top: space.sm,
+    width: 250,
+    paddingVertical: 6,
+    paddingHorizontal: space.sm,
+    backgroundColor: color.paper,
+    borderWidth: 1.5,
+    borderColor: color.inkRed,
+  },
+  raidCardText: { color: color.ink, fontFamily: font.body, fontSize: typeScale.xxs },
+  raidCardAction: {
+    color: color.inkRed,
+    fontFamily: font.label,
+    fontSize: typeScale.xxs,
+    marginTop: 2,
   },
   version: { position: 'absolute', right: space.md, bottom: space.sm },
   versionText: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xxs },

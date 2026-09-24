@@ -9,7 +9,7 @@ import { color, font, type as typeScale } from './tokens';
 import { RoughShape, hashString, useRough, type Point } from './useRough';
 
 export interface CurrencyChipProps {
-  kind: 'points' | 'coins' | 'gems';
+  kind: 'points' | 'coins' | 'steel' | 'gems';
   value: number;
   w?: number;
   h?: number;
@@ -19,6 +19,8 @@ export interface CurrencyChipProps {
 export const COIN_GOLD = '#C99A2E';
 const GOLD = COIN_GOLD;
 const TEAL = '#2E7D6B';
+/** Port City steel: an ink girder, drawn in the primary ballpoint violet. */
+const STEEL = color.ink;
 
 function format(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
@@ -70,6 +72,37 @@ export function CurrencyChip({ kind, value, w = 92, h = 30, style }: CurrencyChi
             fillWeight: 1,
           }),
           roughCircle(iconCx, iconCy, r * 1.1, { seed: seed + 2, stroke: GOLD, strokeWidth: 1 }),
+        ]
+      : kind === 'steel'
+      ? [
+          // An I-beam seen end-on: two flanges and a web (docs/port-city §6's
+          // "ink girder"). Deliberately angular — no curves, so it never reads
+          // as a coin at chip size.
+          roughPolygon(
+            [
+              [iconCx - r, iconCy - r * 0.9],
+              [iconCx + r, iconCy - r * 0.9],
+              [iconCx + r, iconCy - r * 0.45],
+              [iconCx + r * 0.3, iconCy - r * 0.45],
+              [iconCx + r * 0.3, iconCy + r * 0.45],
+              [iconCx + r, iconCy + r * 0.45],
+              [iconCx + r, iconCy + r * 0.9],
+              [iconCx - r, iconCy + r * 0.9],
+              [iconCx - r, iconCy + r * 0.45],
+              [iconCx - r * 0.3, iconCy + r * 0.45],
+              [iconCx - r * 0.3, iconCy - r * 0.45],
+              [iconCx - r, iconCy - r * 0.45],
+            ] as Point[],
+            {
+              seed: seed + 1,
+              stroke: STEEL,
+              strokeWidth: 1.3,
+              fill: STEEL,
+              fillStyle: 'hachure',
+              hachureGap: 2.6,
+              fillWeight: 0.8,
+            },
+          ),
         ]
       : [
           roughPolygon(

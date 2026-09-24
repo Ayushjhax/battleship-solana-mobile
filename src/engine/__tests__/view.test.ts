@@ -31,12 +31,17 @@ function expectNoLeak(
     'mode',
     'moves',
     'phase',
+    'terrain',
     'turn',
     'winner',
     'you',
   ]);
   expect(view.you.id).toBe(viewer);
+  // Part 10A — the captain is public at the arena reveal by design, so the
+  // two captain keys are expected here; everything else stays pinned.
   expect(Object.keys(view.enemy).sort()).toEqual([
+    'captainId',
+    'captainUsed',
     'id',
     'marks',
     'ready',

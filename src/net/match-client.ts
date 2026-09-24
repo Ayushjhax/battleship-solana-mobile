@@ -41,6 +41,7 @@
  * once and cuts any backoff wait short.
  */
 import type { Coord, GameOverReason, MatchEvent, MatchMode, PlayerView } from '@engine/types';
+import { isSeaId, type SeaId } from '@engine/terrain';
 import { create } from 'zustand';
 
 import { isForcedOffline } from '@/state/demo';
@@ -96,6 +97,8 @@ export type FailureReason =
   | 'rate_limited'
   | 'kicked'
   | 'insufficient_points'
+  /** Part 5: this build is too old for the server's current rules. */
+  | 'upgrade_required'
   | 'match_cancelled'
   | 'layout_rejected'
   | 'server_error';
@@ -118,6 +121,8 @@ export interface MatchOver {
   readonly reason: GameOverReason;
   readonly rewards: MatchRewards;
   readonly wager?: { stake: number; prize: number; balance: number };
+  /** Steel the server put in this player's Scrapyard (Port City §8). */
+  readonly salvage?: { steel: number };
 }
 
 interface MatchClientData {
@@ -136,6 +141,8 @@ interface MatchClientData {
   fuelBudget: number;
   /** Epoch ms. The server auto-places for anyone who hasn't sent `ready` by then. */
   layoutDeadline: number | null;
+  /** Part 10B — the sea this match was created on (the season sea when ranked). */
+  sea: SeaId | null;
   /** The last authoritative, masked view. Never MatchState. */
   view: PlayerView | null;
   opponentDisconnected: boolean;
@@ -309,6 +316,7 @@ const EMPTY: MatchClientData = {
   opponent: null,
   fuelBudget: 0,
   layoutDeadline: null,
+  sea: null,
   view: null,
   opponentDisconnected: false,
   opponentDroppedAt: null,
@@ -700,6 +708,7 @@ function handleMessage(message: ServerMessage): void {
           opponent: message.opponent,
           fuelBudget: message.fuelBudget,
           layoutDeadline: message.layoutDeadline,
+          sea: isSeaId(message.sea) ? message.sea : null,
           wagered: message.wagered,
           wagerStake: message.wagerStake,
           queuePosition: null,
@@ -724,6 +733,7 @@ function handleMessage(message: ServerMessage): void {
           opponent: message.opponent,
           fuelBudget: message.fuelBudget,
           layoutDeadline: message.layoutDeadline,
+          sea: isSeaId(message.sea) ? message.sea : null,
           wagered: message.wagered,
           wagerStake: message.wagerStake,
           queuePosition: null,
@@ -759,6 +769,7 @@ function handleMessage(message: ServerMessage): void {
         opponent: message.opponent,
         fuelBudget: message.fuelBudget,
         layoutDeadline: message.layoutDeadline,
+        sea: isSeaId(message.sea) ? message.sea : null,
         wagered: message.wagered,
         wagerStake: message.wagerStake,
         view: null,
@@ -792,6 +803,10 @@ function handleMessage(message: ServerMessage): void {
         patch.status = 'active';
         patch.reconnectDeadline = null;
         patch.reconnectAttempt = 0;
+        // Anything still queued from before the drop is now stale — the view
+        // above is already the settled truth, so replaying it would animate
+        // an action twice. A hard resync, never an animated replay.
+        patch.pendingEvents = [];
         set(patch);
         // Our `ready` may have died with the old socket.
         if (message.view.phase === 'placing' && !message.view.you.ready && lastLayout) {
@@ -838,6 +853,7 @@ function handleMessage(message: ServerMessage): void {
           reason: message.reason,
           rewards: message.rewards,
           ...(message.wager ? { wager: message.wager } : {}),
+          ...(message.salvage ? { salvage: message.salvage } : {}),
         },
         turnEndsAt: null,
         opponentDisconnected: false,
@@ -850,6 +866,17 @@ function handleMessage(message: ServerMessage): void {
     case 'error': {
       log(`server error ${message.code}: ${message.message}`);
       set({ lastError: { code: message.code, message: message.message }, errorNonce: s.errorNonce + 1 });
+      if (message.code === 'upgrade_required') {
+        // Terminal and not retryable: only a new build fixes it.
+        closedOnPurpose = true;
+        clearAllTimers();
+        set({
+          status: 'failed',
+          failure: { reason: 'upgrade_required', detail: message.message },
+        });
+        socket?.close();
+        return;
+      }
       if (message.code === 'insufficient_points') {
         set({
           status: 'failed',
@@ -1131,6 +1158,8 @@ export function failureCopy(failure: MatchFailure): string {
       return failure.detail;
     case 'insufficient_points':
       return 'You need 50 points for this wager. Open the Points exchange to top up.';
+    case 'upgrade_required':
+      return 'New charts available — update to sail. This version of the game is out of date.';
     case 'match_cancelled':
       return failure.detail;
     case 'layout_rejected':

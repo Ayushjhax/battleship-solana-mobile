@@ -21,6 +21,7 @@ export function localAsPatch(local: ProfileData): ProfilePatch {
     battlesWon: local.battlesWon,
     coins: local.coins,
     gems: local.gems,
+    steel: local.steel,
     buildings: local.buildings,
     hasCompletedTutorial: local.hasCompletedTutorial,
   };
@@ -46,6 +47,7 @@ export function cloudAsLocal(cloud: CloudProfile): ProfilePatch {
     battlesWon: cloud.battlesWon,
     coins: cloud.coins,
     gems: cloud.gems,
+    steel: cloud.steel,
     buildings: cloud.buildings,
     hasCompletedTutorial: cloud.hasCompletedTutorial,
   };

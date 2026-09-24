@@ -22,6 +22,7 @@ export interface CloudProfile {
   readonly battlesWon: number;
   readonly coins: number;
   readonly gems: number;
+  readonly steel: number;
   readonly buildings: number;
   readonly hasCompletedTutorial: boolean;
   /** ISO timestamp of the last save. */
@@ -40,6 +41,7 @@ export type ProfilePatch = Partial<
     | 'battlesWon'
     | 'coins'
     | 'gems'
+    | 'steel'
     | 'buildings'
     | 'hasCompletedTutorial'
   >
@@ -57,6 +59,7 @@ function fromApi(p: Profile): CloudProfile {
     battlesWon: p.battles_won,
     coins: p.coins,
     gems: p.gems,
+    steel: p.steel,
     buildings: p.buildings,
     hasCompletedTutorial: p.has_completed_tutorial,
     updatedAt: p.updated_at ?? new Date(0).toISOString(),

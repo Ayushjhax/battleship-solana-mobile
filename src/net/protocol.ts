@@ -22,10 +22,11 @@
  * PlayerView, since a malformed one would crash board rendering.
  */
 import { z } from 'zod';
-import type { ArsenalItem, MatchEvent, MatchMode, PlayerView, Ship } from '@engine/types';
+import type { ArsenalItem, CaptainId, MatchEvent, MatchMode, PlayerView, Ship } from '@engine/types';
 import { FUEL_BUDGET, GRID_SIZE } from '@engine/types';
 
-export const PROTOCOL_VERSION = 1 as const;
+/** Mirrors server/src/protocol.ts. Part 5 bumped this to 2; Part 10 to 3. */
+export const PROTOCOL_VERSION = 3 as const;
 
 // ---------------------------------------------------------------------------
 // Shared shapes (mirrors server/src/protocol.ts)
@@ -37,10 +38,14 @@ export const CoordSchema = z.object({
 });
 
 export const CellStateSchema = z.enum(['unknown', 'miss', 'hit', 'sunk', 'revealed', 'mine']);
+/** Part 10B — mirrors the engine's TerrainCell union. */
+export const TerrainCellSchema = z.enum(['water', 'island', 'reef', 'fog']);
 export const OrientationSchema = z.enum(['h', 'v']);
 export const ShipClassSchema = z.enum(['battleship', 'cruiser', 'destroyer', 'boat']);
 export const MatchModeSchema = z.enum(['classic', 'advanced']);
 export const MatchPhaseSchema = z.enum(['placing', 'playing', 'over']);
+/** Part 10A — mirrors the engine's CaptainId union. */
+export const CaptainIdSchema = z.enum(['berhan', 'mara', 'ivo', 'tomas', 'rosa', 'oldCaptain']);
 export const ArsenalKindSchema = z.enum([
   'torpedoBomber',
   'doubleTorpedoBomber',
@@ -50,6 +55,10 @@ export const ArsenalKindSchema = z.enum([
   'radar',
   'mine',
   'submarine',
+  // Part 5 — mirrors server/src/protocol.ts.
+  'sonar_net',
+  'decoy',
+  'minesweeper',
 ]);
 export const GameOverReasonSchema = z.enum(['fleet', 'forfeit', 'resign']);
 
@@ -75,6 +84,7 @@ export const ArsenalItemSchema = z.object({
 export const LayoutPayloadSchema = z.object({
   ships: z.array(ShipSchema).max(10),
   arsenal: z.array(ArsenalItemSchema).max(16),
+  captainId: CaptainIdSchema.nullish(),
 });
 export type LayoutPayload = z.infer<typeof LayoutPayloadSchema>;
 
@@ -103,6 +113,9 @@ const PlayerStateSchema = z.object({
   fuelSpent: z.number().int(),
   consecutiveTimeouts: z.number().int(),
   ready: z.boolean(),
+  // Part 10A — an older server simply does not send these.
+  captainId: CaptainIdSchema.nullish(),
+  captainUsed: z.boolean().optional(),
 });
 
 const SunkShipViewSchema = z.object({
@@ -115,6 +128,8 @@ const RevealedItemViewSchema = z.object({
   kind: ArsenalKindSchema,
   at: CoordSchema,
   destroyed: z.boolean(),
+  /** Part 10A — Mara's gun that survived its first hit. */
+  damaged: z.boolean().optional(),
 });
 
 /** Deep-validated: a malformed view would crash board rendering. */
@@ -125,6 +140,8 @@ export const PlayerViewSchema: z.ZodType<PlayerView> = z.object({
   turn: z.string().min(1),
   winner: z.string().nullable(),
   moves: z.number().int(),
+  /** Part 10B — the public sea. Optional so an older server still parses. */
+  terrain: z.array(z.array(TerrainCellSchema)).optional(),
   you: PlayerStateSchema,
   enemy: z.object({
     id: z.string().min(1),
@@ -133,6 +150,9 @@ export const PlayerViewSchema: z.ZodType<PlayerView> = z.object({
     sunkShips: z.array(SunkShipViewSchema),
     shipsRemaining: z.number().int(),
     revealedItems: z.array(RevealedItemViewSchema),
+    // Part 10A — public at the arena reveal by design.
+    captainId: CaptainIdSchema.nullish(),
+    captainUsed: z.boolean().optional(),
   }),
 }) as unknown as z.ZodType<PlayerView>;
 
@@ -168,6 +188,7 @@ export const ErrorCodeSchema = z.enum([
   'illegal_action',
   'already_queued',
   'insufficient_points',
+  'upgrade_required',
   'internal',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
@@ -201,6 +222,8 @@ export const ServerMessageSchema = z.discriminatedUnion('t', [
     mode: MatchModeSchema,
     fuelBudget: z.number().int(),
     layoutDeadline: z.number(),
+    /** Part 10B — the season sea, identical for both seats. */
+    sea: z.string().optional(),
     wagered: z.boolean().default(false),
     wagerStake: z.number().int().nonnegative().default(0),
   }),
@@ -236,6 +259,13 @@ export const ServerMessageSchema = z.discriminatedUnion('t', [
         balance: z.number().int().nonnegative(),
       })
       .optional(),
+    /**
+     * Port City part-02 §8. Steel the SERVER credited to this player's
+     * Scrapyard, after the bonus — the Result screen renders it and never
+     * recomputes it. Optional, so a server without 0015 simply omits it.
+     * Mirrors server/src/protocol.ts's `over`; keep the two in lockstep.
+     */
+    salvage: z.object({ steel: z.number().int().nonnegative() }).optional(),
   }),
   z.object({
     t: z.literal('error'),
@@ -264,7 +294,7 @@ export function decodeServerMessage(raw: unknown): { ok: true; message: ServerMe
 // ---------------------------------------------------------------------------
 
 export type ClientMessage =
-  | { t: 'hello'; v: 1; token: string; resumeMatchId?: string }
+  | { t: 'hello'; v: 1; token: string; resumeMatchId?: string; protocol?: number }
   | {
       t: 'queue';
       v: 1;
@@ -283,8 +313,15 @@ export function encodeClientMessage(message: ClientMessage): string {
   return JSON.stringify(message);
 }
 
+/**
+ * Part 5 — `hello` now announces which protocol this build speaks. A server
+ * that does not know the field ignores it; a server with the Academy on uses
+ * it to refuse builds too old to draw the new marks.
+ */
 export function helloMessage(token: string, resumeMatchId?: string): ClientMessage {
-  return resumeMatchId ? { t: 'hello', v: 1, token, resumeMatchId } : { t: 'hello', v: 1, token };
+  return resumeMatchId
+    ? { t: 'hello', v: 1, token, resumeMatchId, protocol: PROTOCOL_VERSION }
+    : { t: 'hello', v: 1, token, protocol: PROTOCOL_VERSION };
 }
 export function queueMessage(
   mode: MatchMode,
@@ -318,7 +355,11 @@ export function pingMessage(): ClientMessage {
 }
 
 /** The placement store's fleet, trimmed to exactly the wire shape. */
-export function toLayoutPayload(ships: readonly Ship[], arsenal: readonly ArsenalItem[]): LayoutPayload {
+export function toLayoutPayload(
+  ships: readonly Ship[],
+  arsenal: readonly ArsenalItem[],
+  captainId?: CaptainId | null,
+): LayoutPayload {
   return {
     ships: ships.map((s) => ({
       id: s.id,
@@ -333,6 +374,7 @@ export function toLayoutPayload(ships: readonly Ship[], arsenal: readonly Arsena
       kind: a.kind,
       ...(a.at ? { at: { r: a.at.r, c: a.at.c } } : {}),
     })),
+    ...(captainId ? { captainId } : {}),
   };
 }
 

@@ -6,7 +6,9 @@
  * Plus the pieces that float over it: the emote sticker and picker, and the
  * hotseat fleet cover.
  */
+import { CAPTAINS } from '@engine/captains';
 import { rankFor } from '@engine/ranks';
+import type { CaptainId } from '@engine/types';
 import { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -160,15 +162,21 @@ export function PlayerBlock({
   points,
   align,
   maxWidth,
+  captain,
 }: {
   name: string;
   points: number;
   align: 'left' | 'right';
   /** Names are up to 14 characters; long ones step down a size before they ellipsise. */
   maxWidth?: number;
+  /** Part 10A — the captain this side brought, shown to both players. */
+  captain?: CaptainId | null;
 }) {
   const textAlign = align;
   const nameSize = name.length <= 8 ? typeScale.md : name.length <= 11 ? typeScale.sm : typeScale.xs;
+  const captainName = captain
+    ? (CAPTAINS.find((entry) => entry.id === captain)?.name.split(',')[0] ?? captain)
+    : null;
   return (
     <View style={{ alignItems: align === 'left' ? 'flex-start' : 'flex-end', maxWidth }}>
       <Text
@@ -189,6 +197,14 @@ export function PlayerBlock({
       >
         {name}
       </Text>
+      {captainName ? (
+        <Text
+          numberOfLines={1}
+          style={{ color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.xxs, textAlign }}
+        >
+          ⚓ {captainName}
+        </Text>
+      ) : null}
     </View>
   );
 }

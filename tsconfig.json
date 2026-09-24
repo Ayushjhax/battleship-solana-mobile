@@ -17,6 +17,7 @@
     "eslint.config.js",
     "server",
     "android",
-    "ios"
+    "ios",
+    "docs/port-city/reference"
   ]
 }

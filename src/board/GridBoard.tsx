@@ -32,11 +32,12 @@
  */
 import { coordKey, parseKey } from '@engine/board';
 import { isSunk } from '@engine/fleet';
+import type { Terrain } from '@engine/terrain';
 import type { ArsenalItem, Board, CellState, Coord, Marks, Ship } from '@engine/types';
 import { Image } from 'expo-image';
 import { memo, useCallback, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
-import Svg, { G, Line } from 'react-native-svg';
+import Svg, { G, Line, Rect } from 'react-native-svg';
 
 import type { Asset } from '@/ui/assets';
 import { color, font } from '@/ui/tokens';
@@ -58,7 +59,6 @@ import { ArsenalSprite, ShipSprite } from './ShipSprite';
 
 /** Room around the board for labels and the frame's overshoot. */
 export const LABEL_MARGIN = 24;
-const OUTER = BOARD_SIZE + LABEL_MARGIN * 2;
 const OVERSHOOT = 5;
 const LABEL_SIZE = 16;
 
@@ -95,8 +95,25 @@ export interface GridBoardProps {
   columnLabels?: boolean;
   /** Stable key for the frame's wobble. */
   seedKey?: string;
+  /**
+   * How many cells a side. Defaults to the game's 10.
+   *
+   * part-09 §3's pirate skirmish is 5x5. Rather than fork a second board
+   * renderer for it, the size is a prop — but the 10x10 path is left BYTE
+   * IDENTICAL: every derived value falls back to the module constants, and the
+   * three static styles are only overridden when `grid !== GRID`, so the
+   * battle board (the hottest render in the game) keeps its `StyleSheet`
+   * objects exactly as before.
+   */
+  grid?: number;
   /** Pop marks in as they land. */
   animateMarks?: boolean;
+  /**
+   * Part 10B — the public sea. Islands are solid ink, reefs a dot hatch, fog a
+   * faint wash; all three are drawn UNDER the marks, because they are facts
+   * about the board, not knowledge about it. Only the 10 x 10 game has one.
+   */
+  terrain?: Terrain;
   children?: ReactNode;
 }
 
@@ -110,11 +127,13 @@ interface StaticLayerProps {
   columnLabels: boolean;
   seedKey: string;
   watermark: Asset | undefined;
+  grid: number;
 }
 
-function buildRules(): ReactNode[] {
+function buildRules(grid: number): ReactNode[] {
+  const size = grid * CELL;
   const lines: ReactNode[] = [];
-  for (let i = 0; i <= GRID; i++) {
+  for (let i = 0; i <= grid; i++) {
     const p = LABEL_MARGIN + i * CELL;
     const major = i % 5 === 0;
     lines.push(
@@ -123,7 +142,7 @@ function buildRules(): ReactNode[] {
         x1={p}
         y1={LABEL_MARGIN}
         x2={p}
-        y2={LABEL_MARGIN + BOARD_SIZE}
+        y2={LABEL_MARGIN + size}
         stroke={color.gridMajor}
         strokeWidth={major ? 1.35 : 0.85}
       />,
@@ -131,7 +150,7 @@ function buildRules(): ReactNode[] {
         key={`h${i}`}
         x1={LABEL_MARGIN}
         y1={p}
-        x2={LABEL_MARGIN + BOARD_SIZE}
+        x2={LABEL_MARGIN + size}
         y2={p}
         stroke={color.gridMajor}
         strokeWidth={major ? 1.35 : 0.85}
@@ -141,10 +160,13 @@ function buildRules(): ReactNode[] {
   return lines;
 }
 
-function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLayerProps) {
+function StaticLayerInner({ labels, columnLabels, seedKey, watermark, grid }: StaticLayerProps) {
   const seed = hashString(`board-frame-${seedKey}`);
   const m = LABEL_MARGIN;
-  const e = m + BOARD_SIZE;
+  const size = grid * CELL;
+  const outer = size + m * 2;
+  const small = grid !== GRID;
+  const e = m + size;
   const heavy = { stroke: color.ink, strokeWidth: 2.3, roughness: 1.3, bowing: 0.9 } as const;
   const edges = [
     roughLine(m - OVERSHOOT, m, e + OVERSHOOT, m, { ...heavy, seed: seed + 1 }),
@@ -152,7 +174,7 @@ function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLa
     roughLine(e + OVERSHOOT, e, m - OVERSHOOT, e, { ...heavy, seed: seed + 3 }),
     roughLine(m, e + OVERSHOOT, m, m - OVERSHOOT, { ...heavy, seed: seed + 4 }),
   ];
-  const inner = roughRect(m + 3, m + 3, BOARD_SIZE - 6, BOARD_SIZE - 6, {
+  const inner = roughRect(m + 3, m + 3, size - 6, size - 6, {
     seed: seed + 5,
     stroke: color.ink,
     strokeWidth: 1.1,
@@ -161,12 +183,12 @@ function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLa
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <View style={styles.sheetMask} />
+      <View style={[styles.sheetMask, small && { width: size, height: size }]} />
       {watermark ? (
-        <View style={styles.watermarkClip}>
+        <View style={[styles.watermarkClip, small && { width: size, height: size }]}>
           <Image
             source={watermark}
-            style={styles.watermark}
+            style={[styles.watermark, small && { width: size - 20, height: size - 20 }]}
             contentFit="contain"
             tintColor={color.ink}
             cachePolicy="memory-disk"
@@ -174,19 +196,19 @@ function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLa
         </View>
       ) : null}
       <Svg
-        width={OUTER}
-        height={OUTER}
-        viewBox={`0 0 ${OUTER} ${OUTER}`}
+        width={outer}
+        height={outer}
+        viewBox={`0 0 ${outer} ${outer}`}
         style={StyleSheet.absoluteFill}
       >
-        <G>{buildRules()}</G>
+        <G>{buildRules(grid)}</G>
         {edges.map((paths, i) => (
           <RoughShape key={i} paths={paths} />
         ))}
         <RoughShape paths={inner} />
       </Svg>
       {columnLabels
-        ? COL_LABELS.map((label, c) => (
+        ? COL_LABELS.slice(0, grid).map((label, c) => (
             <Text
               key={`c${c}`}
               style={[
@@ -199,7 +221,7 @@ function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLa
           ))
         : null}
       {labels !== 'none'
-        ? ROW_LABELS.map((label, r) => (
+        ? ROW_LABELS.slice(0, grid).map((label, r) => (
             <Text
               key={`r${r}`}
               style={[
@@ -230,8 +252,69 @@ const StaticLayer = memo(
     a.labels === b.labels &&
     a.columnLabels === b.columnLabels &&
     a.seedKey === b.seedKey &&
-    a.watermark === b.watermark,
+    a.watermark === b.watermark &&
+    a.grid === b.grid,
 );
+
+// ---------------------------------------------------------------------------
+// Terrain layer — part 10B. Public board facts, under every mark.
+// ---------------------------------------------------------------------------
+
+const TerrainLayer = memo(function TerrainLayer({
+  terrain,
+}: {
+  terrain: Terrain;
+}) {
+  const cells: ReactNode[] = [];
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      const kind = terrain[r]?.[c];
+      if (!kind || kind === 'water') continue;
+      const key = `terrain-${r}-${c}`;
+      if (kind === 'fog') {
+        cells.push(
+          <Rect
+            key={key}
+            x={c * CELL + 1}
+            y={r * CELL + 1}
+            width={CELL - 2}
+            height={CELL - 2}
+            fill={color.inkFaint}
+            opacity={0.22}
+          />,
+        );
+        continue;
+      }
+      cells.push(
+        <RoughShape
+          key={key}
+          paths={roughRect(c * CELL + 1.5, r * CELL + 1.5, CELL - 3, CELL - 3, {
+            seed: hashString(`${key}-${kind}`),
+            stroke: kind === 'island' ? color.ink : color.inkSoft,
+            strokeWidth: kind === 'island' ? 1.5 : 1,
+            fill: color.inkFaint,
+            fillStyle: kind === 'island' ? 'hachure' : 'dots',
+            hachureGap: kind === 'island' ? 3 : 4,
+            roughness: 1,
+          })}
+          opacity={kind === 'island' ? 0.9 : 0.7}
+        />,
+      );
+    }
+  }
+  if (cells.length === 0) return null;
+  return (
+    <Svg
+      width={BOARD_SIZE}
+      height={BOARD_SIZE}
+      viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+    >
+      {cells}
+    </Svg>
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Highlight overlay
@@ -243,18 +326,20 @@ const Highlight = memo(function Highlight({
   cells,
   tone,
   seedKey,
+  size,
 }: {
   cells: readonly Coord[];
   tone: keyof typeof TONES;
   seedKey: string;
+  size: number;
 }) {
   if (cells.length === 0) return null;
   const stroke = TONES[tone];
   return (
     <Svg
-      width={BOARD_SIZE}
-      height={BOARD_SIZE}
-      viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`}
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
       style={StyleSheet.absoluteFill}
       pointerEvents="none"
     >
@@ -303,9 +388,13 @@ function GridBoardInner({
   columnLabels = true,
   seedKey = 'own',
   animateMarks = true,
+  grid = GRID,
+  terrain,
   children,
 }: GridBoardProps) {
   const at: BoardOrigin = origin ?? { x: x ?? 0, y };
+  const size = grid * CELL;
+  const outer = size + LABEL_MARGIN * 2;
   const displayCells = cells ?? board?.marks;
   const displayShips = hideShips ? undefined : (ships ?? (revealShips ? board?.ships : undefined));
   const displayArsenal = arsenal ?? (revealShips ? board?.arsenal : undefined);
@@ -314,12 +403,18 @@ function GridBoardInner({
       ? Boolean(onCellPress || onCellLongPress || onPressCell)
       : interactive;
 
-  const cellFromEvent = useCallback((e: GestureResponderEvent): Coord | null => {
-    // locationX/Y are in the Pressable's own (design-unit) space; the
-    // Pressable covers exactly the 280 x 280 board, so the origin is 0,0.
-    const { locationX, locationY } = e.nativeEvent;
-    return pointToCell({ x: locationX, y: locationY }, { x: 0, y: 0 });
-  }, []);
+  const cellFromEvent = useCallback(
+    (e: GestureResponderEvent): Coord | null => {
+      // locationX/Y are in the Pressable's own (design-unit) space; the
+      // Pressable covers exactly the board, so the origin is 0,0.
+      const { locationX, locationY } = e.nativeEvent;
+      const cell = pointToCell({ x: locationX, y: locationY }, { x: 0, y: 0 });
+      // `pointToCell` bounds-checks against the 10x10 board, so a smaller one
+      // has to reject the cells beyond its own edge itself.
+      return cell && cell.r < grid && cell.c < grid ? cell : null;
+    },
+    [grid],
+  );
   const handlePress = useCallback(
     (e: GestureResponderEvent) => {
       const cell = cellFromEvent(e);
@@ -351,8 +446,8 @@ function GridBoardInner({
         position: 'absolute',
         left: at.x - LABEL_MARGIN,
         top: at.y - LABEL_MARGIN,
-        width: OUTER,
-        height: OUTER,
+        width: outer,
+        height: outer,
       }}
     >
       <StaticLayer
@@ -361,6 +456,7 @@ function GridBoardInner({
         columnLabels={columnLabels}
         seedKey={seedKey}
         watermark={watermark}
+        grid={grid}
       />
       <View
         {...tutorialTarget}
@@ -369,10 +465,11 @@ function GridBoardInner({
           position: 'absolute',
           left: LABEL_MARGIN,
           top: LABEL_MARGIN,
-          width: BOARD_SIZE,
-          height: BOARD_SIZE,
+          width: size,
+          height: size,
         }}
       >
+        {terrain && grid === GRID ? <TerrainLayer terrain={terrain} /> : null}
         {revealed.map(([key, state]) => (
           <CellMark key={key} state={state} coord={parseKey(key)} animate={animateMarks} />
         ))}
@@ -405,7 +502,7 @@ function GridBoardInner({
           <CellMark key={key} state={state} coord={parseKey(key)} animate={animateMarks} />
         ))}
         {highlight && highlight.length > 0 ? (
-          <Highlight cells={highlight} tone={highlightTone} seedKey={seedKey} />
+          <Highlight cells={highlight} tone={highlightTone} seedKey={seedKey} size={size} />
         ) : null}
         {children}
         {touchable ? (
@@ -415,7 +512,7 @@ function GridBoardInner({
             onLongPress={onCellLongPress ? handleLongPress : undefined}
             delayLongPress={350}
             accessibilityRole="button"
-            accessibilityLabel="Grid, 10 by 10"
+            accessibilityLabel={`Grid, ${grid} by ${grid}`}
           />
         ) : null}
       </View>

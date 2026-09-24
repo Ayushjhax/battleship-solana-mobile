@@ -35,6 +35,11 @@ export const SFX_SOURCES = {
   turnTick: require('../../assets/audio/sfx/turn_tick.mp3') as AudioSource,
   rankUp: require('../../assets/audio/sfx/rank_up.mp3') as AudioSource,
   coinFlow: require('../../assets/audio/sfx/coin_flow.mp3') as AudioSource,
+  // Port City (Part 2). Null is silent by design — see the header; these get
+  // real files when they exist, with no other change.
+  coinCollect: require('../../assets/audio/sfx/coin_flow.mp3') as AudioSource,
+  steelCollect: null,
+  inkComplete: null,
   victory: require('../../assets/audio/sfx/victory.mp3') as AudioSource,
   defeat: require('../../assets/audio/sfx/defeat.mp3') as AudioSource,
 } satisfies Record<string, AudioSource | null>;

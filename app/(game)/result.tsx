@@ -18,6 +18,8 @@
  * "Before" is simply "after minus the reward", in either case.
  */
 import { REWARD, rankFor, rankProgress, type Rank } from '@engine/ranks';
+import { salvageBonusPercent } from '@engine/city';
+import { useCity } from '@/city/store';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -85,6 +87,8 @@ interface Totals {
    * payout is still in flight when this screen opens.
    */
   readonly wager: { stake: number; prize: number } | null;
+  /** Steel the server credited to the Scrapyard, or null (part-02 §8). */
+  readonly salvage: { steel: number } | null;
   /**
    * An online result this device has not mirrored into the profile yet. It is
    * applied from an effect, never while rendering: a store write during render
@@ -120,6 +124,7 @@ function prepare(
         points: forced.pointsAfter - forced.pointsBefore,
         coins: forced.coinsAfter - forced.coinsBefore,
       },
+      salvage: null,
       wager: null,
       settle: null,
     };
@@ -147,6 +152,10 @@ function prepare(
       ? (over?.wager ?? { stake: WAGER_STAKE, prize: won ? WAGER_STAKE * 2 : 0 })
       : null,
     settle: unapplied ? { matchId, won, reward } : null,
+    // Port City part-02 §8. Whatever the SERVER credited, or null. This screen
+    // never computes salvage: an offline match has not synced yet when it
+    // opens, so it simply shows no line rather than a guess.
+    salvage: over?.salvage ?? null,
   };
 }
 
@@ -505,6 +514,16 @@ export default function ResultScreen() {
     [params.oppAvatar, params.oppFlag, params.oppName, params.oppPoints, params.oppTint],
   );
 
+  /**
+   * The Scrapyard's bonus percentage, read from the cached city snapshot —
+   * itself a server number, never derived from the battle. 0 when the city
+   * has never been opened, which just omits the suffix.
+   */
+  const scrapBonus = useMemo(() => {
+    const level = useCity.getState().snapshot?.city.buildings.scrapyard.level ?? 0;
+    return salvageBonusPercent(level);
+  }, []);
+
   const points = useRoll(0, totals.reward.points, T_ROLL, ROLL_MS, !reduceMotion);
   const coins = useRoll(
     totals.coinsBefore,
@@ -591,6 +610,19 @@ export default function ResultScreen() {
                 <Text style={styles.label}>Coins</Text>
                 <Text style={[styles.value, { color: COIN_GOLD }]}>{coins}</Text>
               </View>
+              {/* part-02 §8: one line, the server's number, no recomputation. */}
+              {totals.salvage && totals.salvage.steel > 0 ? (
+                <View style={styles.row}>
+                  <Text style={styles.label} numberOfLines={1}>
+                    Salvaged
+                  </Text>
+                  <Text style={styles.value}>
+                    {totals.salvage.steel} steel → Scrapyard
+                    {scrapBonus > 0 ? `  +${scrapBonus}% Scrapyard` : ''}
+                  </Text>
+                </View>
+              ) : null}
+
               {totals.wager ? (
                 <View style={styles.row}>
                   <Text style={styles.label} numberOfLines={1}>

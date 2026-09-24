@@ -6,22 +6,35 @@ import { validateSubmission } from '@engine/match';
 import { validateArsenalPlacement } from '@engine/placement';
 import { autoPlaceFleet } from '@engine/placement';
 import { createRng, type Rng } from '@engine/rng';
-import type { ArsenalItem, Board, Coord, MatchMode, Ship } from '@engine/types';
+import { terrainForSea, WATER, type SeaId, type Terrain } from '@engine/terrain';
+import type { ArsenalItem, Board, CaptainId, Coord, MatchMode, Ship } from '@engine/types';
 import type { Difficulty } from '@engine/ai';
 
 import { useMatchClient } from '@/net/match-client';
 import type { BattleMode, BattleSetup, Combatant } from '@/state/battle';
+import type { PlacementMode } from '@/state/placement';
 
 export interface PlacementSnapshot {
-  readonly mode: BattleMode;
+  /**
+   * The placement store's full mode, not `BattleMode`. Part 7 added
+   * `'harbour'` (the defence editor), which is a layout that must never
+   * become a battle — see the guard in buildBattleSetup.
+   */
+  readonly mode: PlacementMode;
   readonly difficulty: Difficulty;
   readonly ruleset: MatchMode;
   readonly ships: readonly Ship[];
   readonly arsenal: readonly ArsenalItem[];
+  /** Part 10A. */
+  readonly captainId: CaptainId | null;
+  /** Part 10B — the sea this layout was arranged for. */
+  readonly seaId: SeaId;
   readonly playerOneShips: readonly Ship[] | null;
   readonly playerTwoShips: readonly Ship[] | null;
   readonly playerOneArsenal: readonly ArsenalItem[] | null;
   readonly playerTwoArsenal: readonly ArsenalItem[] | null;
+  readonly playerOneCaptain: CaptainId | null;
+  readonly playerTwoCaptain: CaptainId | null;
   readonly playerOneName: string;
   readonly playerTwoName: string;
 }
@@ -58,6 +71,8 @@ export function aiKit(rng: Rng, ships: readonly Ship[]): ArsenalItem[] {
 export interface Layout {
   readonly ships: readonly Ship[];
   readonly arsenal: readonly ArsenalItem[];
+  /** Part 10A — the captain that survived validation, or null. */
+  readonly captainId: CaptainId | null;
 }
 
 /**
@@ -79,17 +94,20 @@ export function usableLayout(
   arsenal: readonly ArsenalItem[],
   rng: Rng,
   who: string,
+  captainId: CaptainId | null = null,
+  terrain: Terrain = WATER,
 ): Layout {
-  // Classic carries no arsenal at all; the reducer rejects a submission that
-  // brings one, so drop it before asking.
+  // Classic carries no arsenal and no captain; the reducer rejects a
+  // submission that brings either, so drop them before asking.
   const wanted = ruleset === 'advanced' ? arsenal : [];
-  const check = validateSubmission(ruleset, ships, wanted);
-  if (check.ok) return { ships, arsenal: wanted };
+  const captain = ruleset === 'advanced' ? captainId : null;
+  const check = validateSubmission(ruleset, ships, wanted, undefined, captain, terrain);
+  if (check.ok) return { ships, arsenal: wanted, captainId: captain };
   console.error(
     `[battle] ${who}'s layout cannot be used (${check.reason}); auto-placing a fleet instead. ` +
       'This is a bug: placement should not have allowed it.',
   );
-  return { ships: autoPlaceFleet(rng), arsenal: [] };
+  return { ships: autoPlaceFleet(rng, terrain), arsenal: [], captainId: null };
 }
 
 export function buildBattleSetup(
@@ -98,17 +116,37 @@ export function buildBattleSetup(
   seed: number,
 ): BattleSetup {
   const rng = createRng(seed);
-  const mode: BattleMode = placement.mode === 'online' ? 'ai' : placement.mode;
+  // 'online' has no local opponent and 'harbour' (Part 7's defence editor) is
+  // not a match at all. Both fall back to the AI rather than crashing, and
+  // both say so: reaching here with either is a routing bug upstream.
+  const playable: BattleMode =
+    placement.mode === 'online' || placement.mode === 'harbour' ? 'ai' : placement.mode;
+  const mode: BattleMode = playable;
   if (placement.mode === 'online')
     console.warn(
       '[battle] online setup requested without a match — see buildOnlineSetup; playing the AI',
+    );
+  if (placement.mode === 'harbour')
+    console.warn(
+      '[battle] a harbour layout cannot start a battle — it defends one; playing the AI',
     );
 
   const myShips = (placement.mode === 'hotseat' ? placement.playerOneShips : placement.ships) ?? [];
   const myArsenal =
     (placement.mode === 'hotseat' ? placement.playerOneArsenal : placement.arsenal) ?? [];
+  const myCaptain =
+    (placement.mode === 'hotseat' ? placement.playerOneCaptain : placement.captainId) ?? null;
   const advanced = placement.ruleset === 'advanced';
-  const mine = usableLayout(placement.ruleset, myShips, myArsenal, rng, 'player one');
+  const terrain = terrainForSea(placement.seaId);
+  const mine = usableLayout(
+    placement.ruleset,
+    myShips,
+    myArsenal,
+    rng,
+    'player one',
+    myCaptain,
+    terrain,
+  );
 
   const one: Combatant = {
     id: 'p1',
@@ -119,6 +157,7 @@ export function buildBattleSetup(
     countryCode: profile.countryCode,
     ships: mine.ships,
     arsenal: mine.arsenal,
+    captainId: mine.captainId,
   };
 
   let two: Combatant;
@@ -129,6 +168,8 @@ export function buildBattleSetup(
       placement.playerTwoArsenal ?? [],
       rng,
       'player two',
+      placement.playerTwoCaptain ?? null,
+      terrain,
     );
     two = {
       id: 'p2',
@@ -139,9 +180,10 @@ export function buildBattleSetup(
       countryCode: profile.countryCode,
       ships: theirs.ships,
       arsenal: theirs.arsenal,
+      captainId: theirs.captainId,
     };
   } else {
-    const ships = autoPlaceFleet(rng);
+    const ships = autoPlaceFleet(rng, terrain);
     two = {
       id: 'ai',
       name: 'Berhan',
@@ -151,10 +193,21 @@ export function buildBattleSetup(
       countryCode: 'RU',
       ships,
       arsenal: advanced ? aiKit(rng, ships) : [],
+      // Part 10A — Hard brings Berhan. Easy and Normal bring none.
+      captainId: advanced && placement.difficulty === 'hard' ? 'berhan' : null,
     };
   }
 
-  return { mode, ruleset: placement.ruleset, seed, one, two, difficulty: placement.difficulty };
+  return {
+    mode,
+    ruleset: placement.ruleset,
+    seed,
+    one,
+    two,
+    difficulty: placement.difficulty,
+    // Part 10B — the sea the local match is played on.
+    terrain,
+  };
 }
 
 /**

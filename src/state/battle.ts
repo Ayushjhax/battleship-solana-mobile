@@ -23,10 +23,12 @@
 import type { Difficulty } from '@engine/ai';
 import { coordKey } from '@engine/board';
 import { projectView } from '@engine/match';
+import type { Terrain } from '@engine/terrain';
 import {
   TURN_SECONDS,
   type ArsenalItem,
   type ArsenalKind,
+  type CaptainId,
   type Coord,
   type MatchAction,
   type MatchEvent,
@@ -55,6 +57,8 @@ export interface Combatant {
   readonly countryCode: string;
   readonly ships: readonly Ship[];
   readonly arsenal: readonly ArsenalItem[];
+  /** Part 10A — the captain this side brings. Absent/None means no captain. */
+  readonly captainId?: CaptainId | null;
 }
 
 export interface BattleSetup {
@@ -66,6 +70,8 @@ export interface BattleSetup {
   readonly difficulty?: Difficulty;
   /** Online: the server's match id (the Realtime emote channel key). */
   readonly matchId?: string;
+  /** Part 10B — the sea the local match plays on (offline and hot-seat). */
+  readonly terrain?: Terrain;
 }
 
 export const AIM_MS = 260;
@@ -429,6 +435,7 @@ export const useBattle = create<BattleState>((set, get) => ({
       one: setup.one,
       two: setup.two,
       difficulty: setup.difficulty ?? 'normal',
+      ...(setup.terrain ? { terrain: setup.terrain } : {}),
       onResolved: (action, result) => {
         useBattle.setState({
           match: result.state,

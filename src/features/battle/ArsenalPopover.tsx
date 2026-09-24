@@ -15,7 +15,7 @@ import Svg from 'react-native-svg';
 import { arsenalGlyphPaths } from '@/board/art';
 import { useBattle } from '@/state/battle';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
-import { ARSENAL } from '@/ui/assets';
+import { ARSENAL, type Asset } from '@/ui/assets';
 import { AssetSlot } from '@/ui/AssetSlot';
 import { InkPanel } from '@/ui/InkPanel';
 import { color, font, space, type as typeScale } from '@/ui/tokens';
@@ -30,6 +30,9 @@ const NAMES: Record<ArsenalKind, string> = {
   radar: 'Radar',
   mine: 'Mine',
   submarine: 'Submarine',
+  sonar_net: 'Sonar Net',
+  decoy: 'Decoy Buoy',
+  minesweeper: 'Minesweeper',
 };
 
 const CARD = { w: 150, h: 44 } as const;
@@ -47,7 +50,7 @@ function Card({
   const usable = !isOwnBoardKind(kind);
   const count = items.length;
   const first = items[0];
-  const art = ARSENAL[kind];
+  const art = (ARSENAL as Partial<Record<ArsenalKind, Asset>>)[kind];
   const glyphKind = kind === 'radar' || kind === 'mine' || kind === 'aaGun' ? kind : 'aaGun';
   const glyph = art ? null : arsenalGlyphPaths(glyphKind, hashString(`card-${kind}`), color.ink);
   return (

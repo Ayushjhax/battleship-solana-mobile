@@ -7,6 +7,7 @@
 import type { WebSocket } from 'ws';
 
 import type { MatchMode } from '@engine/types';
+import type { SeaId } from '@engine/terrain';
 import { FUEL_BUDGET } from '@engine/types';
 
 import {
@@ -16,8 +17,10 @@ import {
   reservePointWager,
 } from './db';
 import { envMs } from './env';
+import { isEnabled } from './features';
 import { encode, type ServerMessage } from './protocol';
 import { createRoom, findRoomForPlayer, rooms } from './room';
+import { currentSeasonSea } from './seas';
 
 const RANK_WINDOW_START = 150;
 const RANK_WINDOW_STEP = 150;
@@ -398,6 +401,7 @@ async function pair(mode: MatchMode, a: Waiting, b: Waiting): Promise<void> {
       { playerId: b.playerId, socket: b.socket, isBot: false },
       FUEL_BUDGET,
       { wagered: a.wagered, holdA: a.wagerRequestId, holdB: b.wagerRequestId },
+      rankedSea(),
     );
   } catch (error) {
     await refundEntries(a, b);
@@ -416,6 +420,7 @@ async function pairWithBot(mode: MatchMode, human: Waiting): Promise<void> {
       { playerId: BOT_PLAYER_ID, socket: null, isBot: true },
       FUEL_BUDGET,
       { wagered: human.wagered, holdA: human.wagerRequestId, holdB: null },
+      rankedSea(),
     );
   } catch (error) {
     await refundEntries(human);
@@ -426,6 +431,15 @@ async function pairWithBot(mode: MatchMode, human: Waiting): Promise<void> {
       message: error instanceof Error ? error.message : 'could not create bot match',
     });
   }
+}
+
+/**
+ * Part 10B — ranked picks ONE sea for both players, from the season. The
+ * Lighthouse never changes this: that is the integrity rule. With the flag
+ * off, ranked is Open Sea exactly as before.
+ */
+function rankedSea(): SeaId {
+  return isEnabled('portCity.seas') ? currentSeasonSea(Date.now()) : 'open';
 }
 
 function randomSeed(): number {

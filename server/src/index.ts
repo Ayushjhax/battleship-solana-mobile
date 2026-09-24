@@ -44,6 +44,18 @@ import { cancelBeforeMatchStart, totalQueued } from './matchmaker';
 import { creditConfirmedPointPurchase, getPointQuote, sellPoints } from './points';
 import { verifyAndLoadPrivyUser } from './privy';
 import { bootstrapPrivySession } from './privySession';
+import { registerCityRoutes } from './city/routes';
+import { registerRaidRoutes } from './raid/routes';
+import { registerBountyRoutes } from './bounties/routes';
+import { registerCosmeticsRoutes } from './cosmetics/routes';
+import { registerFleetRoutes } from './fleet/routes';
+import { registerDailyRoutes } from './daily/routes';
+import { registerWorldBossRoutes } from './worldBoss/routes';
+import { registerEmpireRoutes } from './empire/routes';
+import { startWarScheduler } from './fleet/scheduler';
+import { featureMap, isEnabled } from './features';
+import { parseSeasonWindows } from './liveWorld';
+import { seasonSeaAnnouncement } from './seas';
 import { rooms } from './room';
 import { attachWebSocketServer } from './ws';
 
@@ -61,6 +73,43 @@ app.get('/health', async () => ({
   queued: totalQueued(),
   uptime: Math.floor((Date.now() - startedAt) / 1000),
 }));
+
+/**
+ * Server-driven configuration. Today it carries the feature flags and the
+ * authoritative clock; the client keeps `offset = serverNow - Date.now()` and
+ * renders every timer from it, so a wrong device clock can never earn a reward
+ * (00-OVERVIEW.md §5). Cheap and unauthenticated on purpose: it holds nothing
+ * user-specific.
+ */
+app.get('/config', async (_request, reply) => {
+  reply.header('Cache-Control', 'no-store');
+  return reply.code(200).send({
+    features: featureMap(),
+    livingWorld: {
+      seasonWindows: parseSeasonWindows(process.env.PORT_CITY_SEASON_WINDOWS),
+      weatherSeed: Number.parseInt(process.env.PORT_CITY_WEATHER_SEED ?? '11011', 10) || 11011,
+    },
+    // Part 10B — the season sea is public before placement, so a ranked
+    // player can arrange a fleet that is legal on it. Null while seas are off.
+    seasonSea: isEnabled('portCity.seas') ? seasonSeaAnnouncement(Date.now()) : null,
+    serverNow: Date.now(),
+  });
+});
+
+// Feature routes. Both groups gate themselves on their own flag and answer
+// `feature-off` while it is off, so registering them here is unconditional.
+//
+// registerCityRoutes was imported by Part 1 but never CALLED, so /city/* was
+// dead code in production while the service behind it was fully tested (the
+// Part 1 suite drives the service directly, which is why nothing caught it).
+registerCityRoutes(app);
+registerRaidRoutes(app);
+registerFleetRoutes(app);
+registerBountyRoutes(app);
+registerCosmeticsRoutes(app);
+registerDailyRoutes(app);
+registerWorldBossRoutes(app);
+registerEmpireRoutes(app);
 
 /** Privy config is read straight from the environment; never echo the secret. */
 function privyConfigCheck(): ReadinessCheck {
@@ -413,6 +462,9 @@ async function main(): Promise<void> {
     }
   }
   await app.listen({ port, host: '0.0.0.0' });
+  // Part 8 §6 — the only cron in the package. It holds no timers of its own
+  // and nothing needs restoring on boot; see server/src/fleet/scheduler.ts.
+  startWarScheduler((result) => app.log.info(result, 'war scheduler'));
   wss = attachWebSocketServer(app.server, (msg) => app.log.info(msg));
   app.log.info(`ws listening on ws://0.0.0.0:${port}/ws`);
   app.log.info(`backend ready: HTTP and WebSocket live on port ${port}`);

@@ -21,7 +21,9 @@ import {
   playerIndex,
   projectView,
   reduce,
+  terrainForSea,
   type ArsenalItem,
+  type CaptainId,
   type GameOverReason,
   type MatchAction,
   type MatchEvent,
@@ -29,9 +31,12 @@ import {
   type MatchState,
   type Ship,
 } from '@engine/index';
+import type { SeaId } from '@engine/terrain';
 import { autoPlaceFleet } from '@engine/placement';
 import { chooseMove } from '@engine/ai';
 import { REWARD } from '@engine/ranks';
+
+import { salvageBases, sunkWreckClasses } from './city/salvage';
 
 import {
   abandonMatch,
@@ -48,6 +53,7 @@ import {
   type CancelledWagerBalance,
 } from './db';
 import { envMs } from './env';
+import { isEnabled } from './features';
 import { encode, PROTOCOL_VERSION, type OpponentSummary, type ServerMessage } from './protocol';
 
 const LATENCY_GRACE_MS = 2000;
@@ -92,6 +98,8 @@ export interface HandleResult {
 export class Room {
   readonly id: string;
   readonly mode: MatchMode;
+  /** Part 10B — the sea both seats play. Ranked: the season sea. */
+  readonly sea: SeaId;
   readonly seats: [Seat, Seat];
   readonly createdAt: number;
 
@@ -113,6 +121,8 @@ export class Room {
   private cancellingBeforeStart = false;
   /** Set just before a disconnect-forced RESIGN so the DB record says why. */
   private forcedDbReason: DbEndReason | null = null;
+  /** Steel credited to each seat at settlement, for the `over` frame. */
+  private creditedSalvage: [number, number] = [0, 0];
   /** What `matched` carried, re-sent on attach so a client that lost its store can rebuild the HUD. */
   private matched: { summaries: [OpponentSummary, OpponentSummary]; fuelBudget: number; layoutDeadline: number } | null = null;
   private readonly onFinished: (room: Room) => void;
@@ -125,9 +135,11 @@ export class Room {
     seatDefs: readonly [{ playerId: string; socket: WebSocket | null; isBot: boolean }, { playerId: string; socket: WebSocket | null; isBot: boolean }],
     onFinished: (room: Room) => void,
     wager: RoomWagerInput = { wagered: false, holdA: null, holdB: null },
+    sea: SeaId = 'open',
   ) {
     this.id = matchId;
     this.mode = mode;
+    this.sea = sea;
     this.createdAt = Date.now();
     this.onFinished = onFinished;
     this.wager = wager;
@@ -139,7 +151,13 @@ export class Room {
       disconnectTimer: null,
       lastAppliedActionSeq: -1,
     })) as [Seat, Seat];
-    this.state = createMatch({ id: matchId, mode, seed, playerIds: [seatDefs[0].playerId, seatDefs[1].playerId] });
+    this.state = createMatch({
+      id: matchId,
+      mode,
+      seed,
+      playerIds: [seatDefs[0].playerId, seatDefs[1].playerId],
+      terrain: terrainForSea(sea),
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -384,6 +402,9 @@ export class Room {
       mode: this.mode,
       fuelBudget: this.matched.fuelBudget,
       layoutDeadline: this.matched.layoutDeadline,
+      // Part 10B — the sea, identical for both seats. Only announced while
+      // the flag is on, so the default-off wire is byte-for-byte as before.
+      ...(isEnabled('portCity.seas') ? { sea: this.sea } : {}),
       wagered: this.wager.wagered,
       wagerStake: this.wager.wagered ? 50 : 0,
     });
@@ -405,8 +426,31 @@ export class Room {
   // Inbound actions — the ONLY path that touches `state`
   // -------------------------------------------------------------------------
 
-  handleReady(playerId: string, ships: Ship[], arsenal: ArsenalItem[]): HandleResult {
-    return this.applyAction({ type: 'SUBMIT_LAYOUT', playerId, ships, arsenal });
+  handleReady(
+    playerId: string,
+    ships: Ship[],
+    arsenal: ArsenalItem[],
+    captainId: CaptainId | null = null,
+  ): HandleResult {
+    // Part 10A — a captain is a Port City feature; with the flag off the
+    // match must behave exactly as it did before, so a captain is refused
+    // rather than silently dropped.
+    if (captainId !== null && !isEnabled('portCity.captains')) {
+      this.send(playerId, {
+        t: 'error',
+        v: 1,
+        code: 'illegal_action',
+        message: 'captains are not available',
+      });
+      return { ok: false, reason: 'captains are not available' };
+    }
+    return this.applyAction({
+      type: 'SUBMIT_LAYOUT',
+      playerId,
+      ships,
+      arsenal,
+      ...(captainId ? { captainId } : {}),
+    });
   }
 
   handleAction(playerId: string, seq: number, action: MatchAction): HandleResult {
@@ -524,12 +568,23 @@ export class Room {
 
   private async settleAndNotify(winnerId: string, reason: GameOverReason): Promise<void> {
     try {
-      await applyMatchResult(
+      // Salvage is read off the FINAL board, so a resign or a forfeit still
+      // pays for ships sunk before the end, on both sides (part-01 §2.2). It
+      // rides the same transaction as points and coins.
+      const [salvageA, salvageB] = salvageBases(this.state);
+      const [wrecksA, wrecksB] = sunkWreckClasses(this.state);
+      const settlement = await applyMatchResult(
         this.id,
         winnerId,
         this.forcedDbReason ?? dbEndReason(reason),
         REWARD,
+        { a: salvageA, b: salvageB },
+        { a: wrecksA, b: wrecksB },
       );
+      // What the SERVER actually credited, after the Scrapyard bonus and any
+      // replay guard. The `over` frame carries this so the Result screen can
+      // show a real number instead of estimating one.
+      this.creditedSalvage = [settlement.salvageA, settlement.salvageB];
     } catch (error) {
       console.error(`[room ${this.id}] settlement failed`, error);
       if (this.wager.wagered) {
@@ -563,6 +618,10 @@ export class Room {
         winnerId,
         reason,
         rewards: won ? REWARD.win : REWARD.loss,
+        ...(() => {
+          const steel = this.creditedSalvage[index] ?? 0;
+          return steel > 0 ? { salvage: { steel } } : {};
+        })(),
         ...(this.wager.wagered && balance !== null
           ? { wager: { stake: 50, prize: won ? 100 : 0, balance } }
           : {}),
@@ -600,6 +659,7 @@ export async function createRoom(
   seatB: RoomSeatInput,
   fuelBudget: number,
   wager: RoomWagerInput = { wagered: false, holdA: null, holdB: null },
+  sea: SeaId = 'open',
 ): Promise<Room> {
   const matchId = randomUUID();
   const room = new Room(matchId, mode, seed, [seatA, seatB], (finished) => {
@@ -607,7 +667,7 @@ export async function createRoom(
     for (const seat of finished.seats) {
       if (roomIdForPlayer.get(seat.playerId) === finished.id) roomIdForPlayer.delete(seat.playerId);
     }
-  }, wager);
+  }, wager, sea);
   rooms.set(matchId, room);
   roomIdForPlayer.set(seatA.playerId, matchId);
   roomIdForPlayer.set(seatB.playerId, matchId);

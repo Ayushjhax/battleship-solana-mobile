@@ -20,6 +20,7 @@
  */
 import { allCells, coordKey, neighbours4, neighbours8 } from './board';
 import type { Rng } from './rng';
+import { isIsland } from './terrain';
 import { GRID_SIZE, type Coord, type MatchAction, type PlayerView } from './types';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
@@ -33,11 +34,17 @@ interface Knowledge {
   readonly hits: readonly Coord[];
   readonly excluded: ReadonlySet<string>;
   readonly protectedRows: ReadonlySet<number>;
+  /** Columns a revealed sonar net guards — never surface a submarine there. */
+  readonly protectedColumns: ReadonlySet<number>;
 }
 
 function readView(view: PlayerView, difficulty: Difficulty): Knowledge {
   const marks = view.enemy.marks;
-  const unknown = (cell: Coord): boolean => marks[coordKey(cell)] === undefined;
+  // Part 10B — an island can never be fired on, so it is never a candidate.
+  // Excluding it here means every list below (hunt, target, arsenal) inherits
+  // the rule, which is what the "the AI never fires at an island" test pins.
+  const unknown = (cell: Coord): boolean =>
+    marks[coordKey(cell)] === undefined && !isIsland(view.terrain, cell);
 
   const hits: Coord[] = [];
   const sunk: Coord[] = [];
@@ -45,6 +52,16 @@ function readView(view: PlayerView, difficulty: Difficulty): Knowledge {
     const mark = marks[coordKey(cell)];
     if (mark === 'hit') hits.push(cell);
     else if (mark === 'sunk') sunk.push(cell);
+    // Part 5: an EXPOSED decoy ('decoy') and a disarmed mine
+    // ('mine_disarmed') are resolved cells. Neither is a live hit to chase and
+    // neither can be fired on, so both are simply not in `hits` — which is
+    // what stops the AI hunting a phantom forever.
+    //
+    // An UN-exposed decoy is marked 'hit' and lands in `hits` above, exactly
+    // as a real ship cell does. That is correct: the AI cannot tell, and must
+    // not be able to. It chases the decoy, marks its neighbours, exposure
+    // flips the mark to 'decoy', and the cell drops out of `hits` on the next
+    // read — so the queue drains by itself.
   }
 
   const excluded = new Set<string>();
@@ -58,11 +75,14 @@ function readView(view: PlayerView, difficulty: Difficulty): Knowledge {
   }
 
   const protectedRows = new Set<number>();
+  const protectedColumns = new Set<number>();
   for (const item of view.enemy.revealedItems) {
     if (item.kind === 'aaGun' && !item.destroyed) protectedRows.add(item.at.r);
+    // Part 5: a revealed, live sonar net makes its column suicide for a sub.
+    if (item.kind === 'sonar_net' && !item.destroyed) protectedColumns.add(item.at.c);
   }
 
-  return { unknown, hits, excluded, protectedRows };
+  return { unknown, hits, excluded, protectedRows, protectedColumns };
 }
 
 function pickWeighted(rng: Rng, items: readonly { cell: Coord; weight: number }[]): Coord {

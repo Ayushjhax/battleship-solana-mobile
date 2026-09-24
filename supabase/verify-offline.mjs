@@ -144,7 +144,7 @@ const settled = (await q(`insert into public.matches (mode, player_a, player_b, 
 const before = async (id) => (await q(`select rank_points, coins, battles_played, battles_won from public.profiles where id = $1`, [id])).rows[0];
 const a0 = await before(A); const b0 = await before(B);
 r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [settled, A]);
-check(r.rows[0].ok === true, 'apply_match_result settles an open match');
+check(r.rows[0].ok.settled === true, 'apply_match_result settles an open match');
 const a1 = await before(A); const b1 = await before(B);
 check(a1.rank_points === a0.rank_points + 25 && a1.coins === a0.coins + 50 && a1.battles_played === a0.battles_played + 1 && a1.battles_won === a0.battles_won + 1, 'the winner gets +25 points, +50 coins, +1 played, +1 won');
 check(b1.rank_points === b0.rank_points + 5 && b1.coins === b0.coins + 10 && b1.battles_played === b0.battles_played + 1 && b1.battles_won === b0.battles_won, 'the loser gets +5 points, +10 coins, +1 played, +0 won');
@@ -152,14 +152,14 @@ const closed = (await q(`select winner, end_reason, ended_at from public.matches
 check(closed.winner === A && closed.end_reason === 'victory' && closed.ended_at !== null, 'the matches row is closed with winner and reason');
 r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [settled, A]);
 const a2 = await before(A);
-check(r.rows[0].ok === false && a2.rank_points === a1.rank_points, 'a second call is a no-op (idempotent: returns false, nothing moves)');
+check(r.rows[0].ok.settled === false && a2.rank_points === a1.rank_points, 'a second call is a no-op (idempotent: returns false, nothing moves)');
 const open2 = (await q(`insert into public.matches (mode, player_a, player_b, seed) values ('classic', $1, $2, 8) returning id`, [A, B])).rows[0].id;
 check(await fails_with(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [open2, C], 'P0001'), 'a winner who is not in the match is rejected, and nothing is written');
 const stillOpen = (await q(`select ended_at from public.matches where id = $1`, [open2])).rows[0];
 check(stillOpen.ended_at === null, '…the match stays open after the rejected call (one transaction)');
 r = await q(`select public.apply_match_result($1, $2, 'timeout', 25, 50, 5, 10) as ok`, [botMatch, A]);
 const botAfter = (await q(`select rank_points, battles_played from public.profiles where id = $1`, [BOT])).rows[0];
-check(r.rows[0].ok === true && botAfter.rank_points === 0 && botAfter.battles_played === 0, "settling a bot match never touches the bot's row");
+check(r.rows[0].ok.settled === true && botAfter.rank_points === 0 && botAfter.battles_played === 0, "settling a bot match never touches the bot's row");
 await asUser(A);
 check(await fails_with(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [open2, A], '42501'), 'a client JWT cannot call apply_match_result');
 
@@ -231,9 +231,9 @@ await q(`select * from public.reserve_point_wager($1, $2, 50)`, [B, HOLD_B]);
 await q(`select public.create_wagered_match($1, 'classic', $2, $3, 99, false, $4, $5)`, [WAGER_MATCH, A, B, HOLD_A, HOLD_B]);
 r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [WAGER_MATCH, A]);
 const wagerBalances = (await q(`select privy_user_id, balance from public.point_accounts order by privy_user_id`)).rows;
-check(r.rows[0].ok === true && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:captain')?.balance) === 150 && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:challenger')?.balance) === 50, 'PvP wager settlement pays the 100-point pot to the winner exactly once');
+check(r.rows[0].ok.settled === true && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:captain')?.balance) === 150 && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:challenger')?.balance) === 50, 'PvP wager settlement pays the 100-point pot to the winner exactly once');
 r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [WAGER_MATCH, A]);
-check(r.rows[0].ok === false && Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 150, 'replaying match settlement cannot pay the wager twice');
+check(r.rows[0].ok.settled === false && Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 150, 'replaying match settlement cannot pay the wager twice');
 
 const BOT_HOLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
 const BOT_WAGER_MATCH = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2';
@@ -294,7 +294,7 @@ check((await balanceOf(A)) === beforeAbandon.balance, 'an abandoned wager return
 check(Number((await q(`select rank_points from public.profiles where id = $1`, [A])).rows[0].rank_points) === beforeAbandon.points, 'an abandoned match moves no rank points');
 check((await q(`select count(*)::int as n from public.point_wager_holds where match_id = $1 and status = 'settled'`, [ABANDON_MATCH])).rows[0].n === 1, 'the abandoned stake is settled, not left held');
 check((await q(`select public.abandon_match($1) as ok`, [ABANDON_MATCH])).rows[0].ok === false, 'abandoning twice changes nothing');
-check((await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [ABANDON_MATCH, A])).rows[0].ok === false, 'an abandoned match can never be settled for a winner afterwards');
+check((await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [ABANDON_MATCH, A])).rows[0].ok.settled === false, 'an abandoned match can never be settled for a winner afterwards');
 // That stake is gone for good, which is the point. Put it back by hand so the
 // point-trade checks below can keep asserting absolute balances.
 await q(`update public.point_accounts set balance = balance + 50 where privy_user_id = public.point_identity_for_profile($1)`, [A]);

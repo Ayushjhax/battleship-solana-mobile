@@ -10,8 +10,10 @@ import { chooseMove, type Difficulty } from '@engine/ai';
 import { createMatch, projectView, reduce, type ReduceResult } from '@engine/match';
 import { autoPlaceFleet } from '@engine/placement';
 import { createRng } from '@engine/rng';
+import type { Terrain } from '@engine/terrain';
 import type {
   ArsenalItem,
+  CaptainId,
   MatchAction,
   MatchEvent,
   MatchMode,
@@ -25,6 +27,8 @@ export interface LocalCombatant {
   readonly id: string;
   readonly ships: readonly Ship[];
   readonly arsenal: readonly ArsenalItem[];
+  /** Part 10A — the captain this side brings. Absent means none. */
+  readonly captainId?: CaptainId | null;
 }
 
 export interface LocalMatchOptions {
@@ -34,6 +38,8 @@ export interface LocalMatchOptions {
   readonly one: LocalCombatant;
   readonly two: LocalCombatant;
   readonly difficulty: Difficulty;
+  /** Part 10B — the sea the match plays on; default water. */
+  readonly terrain?: Terrain;
   readonly onResolved: (action: MatchAction, result: ReduceResult) => void;
 }
 
@@ -64,6 +70,7 @@ function submitSide(state: MatchState, side: LocalCombatant, seed: number): Matc
     playerId: side.id,
     ships: side.ships,
     arsenal: side.arsenal,
+    ...(side.captainId ? { captainId: side.captainId } : {}),
   });
   const rejected = result.events.find(
     (event): event is Extract<MatchEvent, { type: 'REJECTED' }> => event.type === 'REJECTED',
@@ -77,7 +84,7 @@ function submitSide(state: MatchState, side: LocalCombatant, seed: number): Matc
   return reduce(state, {
     type: 'SUBMIT_LAYOUT',
     playerId: side.id,
-    ships: autoPlaceFleet(createRng(seed)),
+    ships: autoPlaceFleet(createRng(seed), state.terrain),
     arsenal: [],
   }).state;
 }
@@ -93,6 +100,7 @@ export class LocalMatch {
       mode: options.ruleset,
       seed: options.seed,
       playerIds: [options.one.id, options.two.id],
+      ...(options.terrain ? { terrain: options.terrain } : {}),
     });
     state = submitSide(state, options.one, options.seed + options.one.id.length);
     state = submitSide(state, options.two, options.seed + options.two.id.length);

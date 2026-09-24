@@ -35,6 +35,21 @@ import Animated, {
 import Svg from 'react-native-svg';
 
 import { haptic } from '@/audio/haptics';
+import { cityEnabled, isFlagOn, loadFlags } from '@/city/features';
+import { useCity } from '@/city/store';
+import { AmbientLayer } from '@/city/ui/AmbientLayer';
+import { LivingWorldLayer } from '@/city/ui/LivingWorldLayer';
+import { BuildingSheet } from '@/city/ui/BuildingSheet';
+import { CityHud, WorkersSheet } from '@/city/ui/CityHud';
+import { CityTour, OfflineBanner } from '@/city/ui/CityTour';
+import { CollectFlightLayer, tokenCountFor, type Flight } from '@/city/ui/CollectFlight';
+import { PlotLayer } from '@/city/ui/PlotLayer';
+import { plotStateFor } from '@/city/ui/plotState';
+import { TOUR_BEATS, advance, beatSatisfied, isFinished } from '@/city/ui/tourScript';
+import { useCityActions } from '@/city/ui/useCityActions';
+import { captainLineFor } from '@/city/ui/captainCopy';
+import { serverNow } from '@/city/store';
+import type { BuildingId } from '@engine/city';
 import { useProfile } from '@/state/profile';
 import { AssetSlot } from '@/ui/AssetSlot';
 import { AVATARS, UI_ART } from '@/ui/assets';
@@ -47,6 +62,8 @@ import { SpeechBubble } from '@/ui/SpeechBubble';
 import { TitleRibbon } from '@/ui/TitleRibbon';
 import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
 import { RoughShape, hashString, useRough } from '@/ui/useRough';
+import { CITY_PALETTES, livingWorldState, rainWindowsForDay } from '@engine/liveWorld';
+import { livingWorldConfig } from '@/city/features';
 
 // The map at 1x spans the canvas width: city-port.png is 768x1024, scaled to 800 wide.
 const MAP_W = CANVAS_W;
@@ -292,6 +309,177 @@ function CityCanvas() {
   const progress = rankProgress(profile.rankPoints);
   const [welcome, setWelcome] = useState(() => !useProfile.getState().hasVisitedCity);
   const name = profile.name || 'Sailor';
+  const now = new Date();
+  const localDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const liveConfig = livingWorldConfig();
+  const living = livingWorldState({
+    localHour: now.getHours() + now.getMinutes() / 60,
+    preference: profile.cityTimePreference,
+    seasons: liveConfig?.seasonWindows ?? [],
+    rain: rainWindowsForDay(localDayStart, (liveConfig?.weatherSeed ?? 11011) ^ localDayStart),
+    now: now.getTime(),
+  });
+
+  // ---- Port City (Part 2). Every one of these is inert with the flag off. ----
+  const [cityOn, setCityOn] = useState(false);
+  const actions = useCityActions();
+  const snapshot = useCity((s) => s.snapshot);
+  const cityError = useCity((s) => s.error);
+  const [openPlot, setOpenPlot] = useState<BuildingId | null>(null);
+  const [workersOpen, setWorkersOpen] = useState(false);
+  const [flights, setFlights] = useState<readonly Flight[]>([]);
+  const [tourIndex, setTourIndex] = useState(-1);
+  const [tourNudge, setTourNudge] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadFlags().then(() => {
+      if (cancelled) return;
+      const on = cityEnabled();
+      setCityOn(on);
+      if (!on) return;
+      void actions.refresh();
+      if (!useProfile.getState().hasSeenCityTour) setTourIndex(0);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Once per mount, deliberately: the flag cannot change mid-screen, and an
+    // endpoint that goes dark answers `feature-off`, which the banner already
+    // handles. (`actions` is a stable object of useCallbacks.)
+  }, []);
+
+  /** A tour beat only advances on the action it actually asked for (§7). */
+  const notifyTour = useCallback(
+    (kind: 'tap-plot' | 'collect' | 'build' | 'acknowledge', buildingId?: BuildingId) => {
+      setTourIndex((index) => {
+        if (index < 0 || isFinished(index)) return index;
+        const beat = TOUR_BEATS[index];
+        if (!beat) return index;
+        if (beatSatisfied(beat, { kind, ...(buildingId ? { buildingId } : {}) })) {
+          setTourNudge(null);
+          const next = advance(index);
+          if (isFinished(next)) useProfile.getState().markCityTourSeen();
+          return next;
+        }
+        setTourNudge(beat.nudge ?? beat.say);
+        return index;
+      });
+    },
+    [],
+  );
+
+  const skipTour = useCallback(() => {
+    useProfile.getState().markCityTourSeen();
+    setTourIndex(-1);
+    setTourNudge(null);
+  }, []);
+
+  /** A ready plot collects on tap and throws tokens at the HUD chip (§3, §6). */
+  const collectPlot = useCallback(
+    async (id: BuildingId) => {
+      const before = useCity.getState().snapshot;
+      const view = plotStateFor(before, id, serverNow(useCity.getState()));
+      const ok = await actions.collect(id);
+      if (!ok || view.collectAmount <= 0) return;
+      notifyTour('collect', id);
+      const flight: Flight = {
+        id: `${id}-${Date.now()}`,
+        from: { x: CANVAS_W * 0.5, y: CANVAS_H * 0.5 },
+        to: { x: CANVAS_W - 120, y: 18 },
+        resource: view.collectResource ?? 'coins',
+        count: tokenCountFor(view.collectAmount),
+      };
+      setFlights((prev) => [...prev, flight]);
+    },
+    [actions, notifyTour],
+  );
+
+  const buildPlot = useCallback(
+    async (id: BuildingId) => {
+      const ok = await actions.build(id);
+      if (ok) notifyTour('build', id);
+    },
+    [actions, notifyTour],
+  );
+
+  /**
+   * Part 8 — a BUILT Fleet Hall opens the hall itself rather than the upgrade
+   * sheet: once it exists, what a player wants from that plot is the roster,
+   * not "level 2 costs 12,000 steel". An unbuilt one still opens the sheet,
+   * which is where they go to build it. Same for the Admiralty and its Flag
+   * Hall (§5, "inside the Admiralty").
+   */
+  const openPlotSheet = useCallback(
+    (id: BuildingId) => {
+      haptic('buttonPress');
+      const level = snapshot?.city.buildings[id]?.level ?? 0;
+      if (level > 0 && isFlagOn('portCity.fleets')) {
+        if (id === 'fleet_hall') {
+          router.push('/fleet');
+          return;
+        }
+        if (id === 'admiralty') {
+          router.push('/flag-hall');
+          return;
+        }
+      }
+      // part-04 — a built Harbour Master's Office opens the Bounty Board.
+      if (level > 0 && id === 'harbour_office' && isFlagOn('portCity.bounties')) {
+        router.push('/bounties');
+        return;
+      }
+      // part-09 — a built Newsstand opens the Gazette (and the puzzle from its
+      // back page); a built Trade Docks opens the berths.
+      if (level > 0 && id === 'newsstand' && isFlagOn('portCity.gazette')) {
+        router.push('/gazette');
+        return;
+      }
+      if (level > 0 && id === 'trade_docks' && isFlagOn('portCity.voyages')) {
+        router.push('/voyages');
+        return;
+      }
+      if (level > 0 && id === 'lighthouse' && isFlagOn('portCity.empire')) {
+        router.push('/empire' as never);
+        return;
+      }
+      if (level > 0 && id === 'lighthouse' && isFlagOn('portCity.worldBoss')) {
+        router.push('/world-boss' as never);
+        return;
+      }
+      // part-03 — the two cosmetic shops.
+      if (level > 0 && isFlagOn('portCity.cosmetics')) {
+        if (id === 'shipyard') {
+          router.push('/shop?store=shipyard');
+          return;
+        }
+        if (id === 'stationery') {
+          router.push('/shop?store=stationery');
+          return;
+        }
+      }
+      setOpenPlot(id);
+      notifyTour('tap-plot', id);
+    },
+    [notifyTour, router, snapshot],
+  );
+
+  const openView = useMemo(
+    () =>
+      openPlot ? plotStateFor(snapshot, openPlot, serverNow(useCity.getState())) : null,
+    [openPlot, snapshot],
+  );
+
+  /** Seconds until the first busy worker frees up, for the Captain's line. */
+  const nextWorkerFreeIn = useMemo(() => {
+    if (!snapshot) return 0;
+    const now = serverNow(useCity.getState());
+    const ends = Object.values(snapshot.city.buildings)
+      .map((b) => b.upgrading?.endsAt ?? 0)
+      .filter((at) => at > now);
+    if (ends.length === 0) return 0;
+    return Math.max(0, Math.round((Math.min(...ends) - now) / 1000));
+  }, [snapshot]);
 
   useEffect(() => {
     if (!welcome) return;
@@ -355,6 +543,22 @@ function CityCanvas() {
     savedTy.value = target.ty;
   }, [focusZoom, savedScale, savedTx, savedTy, scale, tx, ty, view]);
 
+  /**
+   * Part 7 §1 — "Reached by tapping the <name>'s harbour nameplate in the
+   * city." With `portCity.raids` OFF the nameplate does exactly what it does
+   * today: it centres the map, and the plate keeps showing the battle record.
+   * One conditional in the callback, so the component is untouched.
+   */
+  const raidsOn = isFlagOn('portCity.raids');
+  const pressHarbour = useCallback(() => {
+    if (raidsOn) {
+      haptic('buttonPress');
+      router.push('/harbour');
+      return;
+    }
+    focusHarbour();
+  }, [focusHarbour, raidsOn, router]);
+
   const pinch = Gesture.Pinch()
     .onUpdate((e) => {
       scale.value = clamp(savedScale.value * e.scale, view.minScale, MAX_SCALE);
@@ -412,18 +616,32 @@ function CityCanvas() {
             w={MAP_W}
             h={MAP_H}
             label="city-port"
-            tintColor={color.inkSoft}
+            tintColor={living.theme === 'night' ? CITY_PALETTES.night.inkSoft : color.inkSoft}
             style={{ opacity: 0.85 }}
           />
-          {SLOTS.map((slot) => (
-            <Slot key={slot.key} slot={slot} />
-          ))}
+          <LivingWorldLayer state={living} />
+          {/* The old placeholder slots are exactly what the flag-off screen
+              shows. With the city on, real plots replace them. */}
+          {cityOn ? null : SLOTS.map((slot) => <Slot key={slot.key} slot={slot} />)}
           <HomeHarbour
             name={name}
             played={profile.battlesPlayed}
             won={profile.battlesWon}
-            onPress={focusHarbour}
+            onPress={pressHarbour}
           />
+          {/* Part 2. Children of the SAME transformed view as the harbour, so
+              they inherit the pinch/pan with no synchronising code. */}
+          {cityOn ? (
+            <>
+              {living.weather === 'rain' ? null : <AmbientLayer />}
+              <PlotLayer
+                zoom={scale}
+                onOpen={openPlotSheet}
+                onCollect={collectPlot}
+                features={snapshot?.features ?? []}
+              />
+            </>
+          ) : null}
         </Animated.View>
       </GestureDetector>
 
@@ -446,10 +664,19 @@ function CityCanvas() {
           seedKey="city"
         />
       </View>
-      <View style={styles.topRight} pointerEvents="box-none">
-        <CurrencyChip kind="coins" value={profile.coins} />
-        <CurrencyChip kind="gems" value={profile.gems} />
-      </View>
+      {cityOn ? (
+        <CityHud
+          onOpenWorkers={() => setWorkersOpen(true)}
+          onCollectAll={() => {
+            void actions.collectAll();
+          }}
+        />
+      ) : (
+        <View style={styles.topRight} pointerEvents="box-none">
+          <CurrencyChip kind="coins" value={profile.coins} />
+          <CurrencyChip kind="gems" value={profile.gems} />
+        </View>
+      )}
       <View style={styles.back}>
         <InkButton
           label="↩"
@@ -469,7 +696,48 @@ function CityCanvas() {
         />
       </View>
 
-      {welcome ? (
+      {cityOn ? (
+        <>
+          <CollectFlightLayer
+            flights={flights}
+            onDone={(id) => setFlights((prev) => prev.filter((f) => f.id !== id))}
+          />
+          {cityError === 'offline' ? (
+            <OfflineBanner message={captainLineFor('offline')} />
+          ) : null}
+          <BuildingSheet
+            view={openView}
+            busy={actions.busy}
+            errorCode={actions.lastError?.buildingId === openPlot ? actions.lastError.code : null}
+            nextWorkerFreeIn={nextWorkerFreeIn}
+            onClose={() => {
+              setOpenPlot(null);
+              actions.clearError();
+            }}
+            onBuild={(id) => void buildPlot(id)}
+            onSpeedUp={(id) => void actions.speedUp(id)}
+            onCancel={(id) => void actions.cancel(id)}
+            onCollect={(id) => void collectPlot(id)}
+          />
+          <WorkersSheet
+            open={workersOpen}
+            busy={actions.busy}
+            errorCode={actions.lastError?.code ?? null}
+            onClose={() => setWorkersOpen(false)}
+            onBuy={() => void actions.buyWorker()}
+          />
+          {tourIndex >= 0 && !isFinished(tourIndex) ? (
+            <CityTour
+              index={tourIndex}
+              nudge={tourNudge}
+              onAdvance={() => notifyTour('acknowledge')}
+              onSkip={skipTour}
+            />
+          ) : null}
+        </>
+      ) : null}
+
+      {welcome && !cityOn ? (
         <>
           <View pointerEvents="none" style={styles.captain}>
             <AssetSlot source={AVATARS.captain} w={CAPTAIN.w} h={CAPTAIN.h} label="captain" />

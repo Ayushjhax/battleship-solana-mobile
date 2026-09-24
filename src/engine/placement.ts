@@ -7,6 +7,7 @@ import { cellsOf, coordKey, halo, inBounds, sameCoord } from './board';
 import { specFor } from './arsenal';
 import { FLEET_SPEC, makeFleet } from './fleet';
 import type { Rng } from './rng';
+import { WATER, isIsland, isReef } from './terrain';
 import {
   GRID_SIZE,
   type ArsenalItem,
@@ -15,6 +16,7 @@ import {
   type Orientation,
   type Ship,
 } from './types';
+import type { Terrain } from './terrain';
 
 export type PlacementResult = { ok: true } | { ok: false; reason: string };
 
@@ -54,7 +56,12 @@ export function purchaseArsenalItem(
 }
 
 /** Place or move a purchased defensive item. */
-export function placeArsenalItem(board: Board, itemId: string, at: Coord): ArsenalBoardResult {
+export function placeArsenalItem(
+  board: Board,
+  itemId: string,
+  at: Coord,
+  terrain: Terrain = WATER,
+): ArsenalBoardResult {
   const fuelSpent = arsenalFuelSpent(board.arsenal);
   const item = board.arsenal.find((candidate) => candidate.id === itemId);
   if (!item) return { ok: false, board, fuelSpent, reason: `no item ${itemId}` };
@@ -62,7 +69,7 @@ export function placeArsenalItem(board: Board, itemId: string, at: Coord): Arsen
     return { ok: false, board, fuelSpent, reason: `${item.kind} is not placed on your board` };
   }
   const candidate = { ...item, at };
-  const check = validateArsenalPlacement(board, candidate);
+  const check = validateArsenalPlacement(board, candidate, terrain);
   if (!check.ok) return { ok: false, board, fuelSpent, reason: check.reason };
   const next = {
     ...board,
@@ -84,8 +91,16 @@ export function sellArsenalItem(board: Board, itemId: string): ArsenalBoardResul
 /**
  * Bounds, overlap and the halo rule, checked against every OTHER ship on the
  * board (a ship with the same id is being re-placed, so it is ignored).
+ *
+ * Part 10B — terrain: no ship may occupy an island, and only ships of length
+ * <= 2 (destroyers and boats) may sit on a reef. The halo rule is unchanged
+ * across terrain: an island does not let two ships touch.
  */
-export function validatePlacement(board: Board, ship: Ship): PlacementResult {
+export function validatePlacement(
+  board: Board,
+  ship: Ship,
+  terrain: Terrain = WATER,
+): PlacementResult {
   if (ship.len < 1) return { ok: false, reason: 'ship has no length' };
   const cells = cellsOf(ship);
   if (!cells.every(inBounds)) return { ok: false, reason: 'out of bounds' };
@@ -100,6 +115,10 @@ export function validatePlacement(board: Board, ship: Ship): PlacementResult {
 
   for (const cell of cells) {
     const key = coordKey(cell);
+    if (isIsland(terrain, cell)) return { ok: false, reason: 'may not sit on an island' };
+    if (ship.len > 2 && isReef(terrain, cell)) {
+      return { ok: false, reason: 'only destroyers and boats may sit on a reef' };
+    }
     if (occupied.has(key)) return { ok: false, reason: 'overlaps another ship' };
     if (forbidden.has(key)) return { ok: false, reason: 'ships may not touch' };
     if (board.arsenal.some((item) => item.at && sameCoord(item.at, cell))) {
@@ -112,11 +131,23 @@ export function validatePlacement(board: Board, ship: Ship): PlacementResult {
 /**
  * Own-board arsenal items ignore the halo rule; they only need one empty cell
  * — empty of ships and of other items.
+ *
+ * PART 5 — THE DECOY IS THE EXCEPTION. It is pretending to be a ship, so it
+ * must be placed where a ship could be: never inside one of your ships' halos,
+ * and never touching another decoy. Every other item, including the sonar net,
+ * stays halo-exempt (§2, §3).
  */
-export function validateArsenalPlacement(board: Board, item: ArsenalItem): PlacementResult {
+export function validateArsenalPlacement(
+  board: Board,
+  item: ArsenalItem,
+  terrain: Terrain = WATER,
+): PlacementResult {
   const at = item.at;
   if (!at) return { ok: false, reason: 'no cell given' };
   if (!inBounds(at)) return { ok: false, reason: 'out of bounds' };
+  // Part 10B — no item may occupy an island. A reef is normal for items:
+  // only ships are constrained there.
+  if (isIsland(terrain, at)) return { ok: false, reason: 'may not sit on an island' };
 
   for (const ship of board.ships) {
     if (cellsOf(ship).some((cell) => sameCoord(cell, at))) {
@@ -128,12 +159,27 @@ export function validateArsenalPlacement(board: Board, item: ArsenalItem): Place
       return { ok: false, reason: 'cell is occupied by another item' };
     }
   }
+
+  if (item.kind === 'decoy') {
+    for (const ship of board.ships) {
+      if (halo(ship).some((cell) => sameCoord(cell, at))) {
+        return { ok: false, reason: 'a decoy may not touch a ship' };
+      }
+    }
+    for (const other of board.arsenal) {
+      if (other.id === item.id || other.kind !== 'decoy' || !other.at) continue;
+      const touching =
+        Math.abs(other.at.r - at.r) <= 1 && Math.abs(other.at.c - at.c) <= 1;
+      if (touching) return { ok: false, reason: 'decoys may not touch each other' };
+    }
+  }
+
   return { ok: true };
 }
 
 /** Adds the ship, or replaces the ship with the same id, if the placement is valid. */
-export function placeShip(board: Board, ship: Ship): BoardResult {
-  const check = validatePlacement(board, ship);
+export function placeShip(board: Board, ship: Ship, terrain: Terrain = WATER): BoardResult {
+  const check = validatePlacement(board, ship, terrain);
   if (!check.ok) return { ok: false, board, reason: check.reason };
   const clean: Ship = { ...ship, hits: [] };
   const others = board.ships.filter((s) => s.id !== ship.id);
@@ -147,18 +193,23 @@ export function removeShip(board: Board, shipId: string): BoardResult {
   return { ok: true, board: { ...board, ships: board.ships.filter((s) => s.id !== shipId) } };
 }
 
-export function moveShip(board: Board, shipId: string, origin: Coord): BoardResult {
+export function moveShip(
+  board: Board,
+  shipId: string,
+  origin: Coord,
+  terrain: Terrain = WATER,
+): BoardResult {
   const ship = board.ships.find((s) => s.id === shipId);
   if (!ship) return { ok: false, board, reason: `no ship ${shipId} on the board` };
-  return placeShip(board, { ...ship, origin });
+  return placeShip(board, { ...ship, origin }, terrain);
 }
 
 /** Rotation pivots on the ship's first cell and fails cleanly when invalid. */
-export function rotateShip(board: Board, shipId: string): BoardResult {
+export function rotateShip(board: Board, shipId: string, terrain: Terrain = WATER): BoardResult {
   const ship = board.ships.find((s) => s.id === shipId);
   if (!ship) return { ok: false, board, reason: `no ship ${shipId} on the board` };
   const orientation: Orientation = ship.orientation === 'h' ? 'v' : 'h';
-  return placeShip(board, { ...ship, orientation });
+  return placeShip(board, { ...ship, orientation }, terrain);
 }
 
 const ATTEMPTS_PER_SHIP = 200;
@@ -169,16 +220,19 @@ const FLEET_RESTARTS = 50;
  * and if one cannot be placed the whole fleet restarts. It terminates: the
  * board has room for this fleet many times over, and the restart cap makes the
  * worst case finite rather than probabilistic.
+ *
+ * Part 10B — the optional terrain is respected (islands and reefs), and the
+ * Shuffle test measures 10,000 attempts per sea with zero failures.
  */
-export function autoPlaceFleet(rng: Rng): Ship[] {
+export function autoPlaceFleet(rng: Rng, terrain: Terrain = WATER): Ship[] {
   for (let restart = 0; restart < FLEET_RESTARTS; restart++) {
-    const placed = tryPlaceFleet(rng);
+    const placed = tryPlaceFleet(rng, terrain);
     if (placed) return placed;
   }
   throw new Error('autoPlaceFleet could not place the fleet');
 }
 
-function tryPlaceFleet(rng: Rng): Ship[] | null {
+function tryPlaceFleet(rng: Rng, terrain: Terrain): Ship[] | null {
   let board: Board = { ships: [], arsenal: [], marks: {} };
   for (const spec of makeFleet()) {
     let done = false;
@@ -194,7 +248,7 @@ function tryPlaceFleet(rng: Rng): Ship[] | null {
         orientation,
         hits: [],
       };
-      const result = placeShip(board, ship);
+      const result = placeShip(board, ship, terrain);
       if (result.ok) {
         board = result.board;
         done = true;
@@ -206,10 +260,10 @@ function tryPlaceFleet(rng: Rng): Ship[] | null {
 }
 
 /** Every ship valid against every other — the whole-layout check. */
-export function validateLayout(ships: readonly Ship[]): PlacementResult {
+export function validateLayout(ships: readonly Ship[], terrain: Terrain = WATER): PlacementResult {
   let board: Board = { ships: [], arsenal: [], marks: {} };
   for (const ship of ships) {
-    const result = placeShip(board, ship);
+    const result = placeShip(board, ship, terrain);
     if (!result.ok) return { ok: false, reason: `${ship.id}: ${result.reason}` };
     board = result.board;
   }

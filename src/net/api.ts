@@ -95,6 +95,7 @@ export const ProfileSchema = z.object({
   battles_won: z.number().int(),
   coins: z.number().int(),
   gems: z.number().int(),
+  steel: z.number().int(),
   buildings: z.number().int(),
   has_completed_tutorial: z.boolean(),
   updated_at: z.string().nullable(),
@@ -130,7 +131,7 @@ export const MatchSummarySchema = z.object({
 export type MatchSummary = z.infer<typeof MatchSummarySchema>;
 
 const PROFILE_COLUMNS =
-  'id,name,avatar_id,avatar_color,country_code,rank_points,battles_played,battles_won,coins,gems,buildings,has_completed_tutorial,updated_at';
+  'id,name,avatar_id,avatar_color,country_code,rank_points,battles_played,battles_won,coins,gems,steel,buildings,has_completed_tutorial,updated_at';
 
 // ---------------------------------------------------------------------------
 // Auth

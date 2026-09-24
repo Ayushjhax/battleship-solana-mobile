@@ -70,4 +70,19 @@ module.exports = [
       ],
     },
   },
+  // ---- Engine purity: two levels deeper (src/engine/city/__tests__ etc.) ----
+  // The depth of the relative escape is what the rule is really about: from
+  // src/engine/<module>/<dir>/ it takes three hops to leave the engine, not
+  // two. Without this, a test at src/engine/city/__tests__/ could not import
+  // src/engine/ranks — which is engine-internal and perfectly legal — because
+  // the pattern above matches the text `../../*` regardless of where it lands.
+  {
+    files: ['src/engine/*/*/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...ENGINE_FORBIDDEN, { group: ['../../../*'], message: 'src/engine may not import from outside src/engine.' }] },
+      ],
+    },
+  },
 ];

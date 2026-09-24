@@ -11,7 +11,8 @@ import type { Server } from 'node:http';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
 import { verifyAccessToken } from './auth';
-import { decode, encode, PROTOCOL_VERSION, toMatchAction, toSubmitLayoutAction, type ErrorCode, type ServerMessage } from './protocol';
+import { decode, encode, minimumProtocolForFeatures, PROTOCOL_VERSION, toMatchAction, toSubmitLayoutAction, type ErrorCode, type ServerMessage } from './protocol';
+import { isEnabled } from './features';
 import { cancelBeforeMatchStart, dequeue, enqueue } from './matchmaker';
 import { findRoomForPlayer, rooms } from './room';
 
@@ -32,6 +33,8 @@ interface Connection {
   illegalCount: number;
   /** Preserve wire order across handlers that await database work. */
   messageChain: Promise<void>;
+  /** The protocol version this client claims. 1 = built before Part 5. */
+  protocol: number;
 }
 
 function send(conn: Connection, message: ServerMessage): void {
@@ -74,6 +77,7 @@ export function attachWebSocketServer(server: Server, log: (msg: string) => void
       recentMessages: [],
       illegalCount: 0,
       messageChain: Promise.resolve(),
+      protocol: 1,
     };
     connections.set(socket, conn);
 
@@ -174,6 +178,7 @@ async function handleMessage(conn: Connection, raw: RawData, _isBinary: boolean,
       return;
     }
     conn.playerId = result.token.userId;
+    conn.protocol = message.protocol ?? 1;
     send(conn, { t: 'hello:ok', v: 1, playerId: conn.playerId });
 
     // Reconnect: re-attach to an in-progress match regardless of whether the
@@ -193,6 +198,26 @@ async function handleMessage(conn: Connection, raw: RawData, _isBinary: boolean,
 
   switch (message.t) {
     case 'queue': {
+      // Part 5 §9, extended by Part 10. Once a match can contain marks, item
+      // kinds, captains or terrain an older build cannot draw, refuse rather
+      // than send it something it will mis-render. Gated on the flags: with
+      // every flag off — the default — every existing client queues exactly
+      // as before.
+      const required = minimumProtocolForFeatures({
+        academy: isEnabled('portCity.academy'),
+        captains: isEnabled('portCity.captains'),
+        seas: isEnabled('portCity.seas'),
+      });
+      if (conn.protocol < required) {
+        sendError(
+          conn,
+          'upgrade_required',
+          'New charts available — update to sail.',
+        );
+        log(`[ws] player=${playerId} refused: protocol ${conn.protocol} < ${required}`);
+        return;
+      }
+
       const room = findRoomForPlayer(playerId);
       if (room) {
         sendError(conn, 'not_in_room', 'already in a match');
@@ -227,7 +252,12 @@ async function handleMessage(conn: Connection, raw: RawData, _isBinary: boolean,
         return;
       }
       const action = toSubmitLayoutAction(playerId, message.layout);
-      const result = room.handleReady(playerId, action.type === 'SUBMIT_LAYOUT' ? [...action.ships] : [], action.type === 'SUBMIT_LAYOUT' ? [...action.arsenal] : []);
+      const result = room.handleReady(
+        playerId,
+        action.type === 'SUBMIT_LAYOUT' ? [...action.ships] : [],
+        action.type === 'SUBMIT_LAYOUT' ? [...action.arsenal] : [],
+        action.type === 'SUBMIT_LAYOUT' ? (action.captainId ?? null) : null,
+      );
       if (!result.ok) violate(conn, `layout rejected: ${result.reason}`, log);
       return;
     }

@@ -8,6 +8,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import type { GameOverReason, MatchEvent, MatchMode } from '@engine/types';
+import { OFFLINE_REWARD_CAP } from '@engine/city';
 import type { Database, Json } from '../../src/net/database.types';
 import type { OpponentSummary } from './protocol';
 import type { TrustedPrivyAccount } from './privy';
@@ -234,6 +235,15 @@ export async function abandonMatch(matchId: string): Promise<boolean> {
 
 export type DbEndReason = 'victory' | 'resign' | 'timeout' | 'disconnect';
 
+/** What apply_match_result reports back (0015). */
+export interface MatchSettlement {
+  /** False when the match was already settled — a retry moved nothing. */
+  readonly settled: boolean;
+  /** Steel actually credited to each seat, AFTER the Scrapyard bonus. */
+  readonly salvageA: number;
+  readonly salvageB: number;
+}
+
 export function dbEndReason(reason: GameOverReason): DbEndReason {
   return reason === 'fleet' ? 'victory' : reason === 'forfeit' ? 'timeout' : 'resign';
 }
@@ -250,7 +260,9 @@ export async function applyMatchResult(
   winnerId: string,
   endReason: DbEndReason,
   reward: { win: { points: number; coins: number }; loss: { points: number; coins: number } },
-): Promise<boolean> {
+  salvage: { a: number; b: number } = { a: 0, b: 0 },
+  wrecks: { a: readonly string[]; b: readonly string[] } = { a: [], b: [] },
+): Promise<MatchSettlement> {
   const { data, error } = await db().rpc('apply_match_result', {
     p_match_id: matchId,
     p_winner: winnerId,
@@ -259,9 +271,28 @@ export async function applyMatchResult(
     p_win_coins: reward.win.coins,
     p_loss_points: reward.loss.points,
     p_loss_coins: reward.loss.coins,
-  });
+    // Salvage rides the same transaction as points and coins (part-01 §4).
+    // Both default to 0 in SQL, so a caller that does not pass them — or an
+    // older deploy still on the 7-argument call — behaves exactly as before.
+    p_salvage_a: salvage.a,
+    p_salvage_b: salvage.b,
+    // Which classes were sunk, so the Scrapyard can draw the wrecks (0015).
+    p_wrecks_a: wrecks.a,
+    p_wrecks_b: wrecks.b,
+  } as never);
   if (error) throw new Error(`applyMatchResult(${matchId}): ${error.message}`);
-  return data === true;
+
+  // 0015 changed the return from a bare boolean to {settled, salvage_a,
+  // salvage_b}, so the room can tell each player what actually landed in
+  // their Scrapyard rather than the client guessing.
+  const row = data as unknown as
+    | { settled?: boolean; salvage_a?: number; salvage_b?: number }
+    | null;
+  return {
+    settled: row?.settled === true,
+    salvageA: row?.salvage_a ?? 0,
+    salvageB: row?.salvage_b ?? 0,
+  };
 }
 
 /** One row per reduce() cycle — `payload` holds every event that cycle produced. */
@@ -286,15 +317,21 @@ export interface OfflineResultInput {
 export async function applyOfflineResult(
   userId: string,
   result: OfflineResultInput,
-): Promise<void> {
-  const { error } = await db().rpc('apply_offline_result', {
+  salvageBase = 0,
+  offlineCap = OFFLINE_REWARD_CAP,
+): Promise<number> {
+  const { data, error } = await db().rpc('apply_offline_result', {
     p_id: result.id,
     p_user_id: userId,
     p_mode: result.mode,
     p_won: result.won,
     p_completed_at: result.completedAt,
-  });
+    p_salvage_base: salvageBase,
+    p_offline_cap: offlineCap,
+  } as never);
   if (error) throw new Error(`apply_offline_result(${result.id}): ${error.message}`);
+  // -1 means the id was already applied; 0 means the daily cap is spent.
+  return typeof data === 'number' ? data : 0;
 }
 
 export interface ProfileRewardTotals {

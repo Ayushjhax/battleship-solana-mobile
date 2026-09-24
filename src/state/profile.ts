@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { AVATAR_TINTS, type AvatarTint } from '@/ui/tokens';
+import type { CityTimePreference } from '@engine/liveWorld';
 
 export type AvatarId = 1 | 2 | 3 | 4;
 
@@ -43,11 +44,21 @@ export interface ProfileData {
   battlesWon: number;
   coins: number;
   gems: number;
+  /** Port City steel (Part 1). Written only by the server, like coins. */
+  steel: number;
   /** Port-city buildings (P15). Shown on the progress screen. */
   buildings: number;
   hasCompletedTutorial: boolean;
   /** The Captain's port-city welcome is a first-visit-only line (P15). */
   hasVisitedCity: boolean;
+  /** The six-beat Port City tour (Part 2). Replayable from Settings. */
+  hasSeenCityTour: boolean;
+  /**
+   * Part 7 §7 — the scripted first raid runs once. Set when that raid
+   * SETTLES, not when it starts: a player who backgrounds out of it has been
+   * taught nothing, and marking it at open would silently burn the lesson.
+   */
+  hasRaided: boolean;
   /** Server-settled matches already reflected here, so a re-mounted result can't double count. */
   settledMatchIds: readonly string[];
   soundOn: boolean;
@@ -55,6 +66,8 @@ export interface ProfileData {
   hapticsOn: boolean;
   soundVolume: number;
   musicVolume: number;
+  /** Part 11A cosmetic-only city lighting preference. */
+  cityTimePreference: CityTimePreference;
   pendingResults: readonly PendingResult[];
 }
 
@@ -68,6 +81,7 @@ export interface ProfileActions {
   ) => void;
   setSetting: (key: ProfileSetting, value: boolean) => void;
   setVolume: (key: ProfileVolume, value: number) => void;
+  setCityTimePreference: (value: CityTimePreference) => void;
   /** Applies docs/brief.md 3.5 rewards: win +25/+50, loss +5/+10. */
   recordResult: (won: boolean) => void;
   /** Applies immediately and queues an idempotent server sync. */
@@ -83,6 +97,10 @@ export interface ProfileActions {
     reward: { points: number; coins: number },
   ) => boolean;
   markCityVisited: () => void;
+  /** Part 7 §7 — called on the first raid's settlement. */
+  markRaided: () => void;
+  markCityTourSeen: () => void;
+  resetCityTour: () => void;
   /** Removes acknowledged results and reconciles the authoritative totals. */
   settleResults: (ids: readonly string[], totals?: SyncedProfileTotals) => void;
   markTutorialComplete: () => void;
@@ -107,15 +125,19 @@ export const DEFAULT_PROFILE: ProfileData = {
   battlesWon: 0,
   coins: 0,
   gems: 0,
+  steel: 0,
   buildings: 0,
   hasCompletedTutorial: false,
   hasVisitedCity: false,
+  hasRaided: false,
+  hasSeenCityTour: false,
   settledMatchIds: [],
   soundOn: true,
   musicOn: true,
   hapticsOn: true,
   soundVolume: 1,
   musicVolume: 0.35,
+  cityTimePreference: 'auto',
   pendingResults: [],
 };
 
@@ -127,6 +149,7 @@ export const useProfile = create<ProfileState>()(
       setIdentity: (identity) => set(identity),
       setSetting: (key, value) => set({ [key]: value }),
       setVolume: (key, value) => set({ [key]: Math.max(0, Math.min(1, value)) }),
+      setCityTimePreference: (cityTimePreference) => set({ cityTimePreference }),
       recordResult: (won) =>
         set((s) => {
           const reward = won ? REWARD.win : REWARD.loss;
@@ -161,6 +184,9 @@ export const useProfile = create<ProfileState>()(
         return true;
       },
       markCityVisited: () => set({ hasVisitedCity: true }),
+      markRaided: () => set({ hasRaided: true }),
+      markCityTourSeen: () => set({ hasSeenCityTour: true }),
+      resetCityTour: () => set({ hasSeenCityTour: false }),
       settleResults: (ids, totals) =>
         set((s) => {
           const acknowledged = new Set(ids);
@@ -215,15 +241,19 @@ export const useProfile = create<ProfileState>()(
         battlesWon: s.battlesWon,
         coins: s.coins,
         gems: s.gems,
+        steel: s.steel,
         buildings: s.buildings,
         hasCompletedTutorial: s.hasCompletedTutorial,
         hasVisitedCity: s.hasVisitedCity,
+        hasRaided: s.hasRaided,
+        hasSeenCityTour: s.hasSeenCityTour,
         settledMatchIds: s.settledMatchIds,
         soundOn: s.soundOn,
         musicOn: s.musicOn,
         hapticsOn: s.hapticsOn,
         soundVolume: s.soundVolume,
         musicVolume: s.musicVolume,
+        cityTimePreference: s.cityTimePreference,
         pendingResults: s.pendingResults,
       }),
     },

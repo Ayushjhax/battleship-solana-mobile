@@ -24,21 +24,26 @@ import {
   bomber,
   doubleTorpedoBomber,
   isOwnBoardKind,
+  minesweeper,
   radar,
   specFor,
   submarine,
   torpedoBomber,
   type ArsenalOutcome,
 } from './arsenal';
+import { abilityFor, captainFuel, isCaptainId } from './captains';
 import { allSunk, isSunk, validateFleetComposition } from './fleet';
 import { validateArsenalPlacement, validateLayout } from './placement';
 import { createRng } from './rng';
 import { resolveShot } from './shots';
+import { WATER } from './terrain';
 import {
   FUEL_BUDGET,
   MAX_CONSECUTIVE_TIMEOUTS,
+  isAcademyKind,
   type ArsenalItem,
   type Board,
+  type CaptainId,
   type Coord,
   type GameOverReason,
   type MatchAction,
@@ -51,6 +56,7 @@ import {
   type Ship,
   type SunkShipView,
 } from './types';
+import type { Terrain } from './terrain';
 
 export interface ReduceResult {
   readonly state: MatchState;
@@ -62,6 +68,8 @@ export interface CreateMatchOptions {
   readonly mode: MatchMode;
   readonly seed: number;
   readonly playerIds: readonly [string, string];
+  /** Part 10B — the sea. Ignored in Classic, which is always Open Sea. */
+  readonly terrain?: Terrain;
 }
 
 function emptyPlayer(id: string): PlayerState {
@@ -71,6 +79,8 @@ function emptyPlayer(id: string): PlayerState {
     fuelSpent: 0,
     consecutiveTimeouts: 0,
     ready: false,
+    captainId: null,
+    captainUsed: false,
   };
 }
 
@@ -87,6 +97,9 @@ export function createMatch(options: CreateMatchOptions): MatchState {
     turn: a,
     winner: null,
     moves: 0,
+    // Classic is Open Sea only, forever: a terrain handed to a Classic match
+    // is ignored rather than rejected, so no caller can leak a sea into it.
+    terrain: options.mode === 'classic' ? WATER : (options.terrain ?? WATER),
   };
 }
 
@@ -133,20 +146,43 @@ export function firstTurn(state: MatchState): string {
 
 export type LayoutCheck = { ok: true; fuel: number } | { ok: false; reason: string };
 
-/** The whole submission: fleet composition, placements, arsenal and budget. */
+/**
+ * The whole submission: fleet composition, placements, arsenal, captain and
+ * budget.
+ *
+ * `unlocks` is Part 5's Naval Academy gate. Undefined means "no gate" — every
+ * caller that does not know about research (offline play before the Academy
+ * exists, and every existing test) behaves exactly as before. When it IS
+ * given, an Academy item the player has not researched is a REJECTED layout,
+ * never a silent drop (part-05 §5).
+ *
+ * `captainId` is Part 10A. The captain is priced in fuel out of the SAME 260,
+ * so the ceiling check below is unchanged; Classic refuses any captain, and
+ * an id that is not on the roster is a rejection rather than a dropped field.
+ */
 export function validateSubmission(
   mode: MatchMode,
   ships: readonly Ship[],
   arsenal: readonly ArsenalItem[],
+  unlocks?: readonly string[],
+  captainId?: CaptainId | null,
+  terrain: Terrain = WATER,
 ): LayoutCheck {
   const composition = validateFleetComposition(ships);
   if (!composition.ok) return composition;
-  const layout = validateLayout(ships);
+  const layout = validateLayout(ships, terrain);
   if (!layout.ok) return layout;
+
+  const captain = captainId ?? null;
 
   if (mode === 'classic') {
     if (arsenal.length > 0) return { ok: false, reason: 'classic mode has no arsenal' };
+    if (captain !== null) return { ok: false, reason: 'classic mode has no captains' };
     return { ok: true, fuel: 0 };
+  }
+
+  if (captain !== null && !isCaptainId(captain)) {
+    return { ok: false, reason: `unknown captain ${String(captain)}` };
   }
 
   const ids = new Set<string>();
@@ -159,19 +195,23 @@ export function validateSubmission(
     if (!ARSENAL_SPEC.some((e) => e.kind === item.kind)) {
       return { ok: false, reason: `unknown arsenal kind ${String(item.kind)}` };
     }
+    if (unlocks !== undefined && isAcademyKind(item.kind) && !unlocks.includes(item.kind)) {
+      return { ok: false, reason: `${item.kind} has not been researched` };
+    }
     const spec = specFor(item.kind);
     const count = arsenal.filter((i) => i.kind === item.kind).length;
     if (count > spec.max) return { ok: false, reason: `too many ${item.kind}: max ${spec.max}` };
     fuel += spec.cost;
 
     if (isOwnBoardKind(item.kind)) {
-      const check = validateArsenalPlacement({ ...board, arsenal: placed }, item);
+      const check = validateArsenalPlacement({ ...board, arsenal: placed }, item, terrain);
       if (!check.ok) return { ok: false, reason: `${item.id}: ${check.reason}` };
       placed.push(item);
     } else if (item.at !== undefined) {
       return { ok: false, reason: `${item.id}: offensive items are not placed on the board` };
     }
   }
+  fuel += captainFuel(captain);
   if (fuel > FUEL_BUDGET) return { ok: false, reason: `over budget: ${fuel} > ${FUEL_BUDGET}` };
   return { ok: true, fuel };
 }
@@ -181,12 +221,20 @@ function submitLayout(
   playerId: string,
   ships: readonly Ship[],
   arsenal: readonly ArsenalItem[],
+  captainId?: CaptainId | null,
 ): ReduceResult {
   if (state.phase !== 'placing') return reject(state, playerId, 'layouts are closed');
   const index = playerIndex(state, playerId);
   if (index === -1) return reject(state, playerId, 'unknown player');
 
-  const check = validateSubmission(state.mode, ships, arsenal);
+  const check = validateSubmission(
+    state.mode,
+    ships,
+    arsenal,
+    undefined,
+    captainId,
+    state.terrain,
+  );
   if (!check.ok) return reject(state, playerId, check.reason);
 
   const board: Board = {
@@ -194,13 +242,31 @@ function submitLayout(
     arsenal: arsenal.map((i) => ({ id: i.id, kind: i.kind, ...(i.at ? { at: i.at } : {}) })),
     marks: {},
   };
-  let next = withPlayer(state, index, { board, fuelSpent: check.fuel, ready: true });
+  let next = withPlayer(state, index, {
+    board,
+    fuelSpent: check.fuel,
+    ready: true,
+    captainId: captainId ?? null,
+  });
   const events: MatchEvent[] = [{ type: 'LAYOUT_ACCEPTED', playerId }];
 
   if (next.players[0].ready && next.players[1].ready) {
     const turn = firstTurn(next);
     next = { ...next, phase: 'playing', turn };
     events.push({ type: 'MATCH_STARTED', turn });
+
+    // Part 10A — Ivo's onMatchStart, now that BOTH boards are final. Counts
+    // only, never cells, and one event per owner at most.
+    for (const i of [0, 1] as const) {
+      const player = next.players[i];
+      const ability = abilityFor(player.captainId);
+      if (!ability?.onMatchStart || player.captainUsed) continue;
+      const enemy = next.players[i === 0 ? 1 : 0];
+      const fired = ability.onMatchStart({ owner: player.id, enemy: enemy.board });
+      if (!fired) continue;
+      next = withPlayer(next, i, { captainUsed: true });
+      events.push(...fired.events);
+    }
   }
   return { state: next, events };
 }
@@ -257,7 +323,14 @@ function useArsenal(
   const item = me.board.arsenal.find((i) => i.id === itemId);
   if (!item) return reject(state, playerId, `no item ${itemId}`);
   if (item.used || item.destroyed) return reject(state, playerId, `${item.kind} already spent`);
-  if (item.kind === 'aaGun' || item.kind === 'mine') {
+  // Passive own-board items work by themselves and can never be "used".
+  // Part 5 adds two: the sonar net and the decoy.
+  if (
+    item.kind === 'aaGun' ||
+    item.kind === 'mine' ||
+    item.kind === 'sonar_net' ||
+    item.kind === 'decoy'
+  ) {
     return reject(state, playerId, `${item.kind} works on its own; it cannot be used`);
   }
 
@@ -280,6 +353,9 @@ function useArsenal(
       break;
     case 'radar':
       outcome = radar(state, playerId, at);
+      break;
+    case 'minesweeper':
+      outcome = minesweeper(state, playerId, row);
       break;
   }
   if (outcome.rejected) return reject(state, playerId, outcome.rejected);
@@ -309,14 +385,33 @@ export function reduce(state: MatchState, action: MatchAction): ReduceResult {
 
   switch (action.type) {
     case 'SUBMIT_LAYOUT':
-      return submitLayout(state, action.playerId, action.ships, action.arsenal);
+      return submitLayout(state, action.playerId, action.ships, action.arsenal, action.captainId);
 
     case 'FIRE': {
       const problem = requireTurn(state, action.playerId);
       if (problem) return reject(state, action.playerId, problem);
       const shot = resolveShot(state, action.playerId, action.at);
       if (shot.rejected) return reject(state, action.playerId, shot.rejected);
-      return afterAttack(shot.state, action.playerId, shot.events, shot.keepsTurn);
+
+      // Part 10A — Berhan's steady hand. The FIRST plain shot that MISSES does
+      // not end the turn. A mine is not a miss, and arsenal fire never comes
+      // through here. One event, one use, then the rule is normal again.
+      let nextState = shot.state;
+      let events: MatchEvent[] = [...shot.events];
+      let keepsTurn = shot.keepsTurn;
+      const index = playerIndex(state, action.playerId) as 0 | 1;
+      const attacker = nextState.players[index];
+      const missed = shot.events.some((event) => event.type === 'MISS');
+      const ability = abilityFor(attacker.captainId);
+      if (missed && ability?.onShotResolved && !attacker.captainUsed) {
+        const fired = ability.onShotResolved({ owner: action.playerId, at: action.at, miss: true });
+        if (fired) {
+          nextState = withPlayer(nextState, index, { captainUsed: true });
+          events = [...events, ...fired.events];
+          keepsTurn = true;
+        }
+      }
+      return afterAttack(nextState, action.playerId, events, keepsTurn);
     }
 
     case 'USE_ARSENAL': {
@@ -381,6 +476,7 @@ export function projectView(state: MatchState, playerId: string): PlayerView {
       kind: i.kind,
       at: i.at as NonNullable<typeof i.at>,
       destroyed: i.destroyed === true,
+      ...(i.damaged ? { damaged: true } : {}),
     }));
 
   return {
@@ -390,6 +486,7 @@ export function projectView(state: MatchState, playerId: string): PlayerView {
     turn: state.turn,
     winner: state.winner,
     moves: state.moves,
+    terrain: state.terrain,
     you,
     enemy: {
       id: enemy.id,
@@ -398,6 +495,8 @@ export function projectView(state: MatchState, playerId: string): PlayerView {
       sunkShips,
       shipsRemaining: enemy.board.ships.length - sunkShips.length,
       revealedItems,
+      captainId: enemy.captainId,
+      captainUsed: enemy.captainUsed,
     },
   };
 }

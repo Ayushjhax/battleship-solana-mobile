@@ -17,6 +17,21 @@ whole halo"). Fix the caption, or check the engine if it really reveals twelve.
 360 against the same 260 budget, so the shelf gets harder to choose from, which is the
 point. Update Appendix A when Part 5 ships.
 
+> **PART 5 HAS SHIPPED — this edit is now due.** The game design doc is not in this
+> repository (`docs/` holds only `port-city/`; `docs_assets/brief.md` is the shorter build
+> brief and has no Appendix A), so it could not be edited here. Apply verbatim:
+>
+> **Appendix A**, replace *"everything at cap costs 310 fuel"* with:
+>
+> > Everything at cap now costs **360 fuel** against the same 260 budget:
+> > torpedo 20x2 + double torpedo 35x2 + bomber 30x2 + atomic 60 + AA gun 10x3 +
+> > radar 15 + mine 5x5 + submarine 10 + **sonar net 10x2 + decoy 5x3 +
+> > minesweeper 15** = 360.
+>
+> Pinned in code by `src/engine/__tests__/newItems.test.ts`
+> ("everything at cap is now 360 fuel against the unchanged 260 budget"), so the number
+> cannot drift from the prose again.
+
 ### 3. Hard may not be much harder than Normal
 
 Doc §10.2 says Hard "wastes far fewer shots around wrecks". In 2,000 simulated boards the
@@ -51,6 +66,22 @@ Part 2 ship; the roster in `00-OVERVIEW.md` §7 is the replacement for §15.2.
 "One rule covers every weapon" stays true except for the Minesweeper, which never ends
 your turn. That is deliberate, it is the item's whole identity, and it must be written
 into §7.3 rather than left as a surprise.
+
+> **PART 5 HAS SHIPPED — this edit is now due.** Same caveat as §2: the game design doc is
+> not in this repository. Apply verbatim:
+>
+> **§7.3**, append to "One rule covers every weapon":
+>
+> > **One deliberate exception: the Minesweeper never ends your turn.** It resolves no
+> > cell and deals no damage — its 15 fuel buys safety and information, not an attack —
+> > so the turn passes only when the player spends it on something else. Every other
+> > weapon still follows the rule: land at least one hit and keep the turn, hit nothing
+> > and lose it, and a mine ends the turn whatever else happened.
+>
+> Implemented in `src/engine/arsenal.ts` `minesweeper()` (which returns
+> `keepsTurn: true` unconditionally) rather than in the turn rule itself, so
+> `afterAttack()` in `match.ts` is provably unmodified. Pinned by
+> `newItems.test.ts` ("is a free action: it never ends your turn").
 
 ### 8. Reward farming already exists, and this package makes it worth money
 

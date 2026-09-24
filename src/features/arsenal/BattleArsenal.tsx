@@ -176,8 +176,17 @@ export function targetFootprint(kind: ArsenalKind, at: Coord): readonly Coord[] 
       return atomicFootprint(at);
     case 'submarine':
       return [at];
+    // Part 5 — the minesweeper sweeps the chosen row AND the one below it,
+    // exactly like the double torpedo, so it highlights two rows.
+    case 'minesweeper': {
+      const rows = doubleTorpedoRows(at.r);
+      return rows.flatMap((r) => Array.from({ length: 10 }, (_, c) => ({ r, c })));
+    }
+    // Passive own-board items are never aimed.
     case 'aaGun':
     case 'mine':
+    case 'sonar_net':
+    case 'decoy':
       return [];
   }
 }

@@ -29,14 +29,17 @@
  *     and using it ends the turn since it lands no hit.
  */
 import { coordKey, inBounds } from './board';
+import { abilityFor } from './captains';
 import {
   defenderIndex,
+  hasIntactDecoyAt,
   hasIntactShipAt,
-  openBoard,
+  openDefenderBoard,
   resolveCell,
   withDefenderBoard,
   type WorkingBoard,
 } from './shots';
+import { isIsland } from './terrain';
 import type { ArsenalKind, ArsenalPlacement, Coord, MatchEvent, MatchState } from './types';
 import { GRID_SIZE } from './types';
 
@@ -87,6 +90,18 @@ export const ARSENAL_SPEC: readonly ArsenalSpecEntry[] = [
     placement: 'offensive',
     isAircraft: false,
     target: 'cell',
+  },
+  // ---- Part 5: the Naval Academy's three (docs/port-city/part-05) ----
+  { kind: 'sonar_net', cost: 10, max: 2, placement: 'own board', isAircraft: false, target: 'none' },
+  { kind: 'decoy', cost: 5, max: 3, placement: 'own board', isAircraft: false, target: 'none' },
+  {
+    kind: 'minesweeper',
+    cost: 15,
+    max: 1,
+    placement: 'offensive',
+    // NOT an aircraft: no AA gun and no sonar net can stop it (§4).
+    isAircraft: false,
+    target: 'row',
   },
 ] as const;
 
@@ -170,9 +185,42 @@ function intercept(
   };
 }
 
-/** Resolves every unmarked footprint cell like a shot. */
+/**
+ * The submarine rule (Part 5 §2), mirroring `intercept()` above.
+ *
+ * Written as a sibling rather than a generalisation of the aircraft check on
+ * purpose: the two rules are independent — aircraft ignore nets, nets ignore
+ * aircraft — and a shared helper would make a change to one silently change
+ * the other. The duplication is the safety.
+ *
+ * A net is NEVER consumed by a detection: it can eat a submarine every time.
+ */
+function interceptSubmarine(
+  state: MatchState,
+  attackerId: string,
+  wb: WorkingBoard,
+  column: number,
+): ArsenalOutcome | null {
+  const net = wb.arsenal.find(
+    (i) => i.kind === 'sonar_net' && !i.destroyed && i.at !== undefined && i.at.c === column,
+  );
+  if (!net || !net.at) return null;
+  // Revealed, exactly like an AA gun that downs a plane: the attacker learns
+  // the cell but it is not marked, so it can still be shot.
+  net.revealed = true;
+  return {
+    state: withDefenderBoard(state, attackerId, wb),
+    events: [{ type: 'SUBMARINE_DETECTED', playerId: attackerId, netAt: net.at }],
+    keepsTurn: false,
+  };
+}
+
+/** Resolves every unmarked footprint cell like a shot. Islands are skipped. */
 function drop(wb: WorkingBoard, attackerId: string, cells: readonly Coord[], tally: Tally): void {
   for (const cell of cells) {
+    // Part 10B — a bomb or blast that covers an island simply does nothing
+    // there: no mark, no event, no resolution.
+    if (isIsland(wb.terrain, cell)) continue;
     if (wb.marks[coordKey(cell)]) continue;
     const outcome = resolveCell(wb, attackerId, cell);
     tally.events.push(...outcome.events);
@@ -186,7 +234,34 @@ function torpedo(wb: WorkingBoard, attackerId: string, path: readonly Coord[], t
   const travelled: Coord[] = [];
   for (const cell of path) {
     travelled.push(cell);
-    if (hasIntactShipAt(wb, cell)) {
+    // Part 10B — a torpedo run stops dead at an island. The path includes the
+    // island so the animation shows why it stopped; nothing resolves there.
+    if (isIsland(wb.terrain, cell)) {
+      tally.events.push({
+        type: 'TORPEDO_TRAVEL',
+        playerId: attackerId,
+        path: travelled,
+        hitAt: null,
+      });
+      tally.events.push({ type: 'TORPEDO_RUN', playerId: attackerId, path: travelled, hitAt: null });
+      return;
+    }
+    // Part 5 §3 — a torpedo stops on an INTACT decoy as well as an intact
+    // ship, so a decoy can absorb a run and shield the ships behind it. Once
+    // hit it is no longer intact and torpedoes pass over it, like every item.
+    if (hasIntactShipAt(wb, cell) || hasIntactDecoyAt(wb, cell)) {
+      // Part 10A — Tomas: the FIRST enemy torpedo that would strike one of
+      // the defender's ships passes under it and carries on down the row. A
+      // decoy is not a ship, so the ability never fires for one.
+      const ability = abilityFor(wb.captain.id);
+      if (ability?.onTorpedoWouldStrike && !wb.captain.used && hasIntactShipAt(wb, cell)) {
+        const decision = ability.onTorpedoWouldStrike({ owner: wb.captain.owner, at: cell });
+        if (decision) {
+          wb.captain.used = true;
+          tally.events.push(...decision.events);
+          continue;
+        }
+      }
       tally.events.push({
         type: 'TORPEDO_TRAVEL',
         playerId: attackerId,
@@ -266,7 +341,7 @@ export function torpedoBomber(
   row: number | undefined,
 ): ArsenalOutcome {
   if (!validRow(row)) return rejected(state, 'row out of bounds');
-  const wb = openBoard(state.players[defenderIndex(state, attackerId)].board);
+  const wb = openDefenderBoard(state, attackerId);
   const downed = intercept(state, attackerId, wb, 'torpedoBomber', [row]);
   const launched = aircraftLaunch(
     attackerId,
@@ -289,7 +364,7 @@ export function doubleTorpedoBomber(
 ): ArsenalOutcome {
   if (!validRow(row)) return rejected(state, 'row out of bounds');
   const rows = doubleTorpedoRows(row);
-  const wb = openBoard(state.players[defenderIndex(state, attackerId)].board);
+  const wb = openDefenderBoard(state, attackerId);
   const downed = intercept(state, attackerId, wb, 'doubleTorpedoBomber', rows);
   const launched = aircraftLaunch(
     attackerId,
@@ -312,7 +387,7 @@ export function bomber(
 ): ArsenalOutcome {
   if (!at || !inBounds(at)) return rejected(state, 'cell out of bounds');
   const cells = bomberFootprint(at);
-  const wb = openBoard(state.players[defenderIndex(state, attackerId)].board);
+  const wb = openDefenderBoard(state, attackerId);
   const rows = [...new Set(cells.map((c) => c.r))];
   const downed = intercept(state, attackerId, wb, 'bomber', rows);
   const launched = aircraftLaunch(attackerId, 'bomber', rows, at, interceptedAt(downed));
@@ -324,7 +399,7 @@ export function bomber(
     at: cell,
     index,
     total: cells.length,
-    resolves: !wb.marks[coordKey(cell)],
+    resolves: !isIsland(wb.terrain, cell) && !wb.marks[coordKey(cell)],
   }));
   const tally: Tally = { events: [launched, ...drops], hits: 0, mine: false };
   drop(wb, attackerId, cells, tally);
@@ -341,7 +416,7 @@ export function atomicBomber(
   const cells = atomicFootprint(at).sort(
     (a, b) => Math.hypot(a.r - at.r, a.c - at.c) - Math.hypot(b.r - at.r, b.c - at.c),
   );
-  const wb = openBoard(state.players[defenderIndex(state, attackerId)].board);
+  const wb = openDefenderBoard(state, attackerId);
   const rows = [...new Set(cells.map((c) => c.r))];
   const downed = intercept(state, attackerId, wb, 'atomicBomber', rows);
   const launched = aircraftLaunch(attackerId, 'atomicBomber', rows, at, interceptedAt(downed));
@@ -356,14 +431,16 @@ export function atomicBomber(
         at,
         index: 0,
         total: 1,
-        resolves: cells.some((cell) => !wb.marks[coordKey(cell)]),
+        resolves: cells.some((cell) => !isIsland(wb.terrain, cell) && !wb.marks[coordKey(cell)]),
       },
       {
         type: 'NUKE_FLASH',
         playerId: attackerId,
         at,
         cells,
-        resolvedCells: cells.filter((cell) => !wb.marks[coordKey(cell)]),
+        resolvedCells: cells.filter(
+          (cell) => !isIsland(wb.terrain, cell) && !wb.marks[coordKey(cell)],
+        ),
       },
     ],
     hits: 0,
@@ -380,10 +457,24 @@ export function submarine(
   at: Coord | undefined,
 ): ArsenalOutcome {
   if (!at || !inBounds(at)) return rejected(state, 'cell out of bounds');
+  // Part 10B — a submarine surfaces on water; an island is not water.
+  if (isIsland(state.terrain, at)) return rejected(state, 'submarine needs water');
   const defender = state.players[defenderIndex(state, attackerId)];
   if (defender.board.marks[coordKey(at)]) return rejected(state, 'submarine needs a free cell');
 
-  const wb = openBoard(defender.board);
+  const wb = openDefenderBoard(state, attackerId);
+
+  // Part 5 §2 — a live net in the target COLUMN eats the sub: no torpedo runs,
+  // nothing resolves, the weapon is consumed (the reducer does that) and the
+  // turn ends. Checked before anything else, like the aircraft rule.
+  const detected = interceptSubmarine(state, attackerId, wb, at.c);
+  if (detected) {
+    return {
+      ...detected,
+      events: [{ type: 'SUBMARINE_SURFACED', playerId: attackerId, at }, ...detected.events],
+    };
+  }
+
   const tally: Tally = {
     events: [{ type: 'SUBMARINE_SURFACED', playerId: attackerId, at }],
     hits: 0,
@@ -398,7 +489,61 @@ export function submarine(
   return finish(state, attackerId, wb, tally);
 }
 
+/**
+ * Part 5 §4 — sweeps the chosen row AND the row below it (row J pairs I and J,
+ * like the double torpedo), disarming every LIVE mine in them.
+ *
+ * Three things make it unlike every other weapon, all deliberate:
+ *   - it is not an aircraft, so no AA gun stops it, and no sonar net either
+ *     (nets only ever interact with the submarine);
+ *   - it resolves nothing else — ships, guns, nets, decoys and radars in those
+ *     rows are untouched;
+ *   - IT NEVER ENDS YOUR TURN. This is the single documented exception to
+ *     §7.3 of the game design doc. It lives here, in the weapon, rather than
+ *     in the turn rule, so the turn rule itself stays provably unmodified.
+ *
+ * Consumed on use whether or not it found anything.
+ */
+export function minesweeper(
+  state: MatchState,
+  attackerId: string,
+  row: number | undefined,
+): ArsenalOutcome {
+  if (!validRow(row)) return rejected(state, 'row out of bounds');
+  const rows = doubleTorpedoRows(row);
+  const wb = openDefenderBoard(state, attackerId);
+
+  const events: MatchEvent[] = [{ type: 'MINESWEEPER_RUN', playerId: attackerId, rows }];
+  for (const mine of wb.arsenal) {
+    if (mine.kind !== 'mine' || !mine.at) continue;
+    if (mine.used || mine.destroyed) continue;
+    if (!rows.includes(mine.at.r)) continue;
+    // A mine already neutralised by a halo reveal keeps that mark: the cell is
+    // spoken for, and re-reporting it would leak that something was there.
+    if (wb.marks[coordKey(mine.at)]) continue;
+
+    mine.used = true;
+    mine.revealed = true;
+    wb.marks[coordKey(mine.at)] = 'mine_disarmed';
+    events.push({ type: 'MINE_DISARMED', playerId: attackerId, at: mine.at });
+  }
+
+  return {
+    state: withDefenderBoard(state, attackerId, wb),
+    events,
+    // The free action.
+    keepsTurn: true,
+  };
+}
+
 /** Returns only the COUNT of ship cells in the 3x3 — never which ones. Ends the turn. */
+/**
+ * Part 5 §3 — radar NEVER counts a decoy, and that is load-bearing: radar is
+ * the honest instrument, and it is how an attacker smells a decoy out. It
+ * counts `board.ships` only, so decoys are excluded by construction rather
+ * than by a filter. A test pins this, because a refactor to "occupied cells"
+ * would silently break the item.
+ */
 export function radar(
   state: MatchState,
   attackerId: string,

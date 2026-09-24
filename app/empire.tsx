@@ -1,0 +1,20 @@
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { EMPIRE_PORTS } from '@engine/empire';
+import { collectTribute, getEmpire, type EmpireView } from '@/empire/api';
+import { randomUuid } from '@/util/uuid';
+import { InkButton } from '@/ui/InkButton'; import { Paper } from '@/ui/Paper'; import { Scale } from '@/ui/Scale'; import { color, font, type as typeScale } from '@/ui/tokens';
+
+export default function EmpireScreen() {
+  const router = useRouter(); const [view, setView] = useState<EmpireView | null>(null); const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false);
+  const refresh = async () => { try { setView(await getEmpire()); setError(null); } catch (e) { setError(e instanceof Error ? e.message : 'offline'); } };
+  useEffect(() => { void refresh(); }, []);
+  const collect = async () => { setBusy(true); try { setView(await collectTribute(randomUuid())); } catch (e) { setError(e instanceof Error ? e.message : 'offline'); } finally { setBusy(false); } };
+  return <Scale><Paper variant="full" />
+    <View style={styles.header}><InkButton label="Back" w={78} h={40} onPress={() => router.back()} /><View><Text style={styles.title}>The Empire Chart</Text><Text style={styles.progress}>Empire {view?.progress ?? 0}%</Text></View><View style={styles.customs}><Text style={styles.customsTitle}>Customs House</Text><Text style={styles.tribute}>{view?.tribute.coins ?? 0} coins · {view?.tribute.steel ?? 0} steel</Text><InkButton label="Collect" w={86} h={34} disabled={busy || !view} onPress={() => void collect()} /></View></View>
+    {error ? <View style={styles.error}><Text style={styles.errorText}>Chart unavailable: {error}</Text><InkButton label="Try again" w={100} h={36} onPress={() => void refresh()} /></View> : null}
+    <View style={styles.chart}>{EMPIRE_PORTS.map((port, index) => { const region = Math.floor(index / 5); const local = index % 5; const conquered = view?.conquered.includes(port.id) ?? false; return <Pressable key={port.id} accessibilityRole="button" accessibilityLabel={`${port.name}, ${view?.stars[port.id] ?? 0} stars${conquered ? ', conquered' : ''}`} onPress={() => router.push({ pathname: '/empire-battle' as never, params: { portId: port.id } })} style={[styles.port, { left: 35 + local * 132, top: 22 + region * 58 }]}><Text style={[styles.flag, conquered && styles.flagWon]}>{conquered ? '⚑' : '○'}</Text><Text numberOfLines={1} style={styles.portName}>{port.name}</Text><Text style={styles.stars}>{'★'.repeat(view?.stars[port.id] ?? 0)}{port.boss ? ` · ${port.boss}` : ''}</Text></Pressable>; })}</View>
+  </Scale>;
+}
+const styles = StyleSheet.create({ header: { position: 'absolute', left: 16, right: 16, top: 8, height: 48, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, title: { color: color.ink, fontFamily: font.display, fontSize: typeScale.lg, textAlign: 'center' }, progress: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.xs, textAlign: 'center' }, customs: { width: 225, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 7 }, customsTitle: { color: color.ink, fontFamily: font.label, fontSize: typeScale.xs }, tribute: { color: color.inkSoft, fontFamily: font.body, fontSize: 11 }, chart: { position: 'absolute', left: 45, top: 70, width: 710, height: 270, borderWidth: 1, borderColor: color.inkSoft, backgroundColor: 'rgba(251,252,254,0.72)' }, port: { position: 'absolute', width: 120, height: 48, alignItems: 'center', justifyContent: 'center' }, flag: { color: color.inkFaint, fontSize: 18 }, flagWon: { color: color.inkRed }, portName: { color: color.ink, fontFamily: font.label, fontSize: 12 }, stars: { color: color.inkSoft, fontFamily: font.body, fontSize: 10 }, error: { position: 'absolute', left: 290, top: 155, zIndex: 4, alignItems: 'center', gap: 8 }, errorText: { color: color.inkRed, fontFamily: font.body, fontSize: typeScale.sm } });

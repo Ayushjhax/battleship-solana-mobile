@@ -34,6 +34,7 @@ function cloud(patch: Partial<CloudProfile> = {}): CloudProfile {
     battlesWon: 0,
     coins: 0,
     gems: 0,
+    steel: 0,
     buildings: 0,
     hasCompletedTutorial: false,
     updatedAt: new Date(0).toISOString(),

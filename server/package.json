@@ -25,6 +25,7 @@
     "zod": "^4.6.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/node": "^22.20.2",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^5.0.1",

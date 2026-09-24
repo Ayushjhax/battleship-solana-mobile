@@ -16,7 +16,10 @@
  * already joined when the battle starts; battle.tsx takes it over (chat.ts
  * ref-counts the subscription across the route change).
  */
+import { CAPTAINS } from '@engine/captains';
 import { validateSubmission } from '@engine/match';
+import { terrainForSea } from '@engine/terrain';
+import type { CaptainId } from '@engine/types';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
@@ -33,6 +36,7 @@ import Animated, {
 import Svg from 'react-native-svg';
 
 import { AvatarCard, FlagChip } from '@/features/battle/Hud';
+import { searchFailurePresentation } from '@/features/matchmaking/failurePresentation';
 import { createMatchHandoff } from '@/features/matchmaking/handoff';
 import { subscribeEmotes } from '@/net/chat';
 import { failureCopy, useMatchClient } from '@/net/match-client';
@@ -150,10 +154,12 @@ function PlayerCard({
   summary,
   side,
   seedKey,
+  captainId,
 }: {
   summary: OpponentSummary;
   side: 'left' | 'right';
   seedKey: string;
+  captainId?: CaptainId | null;
 }) {
   const reduceMotion = useReducedMotion();
   const x = useSharedValue(side === 'left' ? -320 : 320);
@@ -163,6 +169,7 @@ function PlayerCard({
   const slide = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
   const w = 250;
   const h = 96;
+  const captain = captainId ? CAPTAINS.find((entry) => entry.id === captainId) : null;
   return (
     <Animated.View style={[{ position: 'absolute', top: 178, [side]: 46 }, slide]}>
       <InkPanel w={w} h={h} seedKey={`reveal-${seedKey}`} padding={space.sm}>
@@ -173,6 +180,11 @@ function PlayerCard({
               {summary.name}
             </Text>
             <Text style={styles.cardPoints}>{summary.rankPoints} pts</Text>
+            {captain ? (
+              <Text style={styles.cardCaptain} numberOfLines={1}>
+                ⚓ {captain.name}
+              </Text>
+            ) : null}
             <FlagChip code={summary.countryCode ?? '??'} seedKey={seedKey} />
           </View>
         </View>
@@ -192,6 +204,8 @@ function ArenaReveal({
 }) {
   const reduceMotion = useReducedMotion();
   const drop = useSharedValue(-90);
+  // Part 10A — captains become public with the first authoritative view.
+  const view = useMatchClient((state) => state.view);
   useEffect(() => {
     drop.value = reduceMotion ? 0 : withSpring(0, { duration: 560, dampingRatio: 0.6 });
   }, [drop, reduceMotion]);
@@ -201,8 +215,13 @@ function ArenaReveal({
       <Animated.View style={[styles.ribbon, ribbon]}>
         <TitleRibbon title={arenaFor(matchId)} w={380} h={50} seedKey="arena" />
       </Animated.View>
-      <PlayerCard summary={you} side="left" seedKey="me" />
-      <PlayerCard summary={opponent} side="right" seedKey="them" />
+      <PlayerCard summary={you} side="left" seedKey="me" captainId={view?.you.captainId ?? null} />
+      <PlayerCard
+        summary={opponent}
+        side="right"
+        seedKey="them"
+        captainId={view?.enemy.captainId ?? null}
+      />
       <Text style={styles.versus}>vs</Text>
     </View>
   );
@@ -272,19 +291,28 @@ export default function SearchingScreen() {
           // Keep the local identity in step with what the server just told us.
           if (self && profile.userId !== self.id) profile.setUserId(self.id);
 
-          // Classic carries no arsenal; the server's reducer rejects one that does.
+          // Classic carries no arsenal and no captain; the server's reducer
+          // rejects a submission that brings either.
           const arsenal = placement.ruleset === 'advanced' ? placement.arsenal : [];
+          const captainId = placement.ruleset === 'advanced' ? placement.captainId : null;
           // Checked against the same rules the server will apply. Sending a
           // layout it refuses would leave us waiting out the 90 s deadline,
           // after which the server auto-places a fleet the player never
           // arranged — the loss that made this worth checking twice.
-          const check = validateSubmission(placement.ruleset, placement.ships, arsenal);
+          const check = validateSubmission(
+            placement.ruleset,
+            placement.ships,
+            arsenal,
+            undefined,
+            captainId,
+            terrainForSea(placement.seaId),
+          );
           if (!check.ok) {
             console.error(`[online] refusing to send an invalid layout: ${check.reason}`);
             useMatchClient.getState().failLayout(check.reason);
             return;
           }
-          useMatchClient.getState().ready(toLayoutPayload(placement.ships, arsenal));
+          useMatchClient.getState().ready(toLayoutPayload(placement.ships, arsenal, captainId));
         },
         onNavigate: () => router.replace('/battle'),
       }),
@@ -337,44 +365,35 @@ export default function SearchingScreen() {
         <View style={styles.centre}>
           <InkPanel w={420} h={190} seedKey="search-failed" padding={space.md}>
             <Text style={styles.failedTitle}>
-              {failure?.reason === 'insufficient_points'
-                ? 'Not enough points'
-                : failure?.reason === 'match_cancelled'
-                  ? 'Match cancelled'
-                  : failure?.reason === 'layout_rejected'
-                    ? 'Fleet not accepted'
-                    : 'No connection'}
+              {searchFailurePresentation(failure?.reason).title}
             </Text>
             <Text style={styles.failedBody}>
               {failure ? failureCopy(failure) : 'The match server is out of reach.'}
             </Text>
             <View style={styles.buttons}>
-              <InkButton
-                label={
-                  failure?.reason === 'insufficient_points'
-                    ? 'Buy points'
-                    : failure?.reason === 'layout_rejected'
-                      ? 'Arrange fleet'
-                      : 'Try again'
-                }
-                tone="confirm"
-                w={150}
-                seedKey="search-retry"
-                onPress={() => {
-                  if (failure?.reason === 'insufficient_points') {
+              {searchFailurePresentation(failure?.reason).primaryLabel ? (
+                <InkButton
+                  label={searchFailurePresentation(failure?.reason).primaryLabel ?? ''}
+                  tone="confirm"
+                  w={150}
+                  seedKey="search-retry"
+                  onPress={() => {
+                    const action = searchFailurePresentation(failure?.reason).primaryAction;
+                    if (action === 'buy_points') {
                     useMatchClient.getState().disconnect();
                     router.replace('/points');
-                  } else if (failure?.reason === 'layout_rejected') {
+                    } else if (action === 'arrange_fleet') {
                     // Retrying would send the same refused fleet. Back to the
                     // board; disconnecting refunds a wager that never started.
                     useMatchClient.getState().disconnect();
                     if (router.canGoBack()) router.back();
                     else router.replace('/placement?mode=online');
-                  } else {
+                    } else {
                     useMatchClient.getState().retry();
-                  }
-                }}
-              />
+                    }
+                  }}
+                />
+              ) : null}
               <InkButton
                 label="Back to menu"
                 w={150}
@@ -470,6 +489,7 @@ const styles = StyleSheet.create({
   cardText: { flex: 1, gap: 4 },
   cardName: { color: color.ink, fontFamily: font.display, fontSize: typeScale.md },
   cardPoints: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.xs },
+  cardCaptain: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.xxs },
   failedTitle: {
     color: color.inkRed,
     fontFamily: font.display,

@@ -25,21 +25,33 @@ be tapped. The Captain, who explains it once and then shuts up.
 
 | Building | x | y | Sits on |
 | --- | --- | --- | --- |
-| Admiralty | 0.25 | 0.72 | the civic block below the cathedral (the existing dashed slot) |
-| Shipyard | 0.82 | 0.68 | the dry dock and cranes on the right (the existing dashed slot) |
-| Scrapyard | 0.62 | 0.85 | the yard at the near end of the bridge |
-| Fish Market | 0.42 | 0.62 | the quay beside your harbour |
-| Foundry | 0.88 | 0.22 | the industrial plant with the tanks, top right |
-| Harbour Master's Office | 0.36 | 0.47 | the pier head next to "your harbour" |
-| Stationer's Shop | 0.17 | 0.55 | the old town street |
-| Newsstand | 0.30 | 0.58 | the corner of the same street |
-| Naval Academy | 0.10 | 0.38 | the hill on the left |
-| Coastal Command | 0.55 | 0.30 | the promontory under the bridge |
-| Armory | 0.70 | 0.18 | the rail yard behind the docks |
-| Fleet Hall | 0.48 | 0.75 | the waterfront square |
-| Trade Docks | 0.75 | 0.52 | the cargo cranes |
-| Officers' Club | 0.22 | 0.63 | the terrace by the cathedral |
-| Lighthouse | 0.95 | 0.42 | the harbour mouth, far right |
+| Naval Academy | 0.09 | 0.32 | the hill and high-rise block, upper left |
+| Officers' Club | 0.085 | 0.46 | the terrace beside the cathedral spire |
+| Admiralty | 0.22 | 0.55 | the civic block below the cathedral |
+| Stationer's Shop | 0.16 | 0.64 | the old town street |
+| Newsstand | 0.32 | 0.64 | the corner of the same street |
+| Fleet Hall | 0.24 | 0.73 | the waterfront square by the park |
+| Harbour Master's Office | 0.25 | 0.35 | the pier head north-west of your marina |
+| Fish Market | 0.44 | 0.545 | the quay just south of your marina |
+| Coastal Command | 0.60 | 0.36 | the right bank under the bridge's span |
+| Scrapyard | 0.63 | 0.59 | the yard at the near end of the bridge |
+| Trade Docks | 0.75 | 0.44 | the cargo cranes and warehouses |
+| Shipyard | 0.83 | 0.54 | the dry dock and gantry cranes |
+| Armory | 0.72 | 0.19 | the rail yard and airfield behind the docks |
+| Foundry | 0.91 | 0.30 | the plant with the cooling towers and tanks |
+| Lighthouse | 0.59 | 0.79 | the lighthouse on the rocky headland |
+
+> **These are the FINAL implemented values** (`src/city/ui/plots.ts`), not the
+> original suggestions. Three of the suggested coordinates were wrong against
+> the art and were corrected — Admiralty y 0.72 -> 0.55 and Shipyard y 0.68 ->
+> 0.54 (both are pinned to the dashed slots that already shipped in
+> `app/city.tsx`, which sit where the doc's prose says they should), and
+> Lighthouse 0.95/0.42 -> 0.59/0.79 (0.95/0.42 is open sea; the drawn
+> lighthouse is on the bottom-centre headland). Several others moved a little
+> to keep every tap box clear of its neighbours and of the player's own
+> harbour. `tests/city/plots.test.ts` enforces both.
+>
+> Plot box: 120 x 80 map units, anchored bottom-centre, on an 800 x 1067 map.
 
 - The "**You are here**" flag and the `saad's harbour` nameplate stay. The nameplate
   becomes a tappable plot in Part 7 (it opens your harbour defences); until then it opens

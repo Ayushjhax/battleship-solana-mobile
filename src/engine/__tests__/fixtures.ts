@@ -3,7 +3,8 @@
  * that gets a match into the 'playing' phase with a known first player.
  */
 import { createMatch, reduce } from '../match';
-import type { ArsenalItem, Coord, MatchMode, MatchState, Ship } from '../types';
+import type { ArsenalItem, CaptainId, Coord, MatchMode, MatchState, Ship } from '../types';
+import type { Terrain } from '../terrain';
 
 export const P0 = 'alice';
 export const P1 = 'bob';
@@ -74,6 +75,11 @@ export interface StartOptions {
   seed?: number;
   arsenalA?: ArsenalItem[];
   arsenalB?: ArsenalItem[];
+  /** Part 10A — captains for each seat. Absent means none. */
+  captainA?: CaptainId | null;
+  captainB?: CaptainId | null;
+  /** Part 10B — the sea. Classic ignores it. */
+  terrain?: Terrain;
   /** Force whose turn it is after the coin flip, for deterministic scripts. */
   first?: string;
 }
@@ -81,12 +87,19 @@ export interface StartOptions {
 /** A match in 'playing' with P0 on layout A and P1 on layout B. */
 export function startMatch(options: StartOptions = {}): MatchState {
   const mode = options.mode ?? 'classic';
-  let state = createMatch({ id: 'm1', mode, seed: options.seed ?? 7, playerIds: [P0, P1] });
+  let state = createMatch({
+    id: 'm1',
+    mode,
+    seed: options.seed ?? 7,
+    playerIds: [P0, P1],
+    ...(options.terrain ? { terrain: options.terrain } : {}),
+  });
   let r = reduce(state, {
     type: 'SUBMIT_LAYOUT',
     playerId: P0,
     ships: LAYOUT_A,
     arsenal: options.arsenalA ?? [],
+    ...(options.captainA !== undefined ? { captainId: options.captainA } : {}),
   });
   if (r.events.some((e) => e.type === 'REJECTED'))
     throw new Error(`layout A rejected: ${JSON.stringify(r.events)}`);
@@ -96,6 +109,7 @@ export function startMatch(options: StartOptions = {}): MatchState {
     playerId: P1,
     ships: LAYOUT_B,
     arsenal: options.arsenalB ?? [],
+    ...(options.captainB !== undefined ? { captainId: options.captainB } : {}),
   });
   if (r.events.some((e) => e.type === 'REJECTED'))
     throw new Error(`layout B rejected: ${JSON.stringify(r.events)}`);

@@ -23,6 +23,16 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 });
 
+import {
+  GRID_COLUMNS,
+  GRID_ROWS,
+  SHOP_SLOTS,
+  gridHeightUsed,
+  gridWidthUsed,
+  PANEL_H,
+  PANEL_W,
+  TITLE_H,
+} from '@/features/arsenal/shopGrid';
 import { ARSENAL_SPEC } from '../../src/engine/arsenal';
 import { useProfile } from '../../src/state/profile';
 
@@ -119,21 +129,33 @@ describe('"Arsenal item scroll should not be there"', () => {
    * panel silently starts clipping again.
    */
   const PANEL_W = 400;
-  const PANEL_H = 226;
+  const PANEL_H = 270;
   const TITLE_H = 30;
   const GRID_GAP = 5;
   const GRID_PAD = 8;
+  // Part 5: 3 x 4, not 3 x 3. The Naval Academy adds three kinds (11 total)
+  // and nine slots would overflow — which IS the bug this file exists to stop.
+  // A fourth COLUMN would have fit the count but dropped cards to 92 dp wide,
+  // under the legibility floor asserted below; a fourth ROW keeps them at 124.
   const COLUMNS = 3;
-  const ROWS = 3;
-  const CARD_W = Math.floor((PANEL_W - GRID_PAD * 2 - GRID_GAP * 2) / COLUMNS);
+  const ROWS = 4;
+  const CARD_W = Math.floor((PANEL_W - GRID_PAD * 2 - GRID_GAP * (COLUMNS - 1)) / COLUMNS);
   const CARD_H = Math.floor((PANEL_H - TITLE_H - GRID_GAP * (ROWS - 1) - 7) / ROWS);
 
-  it('has exactly eight kinds to show', () => {
-    expect(ARSENAL_SPEC).toHaveLength(8);
+  it('has every arsenal kind to show — eight originals plus the Academy three', () => {
+    expect(ARSENAL_SPEC).toHaveLength(11);
   });
 
   it('fits every kind in the grid with no scrolling', () => {
     expect(ARSENAL_SPEC.length).toBeLessThanOrEqual(COLUMNS * ROWS);
+  });
+
+  it('the shop grid the component actually uses matches this arithmetic', () => {
+    // Guards against the constants here drifting from src/.
+    expect({ columns: GRID_COLUMNS, rows: GRID_ROWS }).toEqual({ columns: COLUMNS, rows: ROWS });
+    expect(SHOP_SLOTS).toBeGreaterThanOrEqual(ARSENAL_SPEC.length);
+    expect(gridWidthUsed()).toBeLessThanOrEqual(PANEL_W);
+    expect(gridHeightUsed()).toBeLessThanOrEqual(PANEL_H - TITLE_H);
   });
 
   it('fits the panel width', () => {

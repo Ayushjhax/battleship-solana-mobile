@@ -13,9 +13,39 @@
  */
 import { z } from 'zod';
 import type { GameOverReason, MatchAction, MatchEvent, MatchMode, PlayerView, ShipClass } from '@engine/types';
+import type { SeaId } from '@engine/terrain';
 import { FUEL_BUDGET, GRID_SIZE } from '@engine/types';
 
-export const PROTOCOL_VERSION = 1 as const;
+/**
+ * Bumped to 2 by Part 5 (new arsenal kinds and marks) and to 3 by Part 10
+ * (captains in the match config and terrain in `matched`/`state` frames).
+ *
+ * The gate is DEFERRED, not immediate: `hello` carries an optional
+ * `protocol`, absent meaning 1, and a client below the required version is
+ * refused at `queue` ONLY while the matching Port City flag is on. With every
+ * flag off — the default — every existing client keeps working exactly as
+ * before.
+ */
+export const PROTOCOL_VERSION = 3 as const;
+
+/** The oldest client the server will queue once the Academy is live. */
+export const MIN_PROTOCOL = 2;
+
+/** Part 10 — the oldest client that can draw captains and terrain. */
+export const MIN_PROTOCOL_PART10 = 3;
+
+export interface ProtocolGatedFeatures {
+  readonly academy: boolean;
+  readonly captains: boolean;
+  readonly seas: boolean;
+}
+
+/** Minimum safe client protocol for the currently enabled wire features. */
+export function minimumProtocolForFeatures(features: ProtocolGatedFeatures): number {
+  if (features.captains || features.seas) return MIN_PROTOCOL_PART10;
+  if (features.academy) return MIN_PROTOCOL;
+  return 1;
+}
 
 // ---------------------------------------------------------------------------
 // Shared shapes
@@ -29,6 +59,8 @@ export const CoordSchema = z.object({
 export const OrientationSchema = z.enum(['h', 'v']);
 export const ShipClassSchema = z.enum(['battleship', 'cruiser', 'destroyer', 'boat']);
 export const MatchModeSchema = z.enum(['classic', 'advanced']);
+/** Part 10A — mirrors the engine's CaptainId union. */
+export const CaptainIdSchema = z.enum(['berhan', 'mara', 'ivo', 'tomas', 'rosa', 'oldCaptain']);
 export const ArsenalKindSchema = z.enum([
   'torpedoBomber',
   'doubleTorpedoBomber',
@@ -38,6 +70,10 @@ export const ArsenalKindSchema = z.enum([
   'radar',
   'mine',
   'submarine',
+  // Part 5 — the Naval Academy's three.
+  'sonar_net',
+  'decoy',
+  'minesweeper',
 ]);
 
 export const ShipSchema = z.object({
@@ -59,6 +95,8 @@ export const ArsenalItemSchema = z.object({
 export const LayoutPayloadSchema = z.object({
   ships: z.array(ShipSchema).max(10),
   arsenal: z.array(ArsenalItemSchema).max(16).default([]),
+  /** Part 10A. Absent means no captain; null is accepted as "no captain" too. */
+  captainId: CaptainIdSchema.nullish(),
 });
 export type LayoutPayload = z.infer<typeof LayoutPayloadSchema>;
 
@@ -84,6 +122,8 @@ export const ClientMessageSchema = z.discriminatedUnion('t', [
     v: z.literal(1),
     token: z.string().min(1).max(4096),
     resumeMatchId: z.string().uuid().optional(),
+    /** Part 5. Absent means 1 — a client built before the Academy shipped. */
+    protocol: z.number().int().min(1).max(99).optional(),
   }),
   z.object({
     t: z.literal('queue'),
@@ -140,6 +180,8 @@ export type ServerMessage =
       mode: MatchMode;
       fuelBudget: number;
       layoutDeadline: number;
+      /** Part 10B — the season sea, identical for both players. */
+      sea?: SeaId;
       wagered: boolean;
       wagerStake: number;
     }
@@ -160,6 +202,12 @@ export type ServerMessage =
       reason: GameOverReason;
       rewards: MatchRewards;
       wager?: { stake: number; prize: number; balance: number };
+      /**
+       * Steel the server credited to THIS player's Scrapyard, after the
+       * Scrapyard bonus (Port City part-02 §8). Additive and optional, so an
+       * older client simply ignores it. Absent when nothing was salvaged.
+       */
+      salvage?: { steel: number };
     }
   | { t: 'error'; v: 1; code: ErrorCode; message: string }
   | { t: 'pong'; v: 1 };
@@ -174,6 +222,8 @@ export type ErrorCode =
   | 'illegal_action'
   | 'already_queued'
   | 'insufficient_points'
+  /** Part 5: this build is too old to be shown the new marks. */
+  | 'upgrade_required'
   | 'internal';
 
 export function encode(message: ServerMessage): string {
@@ -193,7 +243,13 @@ export function decode(raw: unknown): { ok: true; message: ClientMessage } | { o
 
 /** LayoutPayload/ActionPayload -> the engine's MatchAction, with the caller's playerId attached. */
 export function toSubmitLayoutAction(playerId: string, layout: LayoutPayload): MatchAction {
-  return { type: 'SUBMIT_LAYOUT', playerId, ships: layout.ships, arsenal: layout.arsenal };
+  return {
+    type: 'SUBMIT_LAYOUT',
+    playerId,
+    ships: layout.ships,
+    arsenal: layout.arsenal,
+    ...(layout.captainId ? { captainId: layout.captainId } : {}),
+  };
 }
 
 export function toMatchAction(playerId: string, payload: ActionPayload): MatchAction {

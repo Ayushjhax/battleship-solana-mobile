@@ -97,14 +97,23 @@ describe('a complete match', () => {
     expect(over.rewards).toEqual({ points: 25, coins: 50 });
 
     // Settled once, in one transaction, with the engine's reward table.
+    //
+    // The fifth argument is Part 1's salvage, which rides the SAME call so it
+    // lands in the same transaction as points and coins (part-01 §4). It is
+    // read off the final board, so the winner — who sank the whole 8-ship,
+    // 18-cell fleet — is owed 18 x 5 = 90 base, and the loser strictly less.
     const settled = dbCalls.filter((c) => c.fn === 'applyMatchResult');
     expect(settled).toHaveLength(1);
-    expect(settled[0]?.args).toEqual([
+    expect(settled[0]?.args.slice(0, 4)).toEqual([
       matchId,
       over.winnerId,
       'victory',
       { win: { points: 25, coins: 50 }, loss: { points: 5, coins: 10 } },
     ]);
+
+    const salvage = settled[0]?.args[4] as { a: number; b: number };
+    expect([salvage.a, salvage.b].filter((n) => n === 90)).toHaveLength(1);
+    expect(Math.min(salvage.a, salvage.b)).toBeLessThan(90);
 
     const { rooms } = await import('../room');
     expect(rooms.size).toBe(0); // the room cleans itself up on finish

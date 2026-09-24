@@ -14,6 +14,13 @@ import { Paper } from '@/ui/Paper';
 import { Scale } from '@/ui/Scale';
 import { TitleRibbon } from '@/ui/TitleRibbon';
 import { CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
+import type { CityTimePreference } from '@engine/liveWorld';
+
+const CITY_TIME_OPTIONS: readonly { value: CityTimePreference; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'day', label: 'Day' },
+  { value: 'night', label: 'Night' },
+];
 
 function Toggle({ label, setting }: { label: string; setting: ProfileSetting }) {
   const on = useProfile((s) => s[setting]);
@@ -79,9 +86,13 @@ export default function SettingsScreen() {
   const router = useRouter();
   const hasCompletedTutorial = useProfile((s) => s.hasCompletedTutorial);
   const resetTutorial = useProfile((s) => s.resetTutorial);
+  const resetCityTour = useProfile((s) => s.resetCityTour);
+  const hasSeenCityTour = useProfile((s) => s.hasSeenCityTour);
   const soundOn = useProfile((s) => s.soundOn);
   const musicOn = useProfile((s) => s.musicOn);
   const version = Constants.expoConfig?.version ?? '0.0.0';
+  const cityTimePreference = useProfile((s) => s.cityTimePreference);
+  const setCityTimePreference = useProfile((s) => s.setCityTimePreference);
 
   return (
     <Scale>
@@ -98,12 +109,29 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.left}>
-        <InkPanel w={320} h={268} seedKey="settings-toggles" padding={space.sm}>
+        <InkPanel w={320} h={306} seedKey="settings-toggles" padding={space.sm}>
           <Toggle label="Sound effects" setting="soundOn" />
           <VolumeControl label="SFX volume" setting="soundVolume" enabled={soundOn} />
           <Toggle label="Music" setting="musicOn" />
           <VolumeControl label="Music volume" setting="musicVolume" enabled={musicOn} />
           <Toggle label="Haptics" setting="hapticsOn" />
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Port City light</Text>
+            <View style={styles.timeOptions} accessibilityRole="radiogroup">
+              {CITY_TIME_OPTIONS.map((option) => (
+                <InkButton
+                  key={option.value}
+                  label={option.label}
+                  tone={cityTimePreference === option.value ? 'confirm' : 'ink'}
+                  w={58}
+                  h={34}
+                  size="sm"
+                  accessibilityLabel={`Port City light: ${option.label}`}
+                  onPress={() => setCityTimePreference(option.value)}
+                />
+              ))}
+            </View>
+          </View>
           {/*
             Playing the tutorial lives on the menu as "How to play"; offering it
             here too was the same action in two places. What only Settings can
@@ -120,6 +148,21 @@ export default function SettingsScreen() {
                 size="sm"
                 seedKey="reset-tutorial"
                 onPress={resetTutorial}
+              />
+            </View>
+          ) : null}
+          {/* Same rule as the tutorial above: only offered once there is
+              something to put back (part-02 §7 — "replayable from Settings"). */}
+          {hasSeenCityTour ? (
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Port City tour</Text>
+              <InkButton
+                label="Replay"
+                w={84}
+                h={34}
+                size="sm"
+                seedKey="reset-city-tour"
+                onPress={resetCityTour}
               />
             </View>
           ) : null}
@@ -168,6 +211,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 38 },
   rowLabel: { color: color.ink, fontFamily: font.label, fontSize: typeScale.sm },
   volumeButtons: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  timeOptions: { flexDirection: 'row', alignItems: 'center', gap: space.xxs },
   volumeValue: {
     width: 42,
     color: color.inkSoft,

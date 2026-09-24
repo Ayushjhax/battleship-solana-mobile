@@ -74,6 +74,8 @@ export function applyEvent(view: PlayerView, event: PlayEvent): PlayerView {
     case 'RADAR_RESULT':
     case 'TIMEOUT':
     case 'RESIGNED':
+    // Part 10A — the captain's own event; the view carries the ability state.
+    case 'CAPTAIN_ABILITY':
       return view;
 
     case 'MATCH_STARTED':
@@ -140,6 +142,26 @@ export function applyEvent(view: PlayerView, event: PlayEvent): PlayerView {
 
     case 'ITEM_HIT': {
       if (event.playerId === me) {
+        // Part 10A — a damaged gun is NOT resolved: the cell stays shootable
+        // and the attacker must come back for the second hit.
+        if (event.damaged === true) {
+          if (
+            view.enemy.revealedItems.some(
+              (i) => i.at.r === event.at.r && i.at.c === event.at.c,
+            )
+          )
+            return view;
+          return {
+            ...view,
+            enemy: {
+              ...view.enemy,
+              revealedItems: [
+                ...view.enemy.revealedItems,
+                { kind: event.kind, at: event.at, destroyed: false, damaged: true },
+              ],
+            },
+          };
+        }
         const marked = withEnemyMark(view, event.at, 'revealed');
         if (marked.enemy.revealedItems.some((i) => i.at.r === event.at.r && i.at.c === event.at.c))
           return marked;
@@ -153,6 +175,16 @@ export function applyEvent(view: PlayerView, event: PlayEvent): PlayerView {
             ],
           },
         };
+      }
+      if (event.damaged === true) {
+        return withOwnArsenal(
+          view,
+          view.you.board.arsenal.map((item) =>
+            item.at && item.at.r === event.at.r && item.at.c === event.at.c
+              ? { ...item, damaged: true, revealed: true }
+              : item,
+          ),
+        );
       }
       const marked = withOwnMark(view, event.at, 'revealed');
       return withOwnArsenal(

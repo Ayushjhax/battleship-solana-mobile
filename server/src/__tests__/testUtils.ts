@@ -236,18 +236,24 @@ function wireClient(socket: WebSocket, playerId: string): Omit<TestClient, 'send
   };
 }
 
-async function handshake(port: number, playerId: string, resumeMatchId?: string): Promise<TestClient> {
+async function handshake(port: number, playerId: string, resumeMatchId?: string, protocol?: number): Promise<TestClient> {
   const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
   const wired = wireClient(socket, playerId);
   await wired.resolveOpen;
   const client: TestClient = { ...wired, send: (message) => socket.send(JSON.stringify(message)) };
-  client.send({ t: 'hello', v: 1, token: playerId, ...(resumeMatchId ? { resumeMatchId } : {}) });
+  client.send({
+    t: 'hello',
+    v: 1,
+    token: playerId,
+    ...(resumeMatchId ? { resumeMatchId } : {}),
+    ...(protocol !== undefined ? { protocol } : {}),
+  });
   await client.waitFor((m) => m.t === 'hello:ok', 5000);
   return client;
 }
 
-export function connectClient(port: number, playerId: string): Promise<TestClient> {
-  return handshake(port, playerId);
+export function connectClient(port: number, playerId: string, protocol?: number): Promise<TestClient> {
+  return handshake(port, playerId, undefined, protocol);
 }
 
 /** Re-attaches an existing playerId with a brand new socket — a "reconnect". */

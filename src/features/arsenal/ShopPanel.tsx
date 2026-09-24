@@ -1,4 +1,5 @@
 import { ARSENAL_SPEC, specFor } from '@engine/arsenal';
+import { captainFuel } from '@engine/captains';
 import type { ArsenalKind } from '@engine/types';
 import { Image } from 'expo-image';
 import { memo, useEffect, useMemo, useState } from 'react';
@@ -17,7 +18,8 @@ import { arsenalGlyphPaths } from '@/board/art';
 import { usePlacement } from '@/state/placement';
 import { InkButton } from '@/ui/InkButton';
 import { InkPanel } from '@/ui/InkPanel';
-import { ARSENAL } from '@/ui/assets';
+import { ARSENAL, type Asset } from '@/ui/assets';
+import { CARD_H, CARD_W, GRID_GAP, GRID_PAD, PANEL_H, PANEL_W } from './shopGrid';
 import { color, font, space, type as typeScale } from '@/ui/tokens';
 import { RoughShape, hashString, useRough, type PathInfo } from '@/ui/useRough';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
@@ -28,19 +30,18 @@ import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
  * Two 189-wide columns needed ~270px of height for eight cards, so the grid
  * scrolled and half the arsenal was out of sight — you had to know to swipe to
  * find the submarine. 3 x 189 does not fit the width, so the cards narrow and
- * the fourth row disappears: 3 columns x 3 rows holds all eight with one slot
- * spare, and no scroll view at all.
+ * the fourth row disappears: no scroll view at all.
  *
- * 3 * CARD_W + 2 * GRID_GAP + 2 * GRID_PAD = PANEL_W.
+ * PART 5 widened this from 3 columns to 4. The Naval Academy adds three more
+ * kinds (11 in total), which does not fit 3 x 3 = 9 — and a shop that
+ * overflows is the exact bug tests/regression/home-and-hud-fixes.test.ts was
+ * written to stop ("arsenal scrolls"). 4 x 3 = 12 holds every kind with one
+ * slot spare, and still fits the panel:
+ *
+ *   GRID_COLUMNS * CARD_W + (GRID_COLUMNS - 1) * GRID_GAP + 2 * GRID_PAD <= PANEL_W
  */
-const PANEL_W = 400;
-const PANEL_H = 226;
-const GRID_GAP = 5;
-const GRID_PAD = 8;
-const CARD_W = Math.floor((PANEL_W - GRID_PAD * 2 - GRID_GAP * 2) / 3);
-const GRID_ROWS = 3;
-/** Title strip is 28 high; the rest divides into three rows with the gaps. */
-const CARD_H = Math.floor((PANEL_H - 30 - GRID_GAP * (GRID_ROWS - 1) - 7) / GRID_ROWS);
+// The grid arithmetic lives in ./shopGrid so the regression test can assert
+// it without importing this component (no React renderer under vitest).
 /** How long a "not enough fuel" / "you have them all" notice replaces the title. */
 const NOTICE_MS = 2200;
 
@@ -53,6 +54,10 @@ export const ARSENAL_NAMES: Record<ArsenalKind, string> = {
   radar: 'Radar',
   mine: 'Mine',
   submarine: 'Submarine',
+  // Part 5 — the Naval Academy's three.
+  sonar_net: 'Sonar Net',
+  decoy: 'Decoy Buoy',
+  minesweeper: 'Minesweeper',
 };
 
 const INFO: Record<ArsenalKind, string> = {
@@ -64,10 +69,38 @@ const INFO: Record<ArsenalKind, string> = {
   mine: "The enemy's turn ends the moment they hit it.",
   radar: 'Reports how many ship cells sit in a 3x3 area. Not which ones.',
   submarine: 'Surfaces on a free cell and fires one torpedo up and one down.',
+  sonar_net: 'Guards its whole column. Any enemy submarine surfacing there is lost.',
+  decoy: 'Reads as a hit and is not there. Place it where a ship could sit.',
+  minesweeper: 'Sweeps two rows and disarms their mines. It never ends your turn.',
 };
 
 function diagramCells(kind: ArsenalKind): readonly [number, number][] {
   switch (kind) {
+    // Part 5. The net guards a column, so its diagram is a column; the
+    // minesweeper sweeps two rows; the decoy is a single cell, like a mine.
+    case 'sonar_net':
+      return [
+        [0, 2],
+        [1, 2],
+        [2, 2],
+        [3, 2],
+        [4, 2],
+      ];
+    case 'minesweeper':
+      return [
+        [2, 0],
+        [2, 1],
+        [2, 2],
+        [2, 3],
+        [2, 4],
+        [3, 0],
+        [3, 1],
+        [3, 2],
+        [3, 3],
+        [3, 4],
+      ];
+    case 'decoy':
+      return [[2, 2]];
     case 'torpedoBomber':
       return [
         [2, 0],
@@ -180,7 +213,9 @@ export function ArsenalInkSprite({ kind }: { kind: ArsenalKind }) {
   const { roughCircle, roughLine, roughPolygon, roughRect } = useRough();
   const seed = hashString(`arsenal-card-art-${kind}`);
   const defensive = kind === 'aaGun' || kind === 'mine' || kind === 'radar';
-  const source = ARSENAL[kind];
+  // Part 5's three have no line art yet: an undefined source falls through
+  // to the procedural ink below, which is exactly what AssetSlot does too.
+  const source = (ARSENAL as Partial<Record<ArsenalKind, Asset>>)[kind];
   if (source) {
     return (
       <Image
@@ -352,7 +387,14 @@ function ShopCard({
   // Tutorial: lets the overlay spotlight and point at this card (`card-<kind>`).
   const tutorialTarget = useTutorialTarget(`card-${kind.toLowerCase()}`);
   const spec = specFor(kind);
-  const atCap = count >= spec.max;
+  /**
+   * Part 7 §2.2 — a harbour's cap comes from Coastal Command and is NOT
+   * `spec.max`: at level 6 a harbour holds 8 mines where a match allows 5.
+   * `kindCaps` is null in a match, so this is `spec.max` there, unchanged.
+   */
+  const capOverride = usePlacement((state) => state.kindCaps?.[kind]);
+  const cap = capOverride ?? spec.max;
+  const atCap = count >= cap;
   const affordable = remaining >= spec.cost;
   const disabledByFuel = !atCap && !affordable;
   const label = ARSENAL_NAMES[kind];
@@ -366,11 +408,13 @@ function ShopCard({
   const buy = () => {
     const state = usePlacement.getState();
     const owned = state.arsenal.filter((item) => item.kind === kind).length;
-    const fuelLeft = state.fuelBudget - state.fuelSpent;
+    // Part 10A — the captain is fuel too: the shop budgets around it.
+    const fuelLeft = state.fuelBudget - state.fuelSpent - captainFuel(state.captainId);
 
-    if (owned >= spec.max) {
+    const liveCap = state.kindCaps?.[kind] ?? spec.max;
+    if (owned >= liveCap) {
       onNotice({
-        text: `${label}: you have all ${spec.max}${spec.max === 1 ? '' : ' of them'}`,
+        text: `${label}: you have all ${liveCap}${liveCap === 1 ? '' : ' of them'}`,
         tone: 'green',
       });
       return;
@@ -408,7 +452,7 @@ function ShopCard({
         <View pointerEvents="none" style={styles.sprite}>
           <ArsenalInkSprite kind={kind} />
         </View>
-        <OwnedCount count={count} max={spec.max} atCap={atCap} />
+        <OwnedCount count={count} max={cap} atCap={atCap} />
         {atCap ? <MaxTag kind={kind} /> : null}
         <Text
           pointerEvents="none"
@@ -422,8 +466,8 @@ function ShopCard({
         accessibilityRole="button"
         accessibilityLabel={
           atCap
-            ? `${label}, you have all ${spec.max}`
-            : `${label}, ${count} of ${spec.max}, costs ${spec.cost} fuel`
+            ? `${label}, you have all ${cap}`
+            : `${label}, ${count} of ${cap}, costs ${spec.cost} fuel`
         }
         onPress={buy}
         onPressIn={() => setPressed(true)}
@@ -516,10 +560,21 @@ export function ShopPanel({ onUnaffordable }: ShopPanelProps) {
   const arsenal = usePlacement((state) => state.arsenal);
   const fuelSpent = usePlacement((state) => state.fuelSpent);
   const fuelBudget = usePlacement((state) => state.fuelBudget);
+  const captainId = usePlacement((state) => state.captainId);
+  const allowedKinds = usePlacement((state) => state.allowedKinds);
+  const fuelLabel = usePlacement((state) => state.fuelLabel);
   const pendingArsenalId = usePlacement((state) => state.pendingArsenalId);
+  /**
+   * Part 7 §2.2 — "the shop only offers own-board items". `allowedKinds` is
+   * null in a match, so this is the whole ARSENAL_SPEC there, unchanged.
+   */
+  const stocked = useMemo(
+    () => (allowedKinds ? ARSENAL_SPEC.filter((s) => allowedKinds.includes(s.kind)) : ARSENAL_SPEC),
+    [allowedKinds],
+  );
   const [infoKind, setInfoKind] = useState<ArsenalKind | null>(null);
   const [notice, setNotice] = useState<ShopNotice | null>(null);
-  const remaining = fuelBudget - fuelSpent;
+  const remaining = fuelBudget - fuelSpent - captainFuel(captainId);
 
   useEffect(() => {
     if (!notice) return;
@@ -537,14 +592,14 @@ export function ShopPanel({ onUnaffordable }: ShopPanelProps) {
           {notice.text}
         </Text>
       ) : (
-        <Text style={styles.title}>Arsenal</Text>
+        <Text style={styles.title}>{allowedKinds ? 'Defences' : 'Arsenal'}</Text>
       )}
       <Animated.View
         pointerEvents={pendingArsenalId ? 'none' : 'auto'}
         style={[styles.scroller, { opacity: pendingArsenalId ? 0.32 : 1 }]}
       >
         <View style={styles.grid}>
-          {ARSENAL_SPEC.map((spec) => (
+          {stocked.map((spec) => (
             <ShopCard
               key={spec.kind}
               kind={spec.kind}

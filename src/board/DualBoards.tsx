@@ -8,6 +8,7 @@
  * triangle — that is how the HIT camera shake moves the boards and never the
  * HUD. Nothing else on this level animates.
  */
+import type { Terrain } from '@engine/terrain';
 import type { ArsenalItem, Coord, Marks, Ship } from '@engine/types';
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -53,6 +54,8 @@ export interface DualBoardsProps {
   boardStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
   /** Anything that must move with the boards (fx overlays, gutter buttons). */
   children?: ReactNode;
+  /** Part 10B — the sea, drawn on both boards. */
+  terrain?: Terrain;
 }
 
 const TRIANGLE_SIZE = 62;
@@ -73,6 +76,7 @@ export function DualBoards({
   columnLabels = true,
   boardStyle,
   children,
+  terrain,
 }: DualBoardsProps) {
   const origins = boardOrigins(top);
   const triW = TRIANGLE_W;
@@ -91,6 +95,7 @@ export function DualBoards({
         seedKey="own"
         watermark={BOARD_ART.watermarkAnchor}
         animateMarks={animateMarks}
+        terrain={terrain}
       />
       <GridBoard
         origin={origins.enemy}
@@ -107,6 +112,7 @@ export function DualBoards({
         seedKey="enemy"
         watermark={BOARD_ART.watermarkKraken}
         animateMarks={animateMarks}
+        terrain={terrain}
       />
       <View
         pointerEvents="none"
