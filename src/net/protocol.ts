@@ -205,6 +205,8 @@ export const ServerMessageSchema = z.discriminatedUnion('t', [
     position: z.number().int(),
     onlineCount: z.number().int(),
     pointBalance: z.number().int().nonnegative().optional(),
+    /** Additive: ms until the server's bot fallback. Older servers omit it. */
+    fallbackInMs: z.number().int().nonnegative().optional(),
   }),
   z.object({
     t: z.literal('queue:cancelled'),
@@ -257,6 +259,14 @@ export const ServerMessageSchema = z.discriminatedUnion('t', [
         stake: z.number().int().nonnegative(),
         prize: z.number().int().nonnegative(),
         balance: z.number().int().nonnegative(),
+        /**
+         * The server's authoritative gross/fee/payout breakdown (0025). All
+         * three optional so a server without the platform fee still parses and
+         * the client never invents a fee that was not charged.
+         */
+        gross: z.number().int().nonnegative().optional(),
+        fee: z.number().int().nonnegative().optional(),
+        payout: z.number().int().nonnegative().optional(),
       })
       .optional(),
     /**

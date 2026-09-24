@@ -120,7 +120,15 @@ export interface MatchOver {
   readonly winnerId: string;
   readonly reason: GameOverReason;
   readonly rewards: MatchRewards;
-  readonly wager?: { stake: number; prize: number; balance: number };
+  readonly wager?: {
+    stake: number;
+    prize: number;
+    balance: number;
+    /** Authoritative breakdown from the server's settlement (0025). */
+    gross?: number;
+    fee?: number;
+    payout?: number;
+  };
   /** Steel the server put in this player's Scrapyard (Port City §8). */
   readonly salvage?: { steel: number };
 }
@@ -159,6 +167,14 @@ interface MatchClientData {
   turnReceivedAt: number | null;
   queuePosition: number | null;
   onlineCount: number | null;
+  /**
+   * Epoch ms, THIS clock, when the server will seat this player against the
+   * bot if no human appears. Derived from the `queued` frame's
+   * `fallbackInMs`; the deadline itself lives in the server's queue entry, so
+   * a remount or reconnect can never move it. Null outside a queue or against
+   * a server that does not send the field.
+   */
+  fallbackAt: number | null;
   over: MatchOver | null;
   /**
    * Set when the server attaches us to a match this session never entered —
@@ -327,6 +343,7 @@ const EMPTY: MatchClientData = {
   turnReceivedAt: null,
   queuePosition: null,
   onlineCount: null,
+  fallbackAt: null,
   over: null,
   resumeOffer: null,
   lastError: null,
@@ -430,7 +447,12 @@ function fail(reason: FailureReason, detail: string): void {
     return;
   }
   log(`failed: ${reason} — ${detail}`);
-  useMatchClient.setState({ status: 'failed', failure: { reason, detail }, reconnectDeadline: null });
+  useMatchClient.setState({
+    status: 'failed',
+    failure: { reason, detail },
+    reconnectDeadline: null,
+    fallbackAt: null,
+  });
 }
 
 function endDiscovery(): void {
@@ -665,6 +687,8 @@ function handleMessage(message: ServerMessage): void {
         status: s.status === 'cancelling' ? 'cancelling' : 'queued',
         queuePosition: message.position,
         onlineCount: message.onlineCount,
+        fallbackAt:
+          message.fallbackInMs === undefined ? null : Date.now() + message.fallbackInMs,
       });
       return;
 
@@ -712,6 +736,7 @@ function handleMessage(message: ServerMessage): void {
           wagered: message.wagered,
           wagerStake: message.wagerStake,
           queuePosition: null,
+          fallbackAt: null,
         });
         return;
       }
@@ -737,6 +762,7 @@ function handleMessage(message: ServerMessage): void {
           wagered: message.wagered,
           wagerStake: message.wagerStake,
           queuePosition: null,
+          fallbackAt: null,
           // A match this session never opened the battle screen for: the
           // player chooses whether to go back to it. The socket stays attached
           // either way, so the room is not forfeited while they decide.
@@ -781,6 +807,7 @@ function handleMessage(message: ServerMessage): void {
         turnReceivedAt: null,
         over: null,
         queuePosition: null,
+        fallbackAt: null,
       });
       return;
     }

@@ -83,10 +83,17 @@ interface Totals {
   readonly reward: { points: number; coins: number };
   /**
    * What the wager moved. Online this is the SERVER's own settlement, captured
-   * before the socket is dropped; offline it is the fixed stake, since the
-   * payout is still in flight when this screen opens.
+   * before the socket is dropped — including the authoritative gross/fee/net
+   * breakdown (0025); offline it is the fixed stake, since the payout is still
+   * in flight when this screen opens and there is no platform fee.
    */
-  readonly wager: { stake: number; prize: number } | null;
+  readonly wager: {
+    stake: number;
+    prize: number;
+    gross?: number;
+    fee?: number;
+    payout?: number;
+  } | null;
   /** Steel the server credited to the Scrapyard, or null (part-02 §8). */
   readonly salvage: { steel: number } | null;
   /**
@@ -625,19 +632,29 @@ export default function ResultScreen() {
 
               {totals.wager ? (
                 <View style={styles.row}>
-                  <Text style={styles.label} numberOfLines={1}>
-                    {settling
-                      ? settlementFailed
-                        ? won
-                          ? 'Wager won · payout pending'
-                          : 'Stake lost · confirming'
+                  <View style={styles.wagerLabelColumn}>
+                    <Text style={styles.label} numberOfLines={1}>
+                      {settling
+                        ? settlementFailed
+                          ? won
+                            ? 'Wager won · payout pending'
+                            : 'Stake lost · confirming'
+                          : won
+                            ? 'Wager won · paying out…'
+                            : 'Stake lost · settling…'
                         : won
-                          ? 'Wager won · paying out…'
-                          : 'Stake lost · settling…'
-                      : won
-                        ? `Wager won · ${pointBalance} total`
-                        : `Stake lost · ${pointBalance} left`}
-                  </Text>
+                          ? `Wager won · ${pointBalance} total`
+                          : `Stake lost · ${pointBalance} left`}
+                    </Text>
+                    {/* The winner's gross pot and the platform's cut, from the
+                        server's own settlement — never recomputed here. */}
+                    {won && (totals.wager.fee ?? 0) > 0 ? (
+                      <Text style={styles.wagerDetail}>
+                        {totals.wager.gross ?? totals.wager.prize}-point pot −{' '}
+                        {totals.wager.fee} platform fee
+                      </Text>
+                    ) : null}
+                  </View>
                   <Text
                     style={[
                       styles.value,
@@ -645,9 +662,9 @@ export default function ResultScreen() {
                     ]}
                   >
                     {/* Both sides staked before the first shot, so the winner's
-                        pot is twice the stake — a net +50 — and the loser is
-                        out the 50 they already paid. */}
-                    {won ? `+${totals.wager.prize}` : `-${totals.wager.stake}`}
+                        pot is twice the stake; the platform fee (0025) is
+                        already deducted from the prize the server reports. */}
+                    {won ? `+${totals.wager.payout ?? totals.wager.prize}` : `-${totals.wager.stake}`}
                   </Text>
                 </View>
               ) : null}
@@ -701,6 +718,13 @@ const styles = StyleSheet.create({
   laurel: { position: 'absolute', top: PANEL_Y + 8 },
   rows: { flex: 1, justifyContent: 'space-between' },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  wagerLabelColumn: { flex: 1, paddingRight: space.xs },
+  wagerDetail: {
+    color: color.inkSoft,
+    fontFamily: font.body,
+    fontSize: typeScale.xxs,
+    marginTop: 1,
+  },
   label: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.sm },
   value: { color: color.ink, fontFamily: font.display, fontSize: typeScale.md },
   rankRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 2 },

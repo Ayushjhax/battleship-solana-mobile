@@ -3,6 +3,11 @@ import 'expo-sqlite/localStorage/install';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { WAGER_STAKE } from '../engine/economy';
+
+/** Re-exported so every existing importer keeps one canonical stake. */
+export { WAGER_STAKE };
+
 export interface PendingPointBuy {
   readonly requestId: string;
   readonly signature: string;
@@ -20,8 +25,6 @@ export interface PendingWagerSettlement {
   readonly stake: number;
   readonly won: boolean;
 }
-
-export const WAGER_STAKE = 50;
 
 interface PointState {
   balance: number;

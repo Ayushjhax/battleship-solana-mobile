@@ -235,7 +235,8 @@ export default function PointsScreen() {
           <View style={styles.rule} />
           <Text style={styles.rate}>100 points ⇄ 0.001 SOL</Text>
           <Text style={styles.helper}>
-            Wager matches reserve 50 points. The winner receives the full 100-point pot.
+            Wager matches reserve 50 points. The winner takes the 100-point pot — 95 on an
+            online human match after the 5% platform fee.
           </Text>
           <Text style={styles.solReadout}>
             Wallet: {solBalance === null ? '—' : `${(solBalance / 1_000_000_000).toFixed(6)} SOL`}

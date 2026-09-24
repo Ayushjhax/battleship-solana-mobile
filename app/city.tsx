@@ -53,7 +53,7 @@ import type { BuildingId } from '@engine/city';
 import { useProfile } from '@/state/profile';
 import { AssetSlot } from '@/ui/AssetSlot';
 import { AVATARS, UI_ART } from '@/ui/assets';
-import { CurrencyChip } from '@/ui/CurrencyChip';
+import { CurrencyInfoChip } from '@/features/points/CurrencyInfoChip';
 import { InkButton } from '@/ui/InkButton';
 import { InkIconButton } from '@/ui/InkIconButton';
 import { RankBadge } from '@/ui/RankBadge';
@@ -673,8 +673,8 @@ function CityCanvas() {
         />
       ) : (
         <View style={styles.topRight} pointerEvents="box-none">
-          <CurrencyChip kind="coins" value={profile.coins} />
-          <CurrencyChip kind="gems" value={profile.gems} />
+          <CurrencyInfoChip kind="coins" value={profile.coins} />
+          <CurrencyInfoChip kind="gems" value={profile.gems} />
         </View>
       )}
       <View style={styles.back}>

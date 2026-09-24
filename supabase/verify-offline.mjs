@@ -231,20 +231,23 @@ await q(`select * from public.reserve_point_wager($1, $2, 50)`, [B, HOLD_B]);
 await q(`select public.create_wagered_match($1, 'classic', $2, $3, 99, false, $4, $5)`, [WAGER_MATCH, A, B, HOLD_A, HOLD_B]);
 r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [WAGER_MATCH, A]);
 const wagerBalances = (await q(`select privy_user_id, balance from public.point_accounts order by privy_user_id`)).rows;
-check(r.rows[0].ok.settled === true && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:captain')?.balance) === 150 && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:challenger')?.balance) === 50, 'PvP wager settlement pays the 100-point pot to the winner exactly once');
+check(r.rows[0].ok.settled === true && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:captain')?.balance) === 145 && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:challenger')?.balance) === 50, 'PvP wager settlement pays the winner 95 of the 100-point pot exactly once');
+check(r.rows[0].ok.wager && Number(r.rows[0].ok.wager.gross) === 100 && Number(r.rows[0].ok.wager.fee) === 5 && Number(r.rows[0].ok.wager.payout) === 95, 'the settlement reports gross 100 = fee 5 + payout 95');
+const platformAfterPvp = (await q(`select balance from public.point_accounts where privy_user_id = 'platform:fee'`)).rows[0];
+check(Number(platformAfterPvp?.balance) === 5, 'the 5-point platform fee is held in the auditable platform account');
 r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [WAGER_MATCH, A]);
-check(r.rows[0].ok.settled === false && Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 150, 'replaying match settlement cannot pay the wager twice');
+check(r.rows[0].ok.settled === false && Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 145, 'replaying match settlement cannot pay the wager twice');
 
 const BOT_HOLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
 const BOT_WAGER_MATCH = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2';
 await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, BOT_HOLD]);
 await q(`select public.create_wagered_match($1, 'advanced', $2, $3, 100, true, $4, null)`, [BOT_WAGER_MATCH, A, BOT, BOT_HOLD]);
 await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [BOT_WAGER_MATCH, A]);
-check(Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 200, 'winning a bot wager returns 100 points for a net 50-point profit');
+check(Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 195, 'winning a bot wager returns 100 points for a net 50-point profit, with no platform fee');
 
 // ---- 0012: uint32 seeds, and wagers that settle without a match row ----
 // Every block below is balance-neutral overall, so the point trade checks
-// that follow still read against A's 200.
+// that follow still read against A's 195.
 const balanceOf = async (id) => Number((await q(`select public.get_point_balance($1) as balance`, [id])).rows[0].balance);
 
 // The match server's seeds are uint32; matches.seed is bigint (0002) but
@@ -279,7 +282,7 @@ await q(`select public.create_wagered_match($1, 'classic', $2, $3, 7, true, $4, 
 r = (await q(`select * from public.settle_offline_wager($1, $2, true)`, [A, ROOM_HOLD])).rows[0];
 check(r.settled === false, 'a hold owned by a server room is never settled as an offline wager');
 await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [ROOM_MATCH, A]);
-check((await balanceOf(A)) === 200, 'the offline wager checks left A’s balance where they found it');
+check((await balanceOf(A)) === 195, 'the offline wager checks left A’s balance where they found it');
 
 // 0013 - both captains walked out: nobody wins, and no stake comes back.
 const ABANDON_HOLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa8';
@@ -298,33 +301,36 @@ check((await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 1
 // That stake is gone for good, which is the point. Put it back by hand so the
 // point-trade checks below can keep asserting absolute balances.
 await q(`update public.point_accounts set balance = balance + 50 where privy_user_id = public.point_identity_for_profile($1)`, [A]);
-check((await balanceOf(A)) === 200, 'the abandonment checks left A’s balance where they found it');
+check((await balanceOf(A)) === 195, 'the abandonment checks left A’s balance where they found it');
 
 const BUY_REQUEST = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
 const BUY_REPLAY = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
 const BUY_SIGNATURE = 'confirmed-solana-signature-0000000000000001';
 pointBalance = (await q(`select public.complete_point_buy($1, $2, $3, 100, 1000000) as balance`, [A, BUY_REQUEST, BUY_SIGNATURE])).rows[0].balance;
-check(Number(pointBalance) === 300, 'a backend-verified 0.001 SOL purchase credits 100 points');
+check(Number(pointBalance) === 295, 'a backend-verified 0.001 SOL purchase credits 100 points');
 pointBalance = (await q(`select public.complete_point_buy($1, $2, $3, 100, 1000000) as balance`, [A, BUY_REQUEST, BUY_SIGNATURE])).rows[0].balance;
-check(Number(pointBalance) === 300, 'replaying the same purchase request never credits twice');
+check(Number(pointBalance) === 295, 'replaying the same purchase request never credits twice');
 check(await fails_with(`select public.complete_point_buy($1, $2, $3, 100, 1000000)`, [A, BUY_REPLAY, BUY_SIGNATURE], '23505'), 'one Solana signature cannot fund two point purchases');
 
 const SELL_REQUEST = 'ffffffff-ffff-4fff-8fff-fffffffffff1';
 let sale = (await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, SELL_REQUEST])).rows[0];
-check(sale.ok === true && Number(sale.balance) === 200, 'starting a sale atomically reserves 100 points');
+check(sale.ok === true && Number(sale.balance) === 195, 'starting a sale atomically reserves 100 points');
 sale = (await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, SELL_REQUEST])).rows[0];
-check(Number(sale.balance) === 200, 'replaying a point sale request never deducts twice');
+check(Number(sale.balance) === 195, 'replaying a point sale request never deducts twice');
 const SELL_SIGNATURE = 'treasury-solana-signature-000000000000001';
 await q(`select public.mark_point_sell_broadcast($1, $2, 'signed-transaction', 'blockhash', 12345)`, [SELL_REQUEST, SELL_SIGNATURE]);
 pointBalance = (await q(`select public.complete_point_sell($1, $2) as balance`, [SELL_REQUEST, SELL_SIGNATURE])).rows[0].balance;
-check(Number(pointBalance) === 200, 'a confirmed treasury payout completes without another balance mutation');
+check(Number(pointBalance) === 195, 'a confirmed treasury payout completes without another balance mutation');
 
 const REFUND_REQUEST = 'ffffffff-ffff-4fff-8fff-fffffffffff2';
 await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, REFUND_REQUEST]);
 pointBalance = (await q(`select public.refund_point_sell($1, 'treasury unavailable') as balance`, [REFUND_REQUEST])).rows[0].balance;
-check(Number(pointBalance) === 200, 'a failed treasury payout restores every reserved point');
+check(Number(pointBalance) === 195, 'a failed treasury payout restores every reserved point');
 pointBalance = (await q(`select public.refund_point_sell($1, 'retry') as balance`, [REFUND_REQUEST])).rows[0].balance;
-check(Number(pointBalance) === 200, 'replaying a sale refund never credits twice');
+check(Number(pointBalance) === 195, 'replaying a sale refund never credits twice');
+
+const platformFinal = (await q(`select balance from public.point_accounts where privy_user_id = 'platform:fee'`)).rows[0];
+check(Number(platformFinal?.balance) === 5, 'bot, offline, abandoned and exchange paths never add to the platform fee account');
 
 await asUser(A);
 check(await fails_with(`select * from public.point_accounts`, [], '42501'), 'clients cannot read server-owned point balances directly');

@@ -17,6 +17,7 @@
  * ref-counts the subscription across the route change).
  */
 import { CAPTAINS } from '@engine/captains';
+import { wagerBreakdown, wagerPot, WAGER_STAKE } from '@engine/economy';
 import { validateSubmission } from '@engine/match';
 import { terrainForSea } from '@engine/terrain';
 import type { CaptainId } from '@engine/types';
@@ -36,6 +37,11 @@ import Animated, {
 import Svg from 'react-native-svg';
 
 import { AvatarCard, FlagChip } from '@/features/battle/Hud';
+import {
+  BOT_FALLBACK_NOTICE,
+  isBotOpponent,
+  opponentDisplayName,
+} from '@/features/matchmaking/botFallback';
 import { searchFailurePresentation } from '@/features/matchmaking/failurePresentation';
 import { createMatchHandoff } from '@/features/matchmaking/handoff';
 import { subscribeEmotes } from '@/net/chat';
@@ -170,6 +176,9 @@ function PlayerCard({
   const w = 250;
   const h = 96;
   const captain = captainId ? CAPTAINS.find((entry) => entry.id === captainId) : null;
+  // A matchmaker bot is never shown as a human captain, whatever its
+  // profile row is named.
+  const name = opponentDisplayName(summary);
   return (
     <Animated.View style={[{ position: 'absolute', top: 178, [side]: 46 }, slide]}>
       <InkPanel w={w} h={h} seedKey={`reveal-${seedKey}`} padding={space.sm}>
@@ -177,7 +186,7 @@ function PlayerCard({
           <AvatarCard avatarId={summary.avatarId} tint={summary.avatarColor} seedKey={seedKey} />
           <View style={[styles.cardText, side === 'right' ? { alignItems: 'flex-end' } : null]}>
             <Text style={styles.cardName} numberOfLines={1}>
-              {summary.name}
+              {name}
             </Text>
             <Text style={styles.cardPoints}>{summary.rankPoints} pts</Text>
             {captain ? (
@@ -215,6 +224,11 @@ function ArenaReveal({
       <Animated.View style={[styles.ribbon, ribbon]}>
         <TitleRibbon title={arenaFor(matchId)} w={380} h={50} seedKey="arena" />
       </Animated.View>
+      {/* The server's 40-second fallback is a bot, and the player is told so
+          plainly — never dressed up as a human captain who just arrived. */}
+      {isBotOpponent(opponent) ? (
+        <Text style={styles.botNotice}>{BOT_FALLBACK_NOTICE}</Text>
+      ) : null}
       <PlayerCard summary={you} side="left" seedKey="me" captainId={view?.you.captainId ?? null} />
       <PlayerCard
         summary={opponent}
@@ -243,8 +257,10 @@ export default function SearchingScreen() {
   const you = useMatchClient((s) => s.you);
   const opponent = useMatchClient((s) => s.opponent);
   const queuedCount = useMatchClient((s) => s.onlineCount);
+  const fallbackAt = useMatchClient((s) => s.fallbackAt);
   const presenceCount = useOnlineCount(ruleset);
   const [elapsed, setElapsed] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const [cancelling, setCancelling] = useState(false);
   const startedAt = useRef(Date.now());
 
@@ -254,10 +270,10 @@ export default function SearchingScreen() {
   }, [opponentKind, ruleset, wagered]);
 
   useEffect(() => {
-    const id = setInterval(
-      () => setElapsed(Math.floor((Date.now() - startedAt.current) / 1000)),
-      500,
-    );
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt.current) / 1000));
+      setNow(Date.now());
+    }, 500);
     return () => clearInterval(id);
   }, []);
 
@@ -349,6 +365,12 @@ export default function SearchingScreen() {
   };
 
   const count = presenceCount ?? queuedCount;
+  // The stake, pot, fee and payout all come from the shared engine arithmetic
+  // — the same rule the server settles with — never a local formula.
+  const pot = wagerPot();
+  const wagerMath = wagerBreakdown(pot);
+  const botIn =
+    fallbackAt === null ? null : Math.max(0, Math.ceil((fallbackAt - now) / 1000));
   // Exactly what handoff.sync() schedules the reveal on, so the screen and
   // the timer can never disagree about whether we are revealing. Left as a
   // chain rather than a Boolean() so it still narrows matchId/you/opponent.
@@ -424,7 +446,19 @@ export default function SearchingScreen() {
             {formatElapsed(elapsed)}
             {count !== null ? ` · ${count} sailors online` : ''}
           </Text>
-          {wagered ? <Text style={styles.wager}>50-point stake · 100-point prize</Text> : null}
+          {wagered ? (
+            <Text style={styles.wager}>
+              {WAGER_STAKE}-point stake · {pot}-point pot · winner gets {wagerMath.payout} after the{' '}
+              {wagerMath.fee}-point platform fee
+            </Text>
+          ) : null}
+          {status === 'queued' && botIn !== null ? (
+            <Text style={styles.botIn}>
+              {botIn > 0
+                ? `A bot steps in in ${botIn}s if no captain joins`
+                : 'No captain yet — seating you against a bot'}
+            </Text>
+          ) : null}
           <InkButton
             label={cancelling || status === 'cancelling' ? 'Refunding…' : 'Cancel'}
             w={140}
@@ -470,6 +504,22 @@ const styles = StyleSheet.create({
   wager: {
     marginTop: 3,
     color: color.inkGreen,
+    fontFamily: font.label,
+    fontSize: typeScale.xs,
+  },
+  botIn: {
+    marginTop: 3,
+    color: color.inkSoft,
+    fontFamily: font.body,
+    fontSize: typeScale.xs,
+  },
+  botNotice: {
+    position: 'absolute',
+    left: 0,
+    width: CANVAS_W,
+    top: 134,
+    textAlign: 'center',
+    color: color.ink,
     fontFamily: font.label,
     fontSize: typeScale.xs,
   },

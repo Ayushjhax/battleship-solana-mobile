@@ -167,10 +167,38 @@ reference sims do not model ink.
   C/D covered the one-shot paths. Coverage of every ledger-writing path is *proved* by the
   `distinct reason` assertion, not assumed.
 - Wagers (`point_ledger` / `point_accounts`) are a separate currency system and are outside
-  `economy_ledger`; not exercised.
+  `economy_ledger`; not exercised here — see the platform-fee note below for where they are
+  covered.
 - World boss (0022) and empire (0023) store state only and pay no profile currency in the
   current server code; there was nothing to exercise.
 - The month's raids settle with synthetic (empty) action/result logs — the raid *rules* are
   covered by `server/tests/integration/raid-db.test.ts`; this sweep is about the ledger.
 - The economy sim uses `Math.random`, so its figures are reported as variance against the
   saved baseline, not as a fixed target.
+
+---
+
+## Platform fee on online wagers (0025)
+
+The wager system stays outside `economy_ledger` by design. 0025 adds the 5% platform fee on
+completed online human-vs-human matches inside that system, in the same
+`public.apply_match_result` transaction that already settles the pot:
+
+- Gross is the **pooled pot** (`stake * 2` = 100), not one captain's stake. The fee is
+  `floor(gross * 5 / 100)` = 5 and the winner is credited `gross - fee` = 95, so
+  `gross = fee + payout` holds with no fractional points.
+- The fee is held in a reserved platform account, `point_accounts.privy_user_id =
+  'platform:fee'`, and every movement gets a `point_ledger` row: the winner's
+  `wager_prize` (+95, metadata carries gross/fee/payout) and the platform's
+  `platform_fee` (+5). The reason is added to the `point_ledger` check constraint.
+- Eligibility is structural: only `wagered and not is_bot` matches are charged. Bot
+  fallback rooms are unwagered (the matchmaker refunds the queue hold first), explicit bot
+  wagers and offline wagers (`settle_offline_wager`) pay the full pot, and cancellations,
+  refunds and no-contest abandonments never reach the settlement.
+- Idempotency is unchanged: `apply_match_result` returns `settled: false` for an already
+  ended match, and the ledger's `(privy_user_id, reason, reference_id)` unique key makes a
+  retry a no-op. Historical settled matches are not touched by the migration.
+
+Covered by `server/tests/integration/platform-fee.test.ts` (real SQL: 95/5 split, replay,
+bot, unwagered, offline) and `src/engine/__tests__/economy.test.ts` (rounding: 200 → 190/10,
+1 → 1/0, odd totals). `supabase/verify-offline.mjs` asserts the same numbers end to end.

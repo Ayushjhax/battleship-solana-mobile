@@ -1,8 +1,13 @@
 /**
  * FIFO matchmaking with separate normal/wager pools. Wager stakes are held
  * in Postgres before a player enters a queue and refunded atomically if they
- * leave before a room is created. Wagered bot games use the same authoritative
- * Room as online play, so an offline client cannot claim a fabricated win.
+ * leave before a room is created. After 40 seconds without a human opponent
+ * the authoritative fallback leaves the queue, releases the online stake and
+ * seats the player against the existing bot in an UNWAGERED Room — so a bot
+ * fallback can never inherit an online wager or collect the online platform
+ * fee. (An explicitly requested `opponent: 'bot'` queue still uses the same
+ * authoritative Room as online play, so an offline client cannot claim a
+ * fabricated win.)
  */
 import type { WebSocket } from 'ws';
 
@@ -26,7 +31,13 @@ const RANK_WINDOW_START = 150;
 const RANK_WINDOW_STEP = 150;
 const RANK_WINDOW_STEP_MS = envMs('SEABATTLE_RANK_WINDOW_STEP_MS', 5_000);
 const RANK_WINDOW_UNCAPPED_MS = envMs('SEABATTLE_RANK_WINDOW_UNCAPPED_MS', 30_000);
-const BOT_AFTER_MS = envMs('SEABATTLE_BOT_AFTER_MS', 45_000);
+/**
+ * How long a successfully queued player waits for a human before the
+ * authoritative fallback seats them against the existing bot. The env var
+ * keeps its historical name so deployments can still shrink it; the default
+ * is the product's 40 seconds.
+ */
+const BOT_FALLBACK_MS = envMs('SEABATTLE_BOT_AFTER_MS', 40_000);
 const SWEEP_INTERVAL_MS = envMs('SEABATTLE_SWEEP_INTERVAL_MS', 1_000);
 
 type QueueKey = `${MatchMode}:${'normal' | 'wager'}`;
@@ -216,6 +227,10 @@ async function enqueueVerified(
     v: 1,
     position: queues[key].length,
     onlineCount: totalOnlineCount(),
+    // The client may render this countdown; the deadline itself is this
+    // entry's `since` and is enforced here, so a remount or a reconnect can
+    // never move it.
+    fallbackInMs: Math.max(0, BOT_FALLBACK_MS - (Date.now() - entry.since)),
     ...(pointBalance === undefined ? {} : { pointBalance }),
   });
   ensureSweeping();
@@ -376,11 +391,13 @@ async function pairPass(key: QueueKey): Promise<void> {
       continue;
     }
 
-    const stale = queue.findIndex((entry) => now - entry.since >= BOT_AFTER_MS);
+    const stale = queue.findIndex((entry) => now - entry.since >= BOT_FALLBACK_MS);
     if (stale === -1) return;
     const entry = queue[stale] as Waiting;
     queue.splice(stale, 1);
-    await pairWithBot(mode, entry);
+    // A deferred fallback (the stake could not be released yet) is put back
+    // and the next sweep retries; looping here would hammer the database.
+    if (!(await pairWithBotFallback(mode, entry))) return;
   }
 }
 
@@ -430,6 +447,63 @@ async function pairWithBot(mode: MatchMode, human: Waiting): Promise<void> {
       code: 'internal',
       message: error instanceof Error ? error.message : 'could not create bot match',
     });
+  }
+}
+
+/**
+ * The 40-second fallback: leave the queue and seat the waiting player against
+ * the existing bot, as an UNWAGERED match.
+ *
+ * The online stake is released first — a bot fallback is offline-style play
+ * and must never inherit a real-money/points wager, nor can it collect the
+ * online platform fee (the match is is_bot, and 0025 fees human-vs-human
+ * only). If the release cannot be confirmed the entry goes back in line and
+ * the next sweep retries, so a bot match can never start while an online hold
+ * is still live.
+ *
+ * Returns false when the fallback was deferred and the caller must stop its
+ * pass (the entry is queued again); true once it is terminal either way.
+ */
+async function pairWithBotFallback(mode: MatchMode, human: Waiting): Promise<boolean> {
+  if (human.wagerRequestId && !(await releaseWager(human))) {
+    queues[keyFor(mode, human.wagered)].unshift(human);
+    console.error(
+      `[matchmaker] bot fallback deferred for ${human.playerId}: the wager hold could not be released`,
+    );
+    return false;
+  }
+  try {
+    await createRoom(
+      mode,
+      randomSeed(),
+      { playerId: human.playerId, socket: human.socket, isBot: false },
+      { playerId: BOT_PLAYER_ID, socket: null, isBot: true },
+      FUEL_BUDGET,
+      // No online entry point rides into bot play. An offline-style bot
+      // wager is opt-in from the placement screen, never inherited here.
+      { wagered: false, holdA: null, holdB: null },
+      rankedSea(),
+    );
+  } catch (error) {
+    send(human.socket, {
+      t: 'error',
+      v: 1,
+      code: 'internal',
+      message: error instanceof Error ? error.message : 'could not create bot match',
+    });
+  }
+  return true;
+}
+
+/** Refund one queued entry's hold. True when there is nothing left to refund. */
+async function releaseWager(entry: Waiting): Promise<boolean> {
+  if (!entry.wagerRequestId) return true;
+  try {
+    await refundPointWager(entry.playerId, entry.wagerRequestId);
+    return true;
+  } catch (error) {
+    console.error(`[matchmaker] wager refund failed for ${entry.playerId}`, error);
+    return false;
   }
 }
 

@@ -1,4 +1,4 @@
-import { ARSENAL_SPEC, atomicFootprint, bomberFootprint, doubleTorpedoRows } from '@engine/arsenal';
+import { ARSENAL_SPEC, atomicFootprint, bomberFootprint, doubleTorpedoRows, isAttackArsenalKind } from '@engine/arsenal';
 import type { ArsenalItem, ArsenalKind, Coord, Marks } from '@engine/types';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -118,9 +118,11 @@ export function BattleArsenalPopover({
     transform: [{ translateY: (enter.value - 1) * PANEL_H }],
   }));
 
-  // The AA gun is bought and placed in the shop and then works on its own; it
-  // has no place in a "choose a weapon" list. The grid stays 2 x 5.
-  const kinds = ARSENAL_SPEC.map((entry) => entry.kind).filter((kind) => kind !== 'aaGun');
+  // The AA gun is bought and placed in the shop and then works on its own;
+  // it has no place in a "choose a weapon" list. A mine is the same — it is
+  // defensive placement only, so it never appears here with a count. The
+  // shared predicate keeps both attack renderers in step.
+  const kinds = ARSENAL_SPEC.map((entry) => entry.kind).filter(isAttackArsenalKind);
   const slots: readonly (ArsenalKind | null)[] = [
     ...kinds,
     ...Array.from({ length: 10 - kinds.length }, () => null),

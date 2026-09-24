@@ -163,7 +163,20 @@ export interface MatchRewards {
 
 export type ServerMessage =
   | { t: 'hello:ok'; v: 1; playerId: string }
-  | { t: 'queued'; v: 1; position: number; onlineCount: number; pointBalance?: number }
+  | {
+      t: 'queued';
+      v: 1;
+      position: number;
+      onlineCount: number;
+      pointBalance?: number;
+      /**
+       * How long until the authoritative matchmaker falls back to a bot, in
+       * ms. Optional and additive: an older client ignores it; a newer one
+       * shows the countdown without owning the deadline. Never present on the
+       * explicit `opponent: 'bot'` path, which pairs immediately.
+       */
+      fallbackInMs?: number;
+    }
   | {
       t: 'queue:cancelled';
       v: 1;
@@ -201,7 +214,20 @@ export type ServerMessage =
       winnerId: string;
       reason: GameOverReason;
       rewards: MatchRewards;
-      wager?: { stake: number; prize: number; balance: number };
+      /**
+       * What the wager settlement actually paid. `prize` is the winner's net
+       * (0 for the loser); `gross`/`fee`/`payout` are the server's authoritative
+       * breakdown (0025) and are absent on a server that predates the platform
+       * fee, in which case the client must not invent a fee.
+       */
+      wager?: {
+        stake: number;
+        prize: number;
+        balance: number;
+        gross?: number;
+        fee?: number;
+        payout?: number;
+      };
       /**
        * Steel the server credited to THIS player's Scrapyard, after the
        * Scrapyard bonus (Port City part-02 §8). Additive and optional, so an

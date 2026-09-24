@@ -34,6 +34,7 @@ import {
 import type { SeaId } from '@engine/terrain';
 import { autoPlaceFleet } from '@engine/placement';
 import { chooseMove } from '@engine/ai';
+import { WAGER_STAKE } from '@engine/economy';
 import { REWARD } from '@engine/ranks';
 
 import { salvageBases, sunkWreckClasses } from './city/salvage';
@@ -123,6 +124,8 @@ export class Room {
   private forcedDbReason: DbEndReason | null = null;
   /** Steel credited to each seat at settlement, for the `over` frame. */
   private creditedSalvage: [number, number] = [0, 0];
+  /** The gross/fee/payout the wager settlement actually applied (0025). */
+  private settledWager: { gross: number; fee: number; payout: number } | null = null;
   /** What `matched` carried, re-sent on attach so a client that lost its store can rebuild the HUD. */
   private matched: { summaries: [OpponentSummary, OpponentSummary]; fuelBudget: number; layoutDeadline: number } | null = null;
   private readonly onFinished: (room: Room) => void;
@@ -585,6 +588,7 @@ export class Room {
       // replay guard. The `over` frame carries this so the Result screen can
       // show a real number instead of estimating one.
       this.creditedSalvage = [settlement.salvageA, settlement.salvageB];
+      this.settledWager = settlement.wager;
     } catch (error) {
       console.error(`[room ${this.id}] settlement failed`, error);
       if (this.wager.wagered) {
@@ -623,7 +627,24 @@ export class Room {
           return steel > 0 ? { salvage: { steel } } : {};
         })(),
         ...(this.wager.wagered && balance !== null
-          ? { wager: { stake: 50, prize: won ? 100 : 0, balance } }
+          ? {
+              wager: {
+                stake: WAGER_STAKE,
+                // The winner's net, exactly what the settlement credited.
+                prize: won ? (this.settledWager?.payout ?? WAGER_STAKE * 2) : 0,
+                balance,
+                // The authoritative breakdown when the database applied one
+                // (0025). Absent against an older database, and the client
+                // then shows the old pot with no fee — never an invented one.
+                ...(this.settledWager
+                  ? {
+                      gross: this.settledWager.gross,
+                      fee: this.settledWager.fee,
+                      payout: this.settledWager.payout,
+                    }
+                  : {}),
+              },
+            }
           : {}),
       });
     }

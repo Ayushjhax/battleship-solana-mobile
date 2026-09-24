@@ -25,6 +25,7 @@ import { BackendWakeGate } from '@/features/auth/BackendWakeGate';
 import { PrivyLoginScreen } from '@/features/auth/PrivyLoginScreen';
 import { PrivyProfileSync } from '@/features/auth/PrivyProfileSync';
 import { ResumeMatchPrompt } from '@/features/battle/ResumeMatchPrompt';
+import { CurrencyInfoSheet } from '@/features/points/CurrencyInfoSheet';
 import { WelcomePointsModal } from '@/features/points/WelcomePointsModal';
 import { subscribeConnectivity } from '@/net/connectivity';
 import { flushPendingResults } from '@/net/offlineResults';
@@ -182,6 +183,8 @@ function AuthenticatedApp() {
         <Stack.Screen name="(onboarding)/progress" options={{ animation: 'slide_from_right' }} />
       </Stack>
       <WelcomePointsModal />
+      {/* The three balance chips open this one sheet, wherever they are shown. */}
+      <CurrencyInfoSheet />
       {/* Finds the player wherever they are when a match outlived the app. */}
       <ResumeMatchPrompt />
       {/* A sibling of the Stack, not a Modal, so its blur has the real screen

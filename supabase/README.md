@@ -43,7 +43,7 @@ The secret key never appears under `app/` or `src/`; `server/src/db.ts` is the o
 | `matches` | your own matches | server only |
 | `match_events` | replay log of your own matches | server only |
 | `privy_accounts` | server only | server-only verified Privy sync; clients have no grants or RLS policy |
-| `point_accounts`, `point_ledger` | server only | one balance per verified Privy DID; append-only welcome, wager and exchange ledger |
+| `point_accounts`, `point_ledger` | server only | one balance per verified Privy DID; append-only welcome, wager and exchange ledger. 0025 adds `platform_fee` rows on a reserved `platform:fee` account for the 5% cut of online human-vs-human pots. |
 | `point_wager_holds`, `point_trades` | server only | idempotent wager reservations and replay-protected SOL trades |
 | `ranks` | public | — |
 | `leaderboard` (view) | signed-in users; only `name, avatar_id, avatar_color, country_code, rank_points, battles_won` | — |

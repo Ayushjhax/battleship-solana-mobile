@@ -66,7 +66,7 @@ describe('claiming a contract', () => {
       [
         U,
         JSON.stringify([
-          { slot: 0, contractId: 'win-1', target: 1, scope: 'daily', expiresAt: new Date(NOW + 86_400_000).toISOString() },
+          { slot: 0, contractId: 'win-1', target: 1, scope: 'daily', expiresAt: new Date(Date.now() + 86_400_000).toISOString() },
         ]),
       ],
     );

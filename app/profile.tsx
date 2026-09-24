@@ -1,7 +1,7 @@
 import { useEmbeddedSolanaWallet, usePrivy } from '@privy-io/expo';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { privyDisplayName, privyEmail, privyLoginMethods } from '@/features/auth/privyUser';
 import { signOutGameplaySession } from '@/net/api';
@@ -10,6 +10,7 @@ import { useBattle } from '@/state/battle';
 import { useCloud } from '@/state/cloud';
 import { useProfile } from '@/state/profile';
 import { usePoints } from '@/state/points';
+import { useCurrencyInfo } from '@/state/currencyInfo';
 import { usePrivySync } from '@/state/privySync';
 import { AssetSlot } from '@/ui/AssetSlot';
 import { AVATARS } from '@/ui/assets';
@@ -23,14 +24,38 @@ import { TitleRibbon } from '@/ui/TitleRibbon';
 import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
 import { shortAddress } from '@/wallet/solana';
 
-function Detail({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
-  return (
+function Detail({
+  label,
+  value,
+  danger = false,
+  onPress,
+  accessibilityLabel,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+  onPress?: () => void;
+  accessibilityLabel?: string;
+}) {
+  const row = (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={[styles.detailValue, danger ? styles.danger : null]} numberOfLines={1} selectable>
+      <Text
+        style={[styles.detailValue, danger ? styles.danger : null]}
+        numberOfLines={1}
+        // A selectable Text can swallow the tap that is meant to open the
+        // currency sheet, so selection is only offered on plain rows.
+        selectable={!onPress}
+      >
         {value}
       </Text>
     </View>
+  );
+  if (!onPress) return row;
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label} onPress={onPress}>
+      {row}
+    </Pressable>
   );
 }
 
@@ -105,6 +130,7 @@ export default function ProfileScreen() {
   const walletState = useEmbeddedSolanaWallet();
   const sync = usePrivySync();
   const pointBalance = usePoints((state) => state.balance);
+  const openCurrency = useCurrencyInfo((state) => state.openCurrency);
   const [loggingOut, setLoggingOut] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -172,10 +198,34 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.stats}>
             <Detail label="Rank points" value={profile.rankPoints.toLocaleString()} />
-            <Detail label="Main points" value={pointBalance.toLocaleString()} />
+            <Detail
+              label="Main points"
+              value={pointBalance.toLocaleString()}
+              accessibilityLabel="About Captain's points"
+              onPress={() => openCurrency('points')}
+            />
             <Detail label="Battles" value={profile.battlesPlayed.toLocaleString()} />
             <Detail label="Victories" value={profile.battlesWon.toLocaleString()} />
-            <Detail label="Coins / gems" value={`${profile.coins.toLocaleString()} / ${profile.gems.toLocaleString()}`} />
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Coins / gems</Text>
+              <Text style={styles.detailValue} numberOfLines={1}>
+                <Text
+                  accessibilityRole="button"
+                  accessibilityLabel="About Coins"
+                  onPress={() => openCurrency('coins')}
+                >
+                  {profile.coins.toLocaleString()}
+                </Text>
+                {' / '}
+                <Text
+                  accessibilityRole="button"
+                  accessibilityLabel="About Gems"
+                  onPress={() => openCurrency('gems')}
+                >
+                  {profile.gems.toLocaleString()}
+                </Text>
+              </Text>
+            </View>
           </View>
           <View style={styles.actions}>
             <InkButton label="Change name" w={142} h={36} size="sm" onPress={() => router.push({ pathname: '/name', params: { next: 'back' } })} />

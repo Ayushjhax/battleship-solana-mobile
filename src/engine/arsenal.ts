@@ -115,6 +115,20 @@ export function isOwnBoardKind(kind: ArsenalKind): boolean {
   return specFor(kind).placement === 'own board';
 }
 
+/**
+ * Kinds the ATTACK-phase arsenal may offer. A mine is a defensive placement:
+ * it has no attack action, no target, and `useArsenal` below refuses it — so
+ * it must never appear with a count or a selectable state in the battle
+ * arsenal. The AA gun is the same kind of passive own-board item (bought and
+ * placed in the shop, then works alone), which is why it was already absent.
+ *
+ * Placement, the harbour editor and the shop keep their full ARSENAL_SPEC —
+ * this predicate is only about the attack phase.
+ */
+export function isAttackArsenalKind(kind: ArsenalKind): boolean {
+  return kind !== 'mine' && kind !== 'aaGun';
+}
+
 export interface ArsenalOutcome {
   readonly state: MatchState;
   readonly events: readonly MatchEvent[];

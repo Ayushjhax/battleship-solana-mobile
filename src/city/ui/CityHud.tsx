@@ -21,7 +21,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { CurrencyChip } from '@/ui/CurrencyChip';
+import { CurrencyInfoChip } from '@/features/points/CurrencyInfoChip';
 import { InkButton } from '@/ui/InkButton';
 import { InkPanel } from '@/ui/InkPanel';
 import { TitleRibbon } from '@/ui/TitleRibbon';
@@ -66,7 +66,7 @@ const RollingChip = memo(function RollingChip({
 
   return (
     <Animated.View style={style}>
-      <CurrencyChip kind={kind} value={shown} />
+      <CurrencyInfoChip kind={kind} value={shown} />
     </Animated.View>
   );
 });

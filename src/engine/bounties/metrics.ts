@@ -99,29 +99,6 @@ function sinksBy(events: readonly MatchEvent[], weaponEvent: string): number {
   return sinks;
 }
 
-/** The most sinks any ONE use of a weapon produced. §1's "2 ships with one". */
-function bestSingleUse(events: readonly MatchEvent[], weaponEvent: string): number {
-  let best = 0;
-  let current = 0;
-  let armed = false;
-  for (const event of events) {
-    if (event.type === weaponEvent) {
-      best = Math.max(best, current);
-      current = 0;
-      armed = true;
-      continue;
-    }
-    if (!armed) continue;
-    if (event.type === 'SUNK') current++;
-    else if (CLOSERS.includes(event.type)) {
-      best = Math.max(best, current);
-      current = 0;
-      armed = false;
-    }
-  }
-  return Math.max(best, current);
-}
-
 /**
  * §1 — "sink 2 ships with one Atomic Bomber". The engine emits one
  * `BOMB_DROPPED` carrying `kind`, so the atomic run is the SUNK events after a

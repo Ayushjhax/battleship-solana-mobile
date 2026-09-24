@@ -8,7 +8,7 @@
  * queue, which is what makes those hold while a room build is awaiting.
  */
 import { randomUUID } from 'node:crypto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   connectClient,
@@ -285,6 +285,113 @@ describe('matchmaking under concurrency', () => {
     await expect(survivor.waitFor((m) => m.t === 'matched', 800)).rejects.toThrow();
 
     survivor.close();
+    await server.close();
+  }, 20000);
+});
+
+describe('the 40-second bot fallback', () => {
+  let dbCalls: DbCall[];
+
+  beforeEach(() => {
+    vi.resetModules();
+    installAuthMock();
+    dbCalls = installDbMock().calls;
+  });
+
+  afterEach(() => {
+    // The matchmaker reads these at module load; never leak a shrunk clock
+    // into the next test's fresh import.
+    delete process.env.SEABATTLE_BOT_AFTER_MS;
+    delete process.env.SEABATTLE_SWEEP_INTERVAL_MS;
+  });
+
+  it('seats a human match that arrives before the deadline, and never the bot', async () => {
+    process.env.SEABATTLE_BOT_AFTER_MS = '400';
+    process.env.SEABATTLE_SWEEP_INTERVAL_MS = '20';
+    const server = await startTestServer();
+    const a = await queueUp(server, 'early-a', { wagered: true });
+    const b = await queueUp(server, 'early-b', { wagered: true });
+
+    const matched = await a.waitFor((m) => m.t === 'matched', 5000);
+    await b.waitFor((m) => m.t === 'matched', 5000);
+    expect(matched).toMatchObject({ wagered: true, wagerStake: 50 });
+    expect((matched.opponent as { isBot: boolean }).isBot).toBe(false);
+
+    // Wait past the deadline: the human room already owns both players, so
+    // the fallback cannot seat a second match or refund a live stake.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(a.history().filter((m) => m.t === 'matched')).toHaveLength(1);
+    expect(dbCalls.filter((c) => c.fn === 'refundPointWager')).toHaveLength(0);
+
+    a.close();
+    b.close();
+    await server.close();
+  }, 20000);
+
+  it('releases the stake and seats an unwagered bot after the deadline', async () => {
+    process.env.SEABATTLE_BOT_AFTER_MS = '60';
+    process.env.SEABATTLE_SWEEP_INTERVAL_MS = '20';
+    const server = await startTestServer();
+    const client = await queueUp(server, 'waiting', { wagered: true });
+
+    const queued = await client.waitFor((m) => m.t === 'queued', 5000);
+    expect(typeof queued.fallbackInMs).toBe('number');
+
+    const matched = await client.waitFor((m) => m.t === 'matched', 5000);
+    expect(matched).toMatchObject({ wagered: false, wagerStake: 0 });
+    expect((matched.opponent as { isBot: boolean }).isBot).toBe(true);
+    // Exactly one refund, one unwagered match row, no wagered match row.
+    expect(dbCalls.filter((c) => c.fn === 'refundPointWager')).toHaveLength(1);
+    expect(dbCalls.filter((c) => c.fn === 'insertWageredMatch')).toHaveLength(0);
+    expect(dbCalls.filter((c) => c.fn === 'insertMatch')).toHaveLength(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(client.history().filter((m) => m.t === 'matched')).toHaveLength(1);
+
+    client.close();
+    await server.close();
+  }, 20000);
+
+  it('cancelling before the deadline prevents the bot and refunds exactly once', async () => {
+    process.env.SEABATTLE_BOT_AFTER_MS = '150';
+    process.env.SEABATTLE_SWEEP_INTERVAL_MS = '20';
+    const server = await startTestServer();
+    const client = await queueUp(server, 'canceller', { wagered: true });
+    await client.waitFor((m) => m.t === 'queued', 5000);
+
+    client.send({ t: 'cancelQueue', v: 1 });
+    const cancelled = await client.waitFor((m) => m.t === 'queue:cancelled', 5000);
+    expect(cancelled).toMatchObject({ refunded: true, reason: 'cancelled' });
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(client.history().some((m) => m.t === 'matched')).toBe(false);
+    expect(dbCalls.filter((c) => c.fn === 'refundPointWager')).toHaveLength(1);
+
+    client.close();
+    await server.close();
+  }, 20000);
+
+  it('defers the fallback while the stake cannot be released, then retries', async () => {
+    process.env.SEABATTLE_BOT_AFTER_MS = '50';
+    process.env.SEABATTLE_SWEEP_INTERVAL_MS = '20';
+    // Re-install the mock with one failing refund: the first fallback pass
+    // must re-queue the entry instead of starting a bot match with a live
+    // online hold.
+    vi.resetModules();
+    installAuthMock();
+    dbCalls = installDbMock({ refundFailures: 1 }).calls;
+
+    const server = await startTestServer();
+    const client = await queueUp(server, 'retrying', { wagered: true });
+    await client.waitFor((m) => m.t === 'queued', 5000);
+
+    const matched = await client.waitFor((m) => m.t === 'matched', 5000);
+    expect(matched).toMatchObject({ wagered: false });
+    expect((matched.opponent as { isBot: boolean }).isBot).toBe(true);
+    expect(dbCalls.filter((c) => c.fn === 'refundPointWager')).toHaveLength(2);
+    expect(client.history().filter((m) => m.t === 'matched')).toHaveLength(1);
+
+    client.close();
     await server.close();
   }, 20000);
 });

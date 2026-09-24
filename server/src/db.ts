@@ -235,13 +235,19 @@ export async function abandonMatch(matchId: string): Promise<boolean> {
 
 export type DbEndReason = 'victory' | 'resign' | 'timeout' | 'disconnect';
 
-/** What apply_match_result reports back (0015). */
+/** What apply_match_result reports back (0015, extended by 0025). */
 export interface MatchSettlement {
   /** False when the match was already settled — a retry moved nothing. */
   readonly settled: boolean;
   /** Steel actually credited to each seat, AFTER the Scrapyard bonus. */
   readonly salvageA: number;
   readonly salvageB: number;
+  /**
+   * The wager breakdown the settlement actually applied (0025), or null for
+   * an unwagered match or a database still on the pre-fee function. The room
+   * reports these numbers to the clients so no screen recomputes them.
+   */
+  readonly wager: { gross: number; fee: number; payout: number } | null;
 }
 
 export function dbEndReason(reason: GameOverReason): DbEndReason {
@@ -283,15 +289,34 @@ export async function applyMatchResult(
   if (error) throw new Error(`applyMatchResult(${matchId}): ${error.message}`);
 
   // 0015 changed the return from a bare boolean to {settled, salvage_a,
-  // salvage_b}, so the room can tell each player what actually landed in
-  // their Scrapyard rather than the client guessing.
+  // salvage_b}; 0025 added the wager gross/fee/payout. Both are additive, so
+  // a database without 0025 simply reports no wager breakdown and the room
+  // falls back to the old display.
   const row = data as unknown as
-    | { settled?: boolean; salvage_a?: number; salvage_b?: number }
+    | {
+        settled?: boolean;
+        salvage_a?: number;
+        salvage_b?: number;
+        wager?: { gross?: number; fee?: number; payout?: number } | null;
+      }
     | null;
+  const rawWager = row?.wager ?? null;
+  const wager =
+    rawWager &&
+    Number.isInteger(rawWager.gross) &&
+    Number.isInteger(rawWager.fee) &&
+    Number.isInteger(rawWager.payout)
+      ? {
+          gross: rawWager.gross as number,
+          fee: rawWager.fee as number,
+          payout: rawWager.payout as number,
+        }
+      : null;
   return {
     settled: row?.settled === true,
     salvageA: row?.salvage_a ?? 0,
     salvageB: row?.salvage_b ?? 0,
+    wager,
   };
 }
 

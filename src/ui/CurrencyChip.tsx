@@ -2,7 +2,8 @@
  * Coins and gems, drawn in code (docs/assets.md: "the coin and gem chips").
  * A roughRect pill with the icon on the left and the count in Bitter 600.
  */
-import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import type { ReactNode } from 'react';
+import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Svg from 'react-native-svg';
 
 import { color, font, type as typeScale } from './tokens';
@@ -14,6 +15,13 @@ export interface CurrencyChipProps {
   w?: number;
   h?: number;
   style?: ViewStyle;
+  /**
+   * When given, the whole chip — icon and amount — becomes one button. Tapping
+   * it only ever opens information; it must never trigger a transaction.
+   */
+  onPress?: () => void;
+  /** Screen-reader name for the button, e.g. "About Captain's points". */
+  accessibilityLabel?: string;
 }
 
 export const COIN_GOLD = '#C99A2E';
@@ -28,7 +36,15 @@ function format(n: number): string {
   return String(n);
 }
 
-export function CurrencyChip({ kind, value, w = 92, h = 30, style }: CurrencyChipProps) {
+export function CurrencyChip({
+  kind,
+  value,
+  w = 92,
+  h = 30,
+  style,
+  onPress,
+  accessibilityLabel,
+}: CurrencyChipProps) {
   const { roughRect, roughCircle, roughPolygon, roughLine } = useRough();
   const seed = hashString(`chip-${kind}`);
   const iconCx = h / 2 + 3;
@@ -131,7 +147,14 @@ export function CurrencyChip({ kind, value, w = 92, h = 30, style }: CurrencyChi
         ];
 
   return (
-    <View style={[{ width: w, height: h }, style]}>
+    <ChipShell
+      kind={kind}
+      w={w}
+      h={h}
+      style={style}
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel}
+    >
       <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={StyleSheet.absoluteFill}>
         <RoughShape paths={pill} />
         {icon.map((paths, i) => (
@@ -161,6 +184,41 @@ export function CurrencyChip({ kind, value, w = 92, h = 30, style }: CurrencyChi
           {format(value)}
         </Text>
       </View>
-    </View>
+    </ChipShell>
   );
 }
+
+function ChipShell({
+  kind,
+  w,
+  h,
+  style,
+  onPress,
+  accessibilityLabel,
+  children,
+}: {
+  kind: CurrencyChipProps['kind'];
+  w: number;
+  h: number;
+  style?: ViewStyle;
+  onPress?: () => void;
+  accessibilityLabel?: string;
+  children: ReactNode;
+}) {
+  if (!onPress) return <View style={[{ width: w, height: h }, style]}>{children}</View>;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? `About ${kind}`}
+      accessibilityHint="Opens an explanation. Does not change your balance."
+      onPress={onPress}
+      style={({ pressed }) => [{ width: w, height: h }, style, pressed ? styles.pressed : null]}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  pressed: { opacity: 0.72 },
+});

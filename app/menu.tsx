@@ -24,7 +24,7 @@ import { cityEnabled, loadFlags } from '@/city/features';
 import { collectable, useCity } from '@/city/store';
 import { getCity } from '@/city/api';
 import { AVATARS } from '@/ui/assets';
-import { CurrencyChip } from '@/ui/CurrencyChip';
+import { CurrencyInfoChip } from '@/features/points/CurrencyInfoChip';
 import { attentionCard } from '@/raid/ui/defenceLog';
 import { raidedWhileAwayLine } from '@/raid/ui/captainCopy';
 import { useRaid } from '@/raid/store';
@@ -167,9 +167,9 @@ export default function MenuScreen() {
       </View>
 
       <View style={styles.topRight}>
-        <CurrencyChip kind="points" value={pointBalance} />
-        <CurrencyChip kind="coins" value={profile.coins} />
-        <CurrencyChip kind="gems" value={profile.gems} />
+        <CurrencyInfoChip kind="points" value={pointBalance} />
+        <CurrencyInfoChip kind="coins" value={profile.coins} />
+        <CurrencyInfoChip kind="gems" value={profile.gems} />
       </View>
 
       <View style={styles.title} pointerEvents="none">

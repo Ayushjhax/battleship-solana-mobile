@@ -35,6 +35,7 @@ import Animated, {
 import Svg, { G } from 'react-native-svg';
 
 import { CAPTAINS, captainFuel } from '@engine/captains';
+import { PLATFORM_FEE_PERCENT, wagerBreakdown, wagerPot } from '@engine/economy';
 import { terrainForSea, seaSpec, unlockedSeasFor, isSeaId, type SeaId } from '@engine/terrain';
 import type { CaptainId } from '@engine/types';
 import { haptic } from '@/audio/haptics';
@@ -55,7 +56,7 @@ import {
   type PlacementPreviewCell,
 } from '@/state/placement';
 import { stakeOfflineWager } from '@/net/offlineWager';
-import { usePoints } from '@/state/points';
+import { WAGER_STAKE, usePoints } from '@/state/points';
 import { InkButton } from '@/ui/InkButton';
 import { InkPanel } from '@/ui/InkPanel';
 import { Paper } from '@/ui/Paper';
@@ -1406,11 +1407,11 @@ function PlacementCanvas({ tutorial = false }: { tutorial?: boolean }) {
       setWagered(false);
       return;
     }
-    if (!pointsReady || pointBalance < 50) {
+    if (!pointsReady || pointBalance < WAGER_STAKE) {
       Alert.alert(
         pointsReady ? 'Not enough points' : 'Points unavailable',
         pointsReady
-          ? `A wager needs 50 points. Your balance is ${pointBalance}.`
+          ? `A wager needs ${WAGER_STAKE} points. Your balance is ${pointBalance}.`
           : 'Your point balance has not loaded yet. Check the server connection or open the Points exchange.',
         [
           { text: 'Not now', style: 'cancel' },
@@ -1419,18 +1420,34 @@ function PlacementCanvas({ tutorial = false }: { tutorial?: boolean }) {
       );
       return;
     }
+    // An online stake is committed the moment the queue accepts it, so the
+    // fee and the winner's payout are shown before it can be turned on. An
+    // offline wager settles against this device's AI and has no platform fee.
+    if (mode === 'online') {
+      const pot = wagerPot();
+      const breakdown = wagerBreakdown(pot);
+      Alert.alert(
+        `Wager ${WAGER_STAKE} points?`,
+        `Both captains stake ${WAGER_STAKE} points. The winner takes the ${pot}-point pot less the ${PLATFORM_FEE_PERCENT}% platform fee — ${breakdown.payout} points. If no captain joins, your stake is refunded and you play a bot without one.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Wager', onPress: () => setWagered(true) },
+        ],
+      );
+      return;
+    }
     setWagered(true);
-  }, [pointBalance, pointsReady, router, wagered]);
+  }, [mode, pointBalance, pointsReady, router, wagered]);
 
   const beginBattle = useCallback(() => {
     if (staking) return;
     const state = usePlacement.getState();
     if (state.ships.length !== FLEET.length) return;
-    if (wagered && (!pointsReady || pointBalance < 50)) {
+    if (wagered && (!pointsReady || pointBalance < WAGER_STAKE)) {
       Alert.alert(
         'Wager unavailable',
         pointsReady
-          ? `A new wager needs 50 points. Your balance is ${pointBalance}.`
+          ? `A new wager needs ${WAGER_STAKE} points. Your balance is ${pointBalance}.`
           : 'Your point balance is unavailable. Reconnect to the game server before entering a wager.',
         [
           { text: 'Cancel', style: 'cancel' },
@@ -1508,7 +1525,7 @@ function PlacementCanvas({ tutorial = false }: { tutorial?: boolean }) {
       {mode !== 'hotseat' && !tutorial ? (
         <View style={styles.wagerButton}>
           <InkButton
-            label={wagered ? 'Wager ON · 50 P' : 'Wager OFF'}
+            label={wagered ? `Wager ON · ${WAGER_STAKE} P` : 'Wager OFF'}
             tone={wagered ? 'confirm' : 'ink'}
             size="sm"
             w={150}

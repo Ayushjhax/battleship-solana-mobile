@@ -40,11 +40,18 @@ export interface DbMockOptions {
    * not been cleaned yet.
    */
   readonly settleDelayMs?: number;
+  /**
+   * Reject the first N refundPointWager calls. Lets the bot-fallback tests
+   * prove the fallback is deferred (and the entry re-queued) until the online
+   * stake is actually released.
+   */
+  readonly refundFailures?: number;
 }
 
 export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } {
   const calls: DbCall[] = [];
   const wagerPlayers = new Map<string, readonly string[]>();
+  let refundFailuresLeft = options.refundFailures ?? 0;
   const record =
     (fn: string) =>
     (...args: unknown[]) => {
@@ -76,6 +83,10 @@ export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } 
     }),
     refundPointWager: vi.fn(async (profileId: string, requestId: string) => {
       record('refundPointWager')(profileId, requestId);
+      if (refundFailuresLeft > 0) {
+        refundFailuresLeft -= 1;
+        throw new Error('refund temporarily unavailable');
+      }
       return 100;
     }),
     cancelWageredMatchBeforeStart: vi.fn(async (matchId: string, cancelledBy: string) => {
@@ -95,7 +106,8 @@ export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } 
       if (options.settleDelayMs) {
         await new Promise((resolve) => setTimeout(resolve, options.settleDelayMs));
       }
-      return true;
+      // Mirrors db.ts's MatchSettlement shape (0015 + 0025).
+      return { settled: true, salvageA: 0, salvageB: 0, wager: null };
     }),
     dbEndReason: (reason: string) => (reason === 'fleet' ? 'victory' : reason === 'forfeit' ? 'timeout' : 'resign'),
   }));

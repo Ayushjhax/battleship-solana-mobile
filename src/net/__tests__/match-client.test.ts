@@ -159,7 +159,7 @@ function startFakeServer(port: number, initialRoom = new FakeRoom()): Promise<Fa
             server.send({ t: 'error', v: 1, code: 'not_in_room', message: 'already in a match' });
             return;
           }
-          server.send({ t: 'queued', v: 1, position: 1, onlineCount: 3 });
+          server.send({ t: 'queued', v: 1, position: 1, onlineCount: 3, fallbackInMs: 40_000 });
           return;
         case 'cancelQueue':
           server.send({
@@ -279,6 +279,22 @@ describe('match client', () => {
     const hello = server.received.find((m) => m.t === 'hello');
     expect(hello).toMatchObject({ t: 'hello', v: 1, token: 'alice' });
     expect(hello && 'resumeMatchId' in hello ? hello.resumeMatchId : undefined).toBeUndefined();
+  });
+
+  it('tracks the server fallback deadline and clears it when a match arrives', async () => {
+    const mc = await client();
+    mc.getState().queue('classic');
+    await until(() => mc.getState().status === 'queued', 5000, 'queued');
+
+    const fallbackAt = mc.getState().fallbackAt;
+    expect(fallbackAt).not.toBeNull();
+    const remaining = (fallbackAt as number) - Date.now();
+    expect(remaining).toBeGreaterThan(39_000);
+    expect(remaining).toBeLessThanOrEqual(40_000);
+
+    sendMatched(server);
+    await until(() => mc.getState().status === 'matched', 5000, 'matched');
+    expect(mc.getState().fallbackAt).toBeNull();
   });
 
   it('fires with a client seq, gets the verdict back, and drops a duplicate events batch', async () => {

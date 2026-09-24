@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ARSENAL_SPEC, atomicFootprint, bomberFootprint, doubleTorpedoRows } from '../arsenal';
+import {
+  ARSENAL_SPEC,
+  atomicFootprint,
+  bomberFootprint,
+  doubleTorpedoRows,
+  isAttackArsenalKind,
+} from '../arsenal';
 import { coordKey } from '../board';
 import { projectView, reduce } from '../match';
 import type { ArsenalItem, MatchEvent, MatchState } from '../types';
@@ -303,5 +309,45 @@ describe('use validation', () => {
 
     const classic = startMatch({ first: P1 });
     expect(types(use(classic, 'b1', { at: { r: 0, c: 0 } }).events)).toEqual(['REJECTED']);
+  });
+
+  it('refuses a mine as an attack, and the same mine still defends', () => {
+    // The attack arsenal must never offer a mine; the shared predicate is
+    // what both battle renderers derive their list from.
+    expect(isAttackArsenalKind('mine')).toBe(false);
+    expect(isAttackArsenalKind('aaGun')).toBe(false);
+    const attackKinds = ARSENAL_SPEC.map((entry) => entry.kind).filter(isAttackArsenalKind);
+    expect(attackKinds).not.toContain('mine');
+    expect(attackKinds).toEqual([
+      'torpedoBomber',
+      'doubleTorpedoBomber',
+      'bomber',
+      'atomicBomber',
+      'radar',
+      'submarine',
+      // Own-board but still offered as passive cards (never pressable); the
+      // design only removes the mine, whose count must not appear at all.
+      'sonar_net',
+      'decoy',
+      'minesweeper',
+    ]);
+
+    // A stale/forged request that names the placed mine is rejected at the
+    // reducer — the server's validation boundary — and the state is untouched.
+    const state = setup([], [item('m1', 'mine', { r: 9, c: 9 })]);
+    const attempted = { ...state, turn: P0 };
+    const forged = reduce(attempted, { type: 'USE_ARSENAL', playerId: P0, itemId: 'm1' });
+    expect(types(forged.events)).toEqual(['REJECTED']);
+    // `reduce` returns exactly the object it was handed when it rejects, so
+    // the identity check belongs on `attempted` (the copy with the forced
+    // turn), not on the pre-copy `state`.
+    expect(forged.state).toBe(attempted);
+
+    // The same mine still does its defensive job: firing on it detonates it,
+    // ends the attacker's turn and is consumed.
+    const fired = reduce({ ...state, turn: P1 }, { type: 'FIRE', playerId: P1, at: { r: 9, c: 9 } });
+    expect(types(fired.events)).toEqual(['MINE_TRIGGERED', 'TURN_CHANGED']);
+    expect(fired.state.turn).toBe(P0);
+    expect(fired.state.players[0].board.arsenal[0]?.used).toBe(true);
   });
 });

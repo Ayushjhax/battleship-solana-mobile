@@ -7,7 +7,7 @@
  * P08 owns the targeting overlays and attack animations; this is the plumbing
  * they hang on, and the tutorial registers `card-<kind>` targets here.
  */
-import { ARSENAL_SPEC, isOwnBoardKind } from '@engine/arsenal';
+import { ARSENAL_SPEC, isAttackArsenalKind, isOwnBoardKind } from '@engine/arsenal';
 import type { ArsenalItem, ArsenalKind } from '@engine/types';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg from 'react-native-svg';
@@ -94,6 +94,9 @@ export function ArsenalPopover({ onClose }: { onClose: () => void }) {
     if (item.used || item.destroyed) continue;
     byKind.get(item.kind)?.push(item);
   }
+  // Mines (and the AA gun) are defensive placements, never attack choices —
+  // the shared engine predicate is the one rule both arsenal renderers use.
+  const attackKinds = ARSENAL_SPEC.filter((spec) => isAttackArsenalKind(spec.kind));
 
   return (
     <View style={styles.wrap} pointerEvents="box-none">
@@ -110,7 +113,7 @@ export function ArsenalPopover({ onClose }: { onClose: () => void }) {
           padding={space.xs}
         >
           <View style={styles.grid}>
-            {ARSENAL_SPEC.map((spec) => (
+            {attackKinds.map((spec) => (
               <Card
                 key={spec.kind}
                 kind={spec.kind}
