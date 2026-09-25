@@ -26,6 +26,55 @@ export const font = {
 } as const;
 
 /**
+ * The main menu's own faces and palette, matched to its mockup: Fredoka for the
+ * chunky caps, Patrick Hand for the handwriting, navy ink on pastel cards.
+ * The exception to "one family" — every other screen stays on Bitter.
+ */
+export const menuFont = {
+  hand: 'PatrickHand_400Regular',
+  caps: 'Fredoka_600SemiBold',
+  capsBold: 'Fredoka_700Bold',
+} as const;
+
+export const menuColor = {
+  navy: '#15263F',
+  card: '#FFFDF8',
+  onlineCard: '#D9E7A3',
+  onlineButton: '#BFDB6A',
+  offlineCard: '#D6E1EC',
+  offlineButton: '#B0C8E3',
+  rankBar: '#5B8FD6',
+  rankTrack: '#E4E6EA',
+  twoPlayers: '#FDD9CB',
+  howToPlay: '#E6D8F1',
+  leaderboard: '#F9F0CA',
+  portCity: '#CBECF0',
+  store: '#FDD5D5',
+  pointsExchange: '#D4F1D8',
+} as const;
+
+/**
+ * The commissioned art's own ink (assets/images/login-assets, keyboard,
+ * name-screen): `ink` is the baked labels' glyph colour, sampled, so the live
+ * labels drawn on that art sit beside its own lettering.
+ */
+export const artColor = {
+  ink: '#0A106C',
+  soft: '#44508F',
+  muted: '#7C86B5',
+  /** The keyboard art's glyphs run a bluer ink than the rest. */
+  keyInk: '#0B0D89',
+  /** The avatar screen's red, sampled from its "player b" label art. */
+  red: '#C80606',
+  /** Settings' and the match cards' bold labels, sampled from their label art. */
+  navy: '#12147A',
+  /** The profile's field labels: a lighter, bluer ink than the values. */
+  label: '#172191',
+  /** The profile's "verified" line, sampled. */
+  green: '#25803B',
+} as const;
+
+/**
  * 5.2 — modular scale, base 16, ratio 1.25, plus the family names.
  * No second display face. No all-caps labels.
  */

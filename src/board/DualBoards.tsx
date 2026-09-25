@@ -17,7 +17,7 @@ import type { StyleProp, ViewStyle } from 'react-native';
 import { BOARD_ART } from '@/ui/assets';
 import { CANVAS_H, CANVAS_W } from '@/ui/tokens';
 import { TurnTriangle, type TurnState } from '@/ui/TurnTriangle';
-import { GridBoard } from './GridBoard';
+import { GridBoard, type BoardSkin } from './GridBoard';
 import { BOARD_TOP, boardOrigins } from './layout';
 
 export interface DualBoardsProps {
@@ -53,6 +53,7 @@ export interface DualBoardsProps {
   boardStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
   /** Anything that must move with the boards (fx overlays, gutter buttons). */
   children?: ReactNode;
+  skin?: BoardSkin;
 }
 
 const TRIANGLE_SIZE = 62;
@@ -73,6 +74,7 @@ export function DualBoards({
   columnLabels = true,
   boardStyle,
   children,
+  skin = 'ink',
 }: DualBoardsProps) {
   const origins = boardOrigins(top);
   const triW = TRIANGLE_W;
@@ -91,6 +93,7 @@ export function DualBoards({
         seedKey="own"
         watermark={BOARD_ART.watermarkAnchor}
         animateMarks={animateMarks}
+        skin={skin}
       />
       <GridBoard
         origin={origins.enemy}
@@ -107,6 +110,8 @@ export function DualBoards({
         seedKey="enemy"
         watermark={BOARD_ART.watermarkKraken}
         animateMarks={animateMarks}
+        skin={skin}
+        wrecks
       />
       <View
         pointerEvents="none"

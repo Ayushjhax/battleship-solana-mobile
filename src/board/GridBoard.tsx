@@ -9,7 +9,8 @@
  *   1. optional watermark at 12% opacity, clipped to the board
  *   2. the cell rules — 22 memoised plain <Line>s, not 100 rects, not rough
  *   3. the frame — a heavy double rough frame with overshooting corners,
- *      seeded by a stable key so it never re-wobbles
+ *      seeded by a stable key so it never re-wobbles; or, with skin="art",
+ *      the placement art's own hand-drawn frame (BATTLE_ART.boardFrame)
  *   4. row letters A-J and column numbers 1-10 outside the frame, Bitter 700
  *      at 16 units. Letters go on the board's OUTER side in the battle layout.
  *   5. revealed cells — rough hachure in inkFaint
@@ -38,8 +39,8 @@ import { memo, useCallback, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
 import Svg, { G, Line } from 'react-native-svg';
 
-import type { Asset } from '@/ui/assets';
-import { color, font } from '@/ui/tokens';
+import { BATTLE_ART, type Asset } from '@/ui/assets';
+import { artColor, color, font } from '@/ui/tokens';
 import { RoughShape, hashString, roughLine, roughRect } from '@/ui/useRough';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 import { CellMark } from './CellMark';
@@ -63,6 +64,17 @@ const OVERSHOOT = 5;
 const LABEL_SIZE = 16;
 
 export type LabelSide = 'left' | 'right' | 'none';
+
+/**
+ * 'ink': the rough pen frame and violet labels of the sheet. 'art': the
+ * commissioned frame, navy labels and a blue wash of a watermark — placement
+ * and the battle, drawn over the page backdrop.
+ */
+export type BoardSkin = 'ink' | 'art';
+
+/** boardFrame.png is 622 x 609 with the board inside x 18..605, y 15..588. */
+const FRAME_SX = BOARD_SIZE / 587;
+const FRAME_SY = BOARD_SIZE / 573;
 
 export interface GridBoardProps {
   /** Battle: the board's top-left on the canvas. */
@@ -95,6 +107,9 @@ export interface GridBoardProps {
   columnLabels?: boolean;
   /** Stable key for the frame's wobble. */
   seedKey?: string;
+  skin?: BoardSkin;
+  /** `ships` are an enemy's sunk ships: drawn as found wrecks. */
+  wrecks?: boolean;
   /** Pop marks in as they land. */
   animateMarks?: boolean;
   children?: ReactNode;
@@ -110,6 +125,7 @@ interface StaticLayerProps {
   columnLabels: boolean;
   seedKey: string;
   watermark: Asset | undefined;
+  skin: BoardSkin;
 }
 
 function buildRules(): ReactNode[] {
@@ -141,7 +157,8 @@ function buildRules(): ReactNode[] {
   return lines;
 }
 
-function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLayerProps) {
+function StaticLayerInner({ labels, columnLabels, seedKey, watermark, skin }: StaticLayerProps) {
+  const art = skin === 'art';
   const seed = hashString(`board-frame-${seedKey}`);
   const m = LABEL_MARGIN;
   const e = m + BOARD_SIZE;
@@ -166,9 +183,9 @@ function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLa
         <View style={styles.watermarkClip}>
           <Image
             source={watermark}
-            style={styles.watermark}
+            style={[styles.watermark, art && styles.watermarkArt]}
             contentFit="contain"
-            tintColor={color.ink}
+            tintColor={art ? WATERMARK_BLUE : color.ink}
             cachePolicy="memory-disk"
           />
         </View>
@@ -180,18 +197,25 @@ function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLa
         style={StyleSheet.absoluteFill}
       >
         <G>{buildRules()}</G>
-        {edges.map((paths, i) => (
-          <RoughShape key={i} paths={paths} />
-        ))}
-        <RoughShape paths={inner} />
+        {art ? null : edges.map((paths, i) => <RoughShape key={i} paths={paths} />)}
+        {art ? null : <RoughShape paths={inner} />}
       </Svg>
+      {art ? (
+        <Image
+          source={BATTLE_ART.boardFrame}
+          style={styles.frameArt}
+          contentFit="fill"
+          cachePolicy="memory-disk"
+        />
+      ) : null}
       {columnLabels
         ? COL_LABELS.map((label, c) => (
             <Text
               key={`c${c}`}
               style={[
                 styles.label,
-                { left: m + c * CELL, top: 2, width: CELL, height: m - 4, lineHeight: m - 4 },
+                art && styles.labelArt,
+                { left: m + c * CELL, top: art ? -1 : 2, width: CELL, height: m - 4, lineHeight: m - 4 },
               ]}
             >
               {label}
@@ -204,8 +228,10 @@ function StaticLayerInner({ labels, columnLabels, seedKey, watermark }: StaticLa
               key={`r${r}`}
               style={[
                 styles.label,
+                art && styles.labelArt,
                 {
-                  left: labels === 'left' ? 0 : e + 2,
+                  // The art frame's lines run a few units outside the board: clear them.
+                  left: labels === 'left' ? (art ? -3 : 0) : e + (art ? 5 : 2),
                   top: m + r * CELL,
                   width: m - 2,
                   height: CELL,
@@ -230,7 +256,8 @@ const StaticLayer = memo(
     a.labels === b.labels &&
     a.columnLabels === b.columnLabels &&
     a.seedKey === b.seedKey &&
-    a.watermark === b.watermark,
+    a.watermark === b.watermark &&
+    a.skin === b.skin,
 );
 
 // ---------------------------------------------------------------------------
@@ -303,6 +330,8 @@ function GridBoardInner({
   columnLabels = true,
   seedKey = 'own',
   animateMarks = true,
+  skin = 'ink',
+  wrecks = false,
   children,
 }: GridBoardProps) {
   const at: BoardOrigin = origin ?? { x: x ?? 0, y };
@@ -361,6 +390,7 @@ function GridBoardInner({
         columnLabels={columnLabels}
         seedKey={seedKey}
         watermark={watermark}
+        skin={skin}
       />
       <View
         {...tutorialTarget}
@@ -393,7 +423,8 @@ function GridBoardInner({
               <ShipSprite
                 shipClass={ship.class}
                 orientation={ship.orientation}
-                sunk={isSunk(ship)}
+                sunk={!wrecks && isSunk(ship)}
+                wreck={wrecks}
               />
             </View>
           );
@@ -425,6 +456,9 @@ function GridBoardInner({
 
 export const GridBoard = memo(GridBoardInner);
 
+/** The mockup's watermark: a pale blue wash, not a violet one. */
+const WATERMARK_BLUE = '#3C62C4';
+
 const styles = StyleSheet.create({
   label: {
     position: 'absolute',
@@ -432,6 +466,20 @@ const styles = StyleSheet.create({
     fontFamily: font.display,
     fontSize: LABEL_SIZE,
     textAlign: 'center',
+  },
+  // A paper halo, so a letter reads over the page art behind it (a lighthouse, a gull).
+  labelArt: {
+    color: artColor.navy,
+    textShadowColor: 'rgba(251, 249, 242, 0.95)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
+  },
+  frameArt: {
+    position: 'absolute',
+    left: LABEL_MARGIN - 18 * FRAME_SX,
+    top: LABEL_MARGIN - 15 * FRAME_SY,
+    width: 622 * FRAME_SX,
+    height: 609 * FRAME_SY,
   },
   sheetMask: {
     position: 'absolute',
@@ -457,4 +505,5 @@ const styles = StyleSheet.create({
     height: BOARD_SIZE - 20,
     opacity: 0.12,
   },
+  watermarkArt: { left: 22, top: 22, width: BOARD_SIZE - 44, height: BOARD_SIZE - 44, opacity: 0.17 },
 });

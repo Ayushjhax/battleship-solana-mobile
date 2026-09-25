@@ -31,6 +31,7 @@ import {
 import { useCloud } from '@/state/cloud';
 import { useProfile, waitForProfileHydration } from '@/state/profile';
 import { usePrivySync } from '@/state/privySync';
+import { BACKGROUNDS } from '@/ui/assets';
 import { Scale } from '@/ui/Scale';
 import { CANVAS_W, color, font, type as typeScale } from '@/ui/tokens';
 
@@ -108,6 +109,10 @@ export default function Boot() {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
   const [mode, setMode] = useState<BootMode>(reduceMotion ? 'end' : 'play');
+  // Reduced motion holds the end state from the first frame, so the logo — and
+  // the background it pops in with — starts already revealed rather than
+  // waiting on a timer that 'end' mode never runs.
+  const [logoShown, setLogoShown] = useState(reduceMotion);
   const [restoring, setRestoring] = useState(false);
   const work = useRef<Promise<Target> | null>(null);
   const leaving = useRef(false);
@@ -126,7 +131,7 @@ export default function Boot() {
     if (leaving.current) return;
     leaving.current = true;
     // The account handoff can outlast the timeline on a fresh sign-in, so say
-    // so rather than holding a silent sheet.
+    // so rather than holding a silent page.
     const caption = setTimeout(() => {
       if (mounted.current) setRestoring(true);
     }, 400);
@@ -138,7 +143,7 @@ export default function Boot() {
     setRestoring(false);
     setMode('exit');
     // The native slide_from_right on the next screen starts on the next tick,
-    // so the sheet's exit and the menu's entrance overlap.
+    // so the logo's exit and the menu's entrance overlap.
     setTimeout(() => router.replace(target), 16);
   }, [router]);
 
@@ -148,13 +153,16 @@ export default function Boot() {
     const t = BOOT_TIMELINE;
     const timers = [
       setTimeout(() => playSfx('paperDrop'), t.paperDrop),
-      setTimeout(() => playSfx('penScratchLong'), t.rule),
+      setTimeout(() => {
+        playSfx('penScratchLong');
+        setLogoShown(true);
+      }, t.logo),
       setTimeout(() => void leave(), t.exit),
     ];
     return () => timers.forEach(clearTimeout);
   }, [mode, leave]);
 
-  // Reduce motion: hold the finished sheet, then go.
+  // Reduce motion: hold the finished page, then go.
   useEffect(() => {
     if (!reduceMotion) return;
     const timer = setTimeout(() => void leave(), BOOT_TIMELINE.reduceMotionHold);
@@ -164,11 +172,14 @@ export default function Boot() {
   const skip = useCallback(() => {
     if (mode !== 'play') return;
     setMode('end');
+    setLogoShown(true);
     void leave();
   }, [mode, leave]);
 
   return (
-    <Scale backdrop="plain">
+    // Transparent over the first page the root layout paints; the logo's own
+    // backdrop fades in over it on the logo beat.
+    <Scale transparent backgroundImage={logoShown ? BACKGROUNDS.logoReveal : undefined}>
       <BootSequence mode={mode} />
       {restoring ? (
         <Text style={styles.restoring} accessibilityLiveRegion="polite">
@@ -181,7 +192,7 @@ export default function Boot() {
 }
 
 const styles = StyleSheet.create({
-  // Under the held logo, on the sheet the boot sequence has already drawn.
+  // Under the held logo, on the illustrated page.
   restoring: {
     position: 'absolute',
     left: 0,

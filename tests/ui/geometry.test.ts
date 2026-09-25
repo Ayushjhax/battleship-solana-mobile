@@ -15,6 +15,7 @@ import {
   laurelBranch,
   pathLength,
   ribbonShapes,
+  roundedRectPoints,
   sheetPath,
   shieldPoints,
   splitSubpaths,
@@ -298,6 +299,35 @@ describe('splitSubpaths', () => {
     const total = splitSubpaths(d).reduce((sum, part) => sum + pathLength(part), 0);
 
     expect(total).toBeCloseTo(pathLength(d), 5);
+  });
+});
+
+describe('roundedRectPoints', () => {
+  it('stays inside its box and touches every side', () => {
+    const points = roundedRectPoints(10, 20, 100, 40, 8) as Point[];
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+
+    expect(finite(points)).toBe(true);
+    expect(Math.min(...xs)).toBeCloseTo(10, 9);
+    expect(Math.max(...xs)).toBeCloseTo(110, 9);
+    expect(Math.min(...ys)).toBeCloseTo(20, 9);
+    expect(Math.max(...ys)).toBeCloseTo(60, 9);
+  });
+
+  it('clamps an oversized radius into a pill', () => {
+    const pill = roundedRectPoints(0, 0, 100, 30, 999) as Point[];
+    const leftmost = pill.filter(([x]) => x < 1e-9);
+
+    // A pill's ends are semicircles: only the middle of each end reaches x = 0
+    // (the two left corner arcs meet there, so the point appears twice).
+    expect(leftmost.length).toBeGreaterThan(0);
+    for (const [, y] of leftmost) expect(y).toBeCloseTo(15, 9);
+  });
+
+  it('is square-cornered at r = 0', () => {
+    const points = roundedRectPoints(0, 0, 50, 20, 0) as Point[];
+    expect(points.some(([x, y]) => x === 0 && y === 0)).toBe(true);
   });
 });
 

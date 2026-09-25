@@ -1,8 +1,16 @@
+/**
+ * Captain's profile — drawn to its mockup on BACKGROUNDS.settings: the captain
+ * (the portrait they chose, in their colour, inside the rope ring) with their
+ * standing on the left; the verified Privy account on the right. Sign-out asks
+ * first, and says so plainly if it cannot finish.
+ */
 import { useEmbeddedSolanaWallet, usePrivy } from '@privy-io/expo';
+import { Image } from 'expo-image';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { Modal, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 
+import { ArtButton } from '@/features/auth/LoginArt';
 import { privyDisplayName, privyEmail, privyLoginMethods } from '@/features/auth/privyUser';
 import { signOutGameplaySession } from '@/net/api';
 import { useMatchClient } from '@/net/match-client';
@@ -11,25 +19,88 @@ import { useCloud } from '@/state/cloud';
 import { useProfile } from '@/state/profile';
 import { usePoints } from '@/state/points';
 import { usePrivySync } from '@/state/privySync';
-import { AssetSlot } from '@/ui/AssetSlot';
-import { AVATARS } from '@/ui/assets';
-import { InkButton } from '@/ui/InkButton';
-import { InkIconButton } from '@/ui/InkIconButton';
-import { InkPanel } from '@/ui/InkPanel';
+import { ArtImageButton } from '@/ui/ArtImageButton';
+import { BACKGROUNDS, LOGIN_ART, PROFILE_ART, SETTINGS_ART, type Asset } from '@/ui/assets';
 import { InkSpinner } from '@/ui/InkSpinner';
-import { Paper } from '@/ui/Paper';
+import { portraitFor } from '@/ui/portraits';
 import { Scale } from '@/ui/Scale';
-import { TitleRibbon } from '@/ui/TitleRibbon';
-import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
+import { VSlicedImage } from '@/ui/SlicedImage';
+import { CANVAS_H, CANVAS_W, artColor, color, font } from '@/ui/tokens';
 import { shortAddress } from '@/wallet/solana';
 
-function Detail({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
+const LEFT = { x: 20, y: 66, w: 378, h: 282 } as const;
+const RIGHT = { x: 410, y: 66, w: 372, h: 282 } as const;
+/** round-frame.png is 234 x 231; its hole is radius 103 about (117, 115). */
+const RING = { w: 84, h: 84 * (231 / 234) } as const;
+const HOLE = { cx: 117 / 234, cy: 115 / 231, r: 104 / 234 } as const;
+const DIALOG = { w: 420, h: 236 } as const;
+
+function Art({ source, style }: { source: Asset; style: ImageStyle }) {
+  return (
+    <Image
+      source={source}
+      style={[{ position: 'absolute' }, style]}
+      contentFit="contain"
+      cachePolicy="memory-disk"
+      pointerEvents="none"
+    />
+  );
+}
+
+/**
+ * The chosen captain inside the rope ring. The portrait is the square picker
+ * art with its own frame and mat cropped off, clipped to the ring's hole.
+ */
+function RingPortrait({ avatarId, avatarColor }: { avatarId: number; avatarColor: string }) {
+  const d = HOLE.r * 2 * RING.w;
+  // The portrait art's picture starts ~11% in from each edge (its frame + mat).
+  const size = d / 0.78;
+  return (
+    <View style={{ width: RING.w, height: RING.h }}>
+      <View
+        style={{
+          position: 'absolute',
+          left: HOLE.cx * RING.w - d / 2,
+          top: HOLE.cy * RING.h - d / 2,
+          width: d,
+          height: d,
+          borderRadius: d / 2,
+          overflow: 'hidden',
+        }}
+      >
+        <Image
+          source={portraitFor(avatarId, avatarColor)}
+          style={{ position: 'absolute', left: (d - size) / 2, top: (d - size) / 2 + 2, width: size, height: size }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          accessibilityIgnoresInvertColors
+        />
+      </View>
+      <Image source={PROFILE_ART.ringFrame} style={StyleSheet.absoluteFill} contentFit="fill" />
+    </View>
+  );
+}
+
+function Detail({
+  label,
+  value,
+  danger = false,
+  last = false,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+  last?: boolean;
+}) {
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
       <Text style={[styles.detailValue, danger ? styles.danger : null]} numberOfLines={1} selectable>
         {value}
       </Text>
+      {last ? null : (
+        <Image source={SETTINGS_ART.dashedDivider} style={styles.detailRule} contentFit="fill" />
+      )}
     </View>
   );
 }
@@ -69,8 +140,14 @@ function SignOutDialog({
       <View style={styles.dialogDim} accessibilityViewIsModal>
         <Scale transparent>
           <View style={styles.dialogCard}>
-            <InkPanel w={408} h={220} seedKey="profile-sign-out" padding={space.lg}>
-              <Text style={styles.dialogKicker}>LEAVE THE SHIP?</Text>
+            <VSlicedImage
+              slices={PROFILE_ART.accountPanel}
+              w={DIALOG.w}
+              h={DIALOG.h}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={styles.dialogBodyBox}>
+              <Text style={styles.dialogKicker}>Leave the ship?</Text>
               <Text style={styles.dialogTitle}>Sign out of this captain</Text>
               <Text style={styles.dialogBody}>
                 This device will forget this account, its wallet session, and cached game details.
@@ -78,19 +155,26 @@ function SignOutDialog({
               </Text>
               {error ? <Text style={styles.dialogError}>{error}</Text> : null}
               <View style={styles.dialogActions}>
-                <InkButton label="Stay signed in" w={154} h={40} size="sm" disabled={busy} onPress={onCancel} />
-                <InkButton
-                  label={busy ? 'Signing out…' : 'Sign out'}
-                  tone="danger"
-                  w={154}
+                <ArtButton
+                  slices={SETTINGS_ART.creamButton}
+                  w={146}
                   h={40}
-                  size="sm"
+                  label="Stay signed in"
+                  fontSize={15}
+                  disabled={busy}
+                  onPress={onCancel}
+                />
+                <ArtImageButton
+                  source={PROFILE_ART.signOut}
+                  w={132}
+                  h={41}
+                  label={busy ? 'Signing out' : 'Sign out'}
                   disabled={busy}
                   onPress={onConfirm}
                 />
               </View>
-              {busy ? <InkSpinner size={18} seedKey="profile-signing-out" style={styles.dialogSpinner} /> : null}
-            </InkPanel>
+            </View>
+            {busy ? <InkSpinner size={18} seedKey="profile-signing-out" style={styles.dialogSpinner} /> : null}
           </View>
         </Scale>
       </View>
@@ -152,78 +236,135 @@ export default function ProfileScreen() {
   }, [loggingOut, logout, router]);
 
   return (
-    <Scale>
-      <Paper variant="full" />
-      <View style={styles.back}>
-        <InkIconButton icon="back" accessibilityLabel="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/menu'))} />
-      </View>
-      <View style={styles.ribbon}>
-        <TitleRibbon title="Captain’s profile" w={310} h={42} size="md" />
-      </View>
+    <Scale backgroundImage={BACKGROUNDS.settings}>
+      <Art source={LOGIN_ART.sailingShip} style={styles.ship} />
+      <Art source={PROFILE_ART.seagull} style={styles.gullA} />
+      <Art source={PROFILE_ART.seagull} style={styles.gullB} />
 
-      <View style={styles.leftPanel}>
-        <InkPanel w={350} h={274} seedKey="game-profile" padding={space.md}>
-          <View style={styles.identity}>
-            <AssetSlot source={AVATARS[profile.avatarId]} w={72} h={72} label="Avatar" tintColor={profile.avatarColor} />
-            <View style={styles.identityCopy}>
-              <Text style={styles.name}>{profile.name || 'Sailor'}</Text>
-              <Text style={styles.country}>Port: {profile.countryCode || 'Unknown'}</Text>
-            </View>
-          </View>
-          <View style={styles.stats}>
-            <Detail label="Rank points" value={profile.rankPoints.toLocaleString()} />
-            <Detail label="Main points" value={pointBalance.toLocaleString()} />
-            <Detail label="Battles" value={profile.battlesPlayed.toLocaleString()} />
-            <Detail label="Victories" value={profile.battlesWon.toLocaleString()} />
-            <Detail label="Coins / gems" value={`${profile.coins.toLocaleString()} / ${profile.gems.toLocaleString()}`} />
-          </View>
-          <View style={styles.actions}>
-            <InkButton label="Change name" w={142} h={36} size="sm" onPress={() => router.push({ pathname: '/name', params: { next: 'back' } })} />
-            <InkButton label="Change avatar" w={142} h={36} size="sm" onPress={() => router.push('/avatar')} />
-          </View>
-        </InkPanel>
-      </View>
+      <ArtImageButton
+        source={SETTINGS_ART.back}
+        w={72}
+        h={44}
+        label="Back"
+        style={styles.back}
+        onPress={() => (router.canGoBack() ? router.back() : router.replace('/menu'))}
+      />
+      <Art source={PROFILE_ART.banner} style={styles.banner} />
 
-      <View style={styles.rightPanel}>
-        <InkPanel w={374} h={274} seedKey="privy-profile" padding={space.md}>
-          <Text style={styles.panelTitle}>Secure account</Text>
-          <Detail label="Name" value={displayName} />
-          <Detail label="Email" value={email} />
-          <Detail label="Signed in with" value={methods.join(' + ') || sync.account?.authProvider || 'Privy'} />
-          <Detail label="Privy ID" value={user ? shortAddress(user.id, 10) : '—'} />
-          <Detail label="Joined" value={created} />
-          <Detail label="Solana wallet" value={walletAddress ? shortAddress(walletAddress, 9) : walletState.status.replace('-', ' ')} />
-
-          <View style={styles.syncRow} accessibilityLiveRegion="polite">
-            {sync.status === 'syncing' ? <InkSpinner size={18} seedKey="profile-sync" /> : null}
-            <Text style={[styles.syncText, sync.status === 'error' ? styles.danger : null]} numberOfLines={2}>
-              {sync.status === 'synced'
-                ? 'Verified account saved to the game server.'
-                : sync.status === 'error'
-                  ? sync.error
-                  : 'Syncing verified account…'}
+      <VSlicedImage
+        slices={PROFILE_ART.profilePanel}
+        w={LEFT.w}
+        h={LEFT.h}
+        style={{ position: 'absolute', left: LEFT.x, top: LEFT.y }}
+      />
+      <View style={styles.leftBox}>
+        <View style={styles.identity}>
+          <RingPortrait avatarId={profile.avatarId} avatarColor={profile.avatarColor} />
+          <View style={styles.identityCopy}>
+            <Text style={styles.name} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+              {profile.name || 'Sailor'}
             </Text>
-            {sync.status === 'error' ? (
-              <InkButton label="Retry" w={72} h={31} size="sm" onPress={sync.retry} />
-            ) : null}
+            <Image source={PROFILE_ART.nameUnderline} style={styles.nameUnderline} contentFit="fill" />
+            <Text style={styles.country}>Port: {profile.countryCode || 'Unknown'}</Text>
           </View>
+        </View>
+        <View style={styles.stats}>
+          <Detail label="Rank points" value={profile.rankPoints.toLocaleString()} />
+          <Detail label="Main points" value={pointBalance.toLocaleString()} />
+          <Detail label="Battles" value={profile.battlesPlayed.toLocaleString()} />
+          <Detail label="Victories" value={profile.battlesWon.toLocaleString()} />
+          <Detail
+            label="Coins / gems"
+            value={`${profile.coins.toLocaleString()} / ${profile.gems.toLocaleString()}`}
+            last
+          />
+        </View>
+        <View style={styles.actions}>
+          <ArtImageButton
+            source={PROFILE_ART.changeName}
+            w={131}
+            h={40}
+            label="Change name"
+            onPress={() => router.push({ pathname: '/name', params: { next: 'back' } })}
+          />
+          <ArtImageButton
+            source={PROFILE_ART.changeAvatar}
+            w={137}
+            h={40}
+            label="Change avatar"
+            onPress={() => router.push('/avatar')}
+          />
+        </View>
+      </View>
 
-          <View style={styles.actions}>
-            <InkButton label="Open wallet" tone="confirm" w={142} h={36} size="sm" onPress={() => router.push('/wallet' as Href)} />
-            <InkButton
-              label={loggingOut ? 'Signing out…' : 'Sign out'}
-              tone="danger"
-              w={142}
-              h={36}
-              size="sm"
-              disabled={loggingOut}
-              onPress={() => {
-                setSignOutError(null);
-                setSignOutOpen(true);
-              }}
+      <VSlicedImage
+        slices={PROFILE_ART.accountPanel}
+        w={RIGHT.w}
+        h={RIGHT.h}
+        style={{ position: 'absolute', left: RIGHT.x, top: RIGHT.y }}
+      />
+      <Art source={PROFILE_ART.shipWheel} style={styles.wheel} />
+      <View style={styles.rightBox}>
+        <Text style={styles.panelTitle}>Secure account</Text>
+        <Image source={PROFILE_ART.titleUnderline} style={styles.titleUnderline} contentFit="fill" />
+        <Detail label="Name" value={displayName} />
+        <Detail label="Email" value={email} />
+        <Detail label="Signed in with" value={methods.join(' + ') || sync.account?.authProvider || 'Privy'} />
+        <Detail label="Privy ID" value={user ? shortAddress(user.id, 10) : '—'} />
+        <Detail label="Joined" value={created} />
+        <Detail
+          label="Solana wallet"
+          value={walletAddress ? shortAddress(walletAddress, 9) : walletState.status.replace('-', ' ')}
+          last
+        />
+
+        <View style={styles.syncRow} accessibilityLiveRegion="polite">
+          {sync.status === 'syncing' ? <InkSpinner size={16} seedKey="profile-sync" /> : null}
+          {sync.status === 'synced' ? (
+            <Image source={PROFILE_ART.verified} style={styles.verified} contentFit="contain" />
+          ) : null}
+          <Text
+            style={[styles.syncText, sync.status === 'error' ? styles.danger : null]}
+            numberOfLines={2}
+          >
+            {sync.status === 'synced'
+              ? 'Verified account saved to the game server.'
+              : sync.status === 'error'
+                ? sync.error
+                : 'Syncing verified account…'}
+          </Text>
+          {sync.status === 'error' ? (
+            <ArtButton
+              slices={SETTINGS_ART.creamButton}
+              w={72}
+              h={28}
+              label="Retry"
+              fontSize={13}
+              onPress={sync.retry}
             />
-          </View>
-        </InkPanel>
+          ) : null}
+        </View>
+
+        <View style={styles.actions}>
+          <ArtImageButton
+            source={PROFILE_ART.openWallet}
+            w={133}
+            h={40}
+            label="Open wallet"
+            onPress={() => router.push('/wallet' as Href)}
+          />
+          <ArtImageButton
+            source={PROFILE_ART.signOut}
+            w={128}
+            h={40}
+            label="Sign out"
+            disabled={loggingOut}
+            onPress={() => {
+              setSignOutError(null);
+              setSignOutOpen(true);
+            }}
+          />
+        </View>
       </View>
       <SignOutDialog
         visible={signOutOpen}
@@ -239,63 +380,89 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  back: { position: 'absolute', left: 12, top: 8 },
-  ribbon: { position: 'absolute', left: 245, top: 7 },
-  leftPanel: { position: 'absolute', left: 32, top: 70 },
-  rightPanel: { position: 'absolute', left: 394, top: 70 },
-  identity: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  back: { position: 'absolute', left: 8, top: 8 },
+  banner: { left: (CANVAS_W - 290) / 2, top: 3, width: 290, height: 290 * (127 / 664) },
+  ship: { left: 84, top: 2, width: 60, height: 60 },
+  gullA: { left: 566, top: 22, width: 30, height: 11 },
+  gullB: { left: 604, top: 38, width: 20, height: 7 },
+
+  leftBox: {
+    position: 'absolute',
+    left: LEFT.x + 22,
+    width: LEFT.w - 44,
+    top: LEFT.y + 42,
+    height: LEFT.h - 60,
+    justifyContent: 'space-between',
+  },
+  rightBox: {
+    position: 'absolute',
+    left: RIGHT.x + 22,
+    width: RIGHT.w - 44,
+    top: RIGHT.y + 38,
+    height: RIGHT.h - 56,
+    justifyContent: 'space-between',
+  },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   identityCopy: { flex: 1 },
-  name: { color: color.ink, fontFamily: font.display, fontSize: typeScale.lg },
-  country: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xs, marginTop: space.xs },
-  stats: { marginTop: space.sm },
-  panelTitle: { color: color.ink, fontFamily: font.display, fontSize: typeScale.md, textAlign: 'center', marginBottom: 4 },
-  detailRow: { minHeight: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
-  detailLabel: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.xxs },
-  detailValue: { flex: 1, color: color.ink, fontFamily: font.body, fontSize: typeScale.xs, textAlign: 'right' },
-  actions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: space.xs },
-  syncRow: { minHeight: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 2 },
-  syncText: { flex: 1, color: color.inkGreen, fontFamily: font.body, fontSize: typeScale.xxs, textAlign: 'center' },
+  name: { color: artColor.ink, fontFamily: font.display, fontSize: 27, lineHeight: 32 },
+  nameUnderline: { width: 118, height: 9, marginTop: 1 },
+  country: { color: artColor.label, fontFamily: font.body, fontSize: 15, marginTop: 6 },
+  stats: {},
+  panelTitle: {
+    color: artColor.ink,
+    fontFamily: font.display,
+    fontSize: 21,
+    textAlign: 'center',
+  },
+  titleUnderline: { width: 150, height: 6, alignSelf: 'center', marginTop: -2 },
+  wheel: { left: RIGHT.x + RIGHT.w - 62, top: RIGHT.y + 36, width: 34, height: 37, opacity: 0.8 },
+  detailRow: {
+    height: 19,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  detailRule: { position: 'absolute', left: 0, right: 0, bottom: -1, height: 3, opacity: 0.7 },
+  detailLabel: { color: artColor.label, fontFamily: font.body, fontSize: 13 },
+  detailValue: {
+    flex: 1,
+    color: artColor.ink,
+    fontFamily: font.label,
+    fontSize: 13,
+    textAlign: 'right',
+  },
+  actions: { flexDirection: 'row', justifyContent: 'space-between' },
+  syncRow: { minHeight: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  verified: { width: 17, height: 17 },
+  syncText: { flexShrink: 1, color: artColor.green, fontFamily: font.body, fontSize: 12, textAlign: 'center' },
   danger: { color: color.inkRed },
-  dialogDim: { flex: 1, backgroundColor: 'rgba(28,20,15,0.46)' },
+  dialogDim: { flex: 1, backgroundColor: 'rgba(16,20,48,0.5)' },
   dialogCard: {
     position: 'absolute',
-    left: (CANVAS_W - 408) / 2,
-    top: (CANVAS_H - 220) / 2,
+    left: (CANVAS_W - DIALOG.w) / 2,
+    top: (CANVAS_H - DIALOG.h) / 2,
+    width: DIALOG.w,
+    height: DIALOG.h,
   },
-  dialogKicker: {
-    color: color.inkRed,
-    fontFamily: font.label,
-    fontSize: typeScale.xs,
-    textAlign: 'center',
-    letterSpacing: 1.1,
-  },
+  dialogBodyBox: { position: 'absolute', left: 30, right: 30, top: 44, bottom: 22, alignItems: 'center' },
+  dialogKicker: { color: color.inkRed, fontFamily: font.label, fontSize: 13, textAlign: 'center' },
   dialogTitle: {
-    color: color.ink,
+    color: artColor.ink,
     fontFamily: font.display,
-    fontSize: typeScale.lg,
+    fontSize: 22,
     textAlign: 'center',
-    marginTop: space.xs,
+    marginTop: 2,
   },
   dialogBody: {
-    color: color.inkSoft,
+    color: artColor.soft,
     fontFamily: font.body,
-    fontSize: typeScale.xs,
+    fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
-    marginTop: space.sm,
+    marginTop: 8,
   },
-  dialogError: {
-    color: color.inkRed,
-    fontFamily: font.body,
-    fontSize: typeScale.xxs,
-    textAlign: 'center',
-    marginTop: 3,
-  },
-  dialogActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: space.sm,
-    marginTop: space.sm,
-  },
-  dialogSpinner: { position: 'absolute', right: 18, bottom: 18 },
+  dialogError: { color: color.inkRed, fontFamily: font.body, fontSize: 11, textAlign: 'center', marginTop: 3 },
+  dialogActions: { flexDirection: 'row', justifyContent: 'center', gap: 14, marginTop: 'auto' },
+  dialogSpinner: { position: 'absolute', right: 26, bottom: 30 },
 });

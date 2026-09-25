@@ -98,6 +98,7 @@ export type FailureReason =
   | 'insufficient_points'
   | 'match_cancelled'
   | 'layout_rejected'
+  | 'already_searching'
   | 'server_error';
 
 export interface MatchFailure {
@@ -294,6 +295,14 @@ let enteredMatchId: string | null = null;
 /** A quiet connect that exists only to ask "do I still have a match?". */
 let discovering = false;
 let discoverTimer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * This intent's queue messages sent, and whether the server ever answered
+ * one with `queued`. An `already_queued` on the very first send, before any
+ * `queued`, cannot be our own survivor of a blip: another device signed in
+ * to this account holds the place in line.
+ */
+let queueSends = 0;
+let queueAcked = false;
 
 const EMPTY: MatchClientData = {
   status: 'idle',
@@ -581,6 +590,17 @@ function scheduleReconnect(why: string): void {
   const s = useMatchClient.getState();
   if (s.status === 'over' || s.status === 'failed') return;
 
+  // Discovery (the launch-time "is there a match to resume?") has nothing to
+  // protect and nobody waiting on it, so a transient there — a token refresh
+  // that failed, a socket that would not open — is simply "no match". Retrying
+  // it used to leave the store 'connecting' with no queue behind it: the
+  // discovery timer only tears down an idle store, and the player's queue()
+  // then took the busy store for a screen re-mount and never queued.
+  if (discovering && !s.matchId && !intent) {
+    fail('unreachable', why);
+    return;
+  }
+
   const inMatch = s.matchId !== null;
   if (inMatch && disconnectedAt === null) {
     disconnectedAt = Date.now();
@@ -639,6 +659,7 @@ function handleMessage(message: ServerMessage): void {
       }
       if (intent) {
         set({ status: 'connecting' });
+        queueSends += 1;
         send(
           queueMessage(
             intent.mode,
@@ -652,6 +673,7 @@ function handleMessage(message: ServerMessage): void {
     }
 
     case 'queued':
+      queueAcked = true;
       if (message.pointBalance !== undefined) usePoints.getState().sync(message.pointBalance);
       set({
         status: s.status === 'cancelling' ? 'cancelling' : 'queued',
@@ -871,6 +893,16 @@ function handleMessage(message: ServerMessage): void {
         return;
       }
       if (message.code === 'already_queued' && s.status === 'connecting') {
+        if (queueSends <= 1 && !queueAcked) {
+          // Our first ask, never answered with `queued`: the place in line is
+          // another device's on this same account. Staying "queued" here span
+          // forever while that device was handed a bot 45 s later.
+          fail(
+            'already_searching',
+            'This account is already looking for a match on another device.',
+          );
+          return;
+        }
         // Our earlier queue survived a blip; we're still in line.
         set({ status: 'queued' });
         return;
@@ -913,8 +945,15 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
       s.queueOpponent === opponent
     ) return;
     if (s.status !== 'idle' && s.status !== 'failed' && s.status !== 'over') {
-      // Already busy with something — a second queue() is a screen re-mount, not a new intent.
-      return;
+      // Busy with something the player asked for — a queue or a match in
+      // flight: a second queue() is a screen re-mount, not a new intent.
+      if (intent || s.matchId) return;
+      // Busy with nothing: what is left of a background discovery. The player
+      // is asking to play now, so it goes and this queue takes its place.
+      log('queue() replaces a leftover discovery connection');
+      closedOnPurpose = true;
+      clearAllTimers();
+      dropSocket();
     }
     // A discovery socket may be open and its timer pending; that timer tears
     // the socket down and resets the store, which would cancel this queue.
@@ -924,6 +963,8 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
     disconnectedAt = null;
     const wagerRequestId = wagered ? randomUuid() : null;
     intent = { mode, wagered, opponent, wagerRequestId };
+    queueSends = 0;
+    queueAcked = false;
     lastLayout = null;
     layoutPending = false;
     set({
@@ -1080,6 +1121,8 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
         opponent: s.queueOpponent,
         wagerRequestId: s.wagerRequestId,
       };
+      queueSends = 0;
+      queueAcked = false;
       set({ status: 'connecting', failure: null, reconnectAttempt: 0 });
     } else {
       set({ ...EMPTY });
@@ -1135,5 +1178,7 @@ export function failureCopy(failure: MatchFailure): string {
       return failure.detail;
     case 'layout_rejected':
       return `The server would not accept your fleet: ${failure.detail}. Go back and arrange it again.`;
+    case 'already_searching':
+      return 'This account is already searching on another device. To play two phones against each other, sign in with a different account on each.';
   }
 }

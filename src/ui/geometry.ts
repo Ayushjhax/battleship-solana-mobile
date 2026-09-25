@@ -319,6 +319,39 @@ export function tabOutline(w: number, h: number, scallop = 12, amp = 4): Point[]
 }
 
 // ---------------------------------------------------------------------------
+// Main menu: the rounded card, drawn with the pen instead of borderRadius
+// ---------------------------------------------------------------------------
+
+/**
+ * A w x h rounded rectangle at (x, y), clockwise from the top-left corner's
+ * end. `r` is clamped to half the shorter side, so r >= h / 2 is a pill.
+ */
+export function roundedRectPoints(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+  segments = 5,
+): Point[] {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  const corners: [number, number, number][] = [
+    [x + w - rr, y + rr, -Math.PI / 2],
+    [x + w - rr, y + h - rr, 0],
+    [x + rr, y + h - rr, Math.PI / 2],
+    [x + rr, y + rr, Math.PI],
+  ];
+  const pts: Point[] = [];
+  for (const [cx, cy, start] of corners) {
+    for (let i = 0; i <= segments; i++) {
+      const a = start + (i / segments) * (Math.PI / 2);
+      pts.push([cx + rr * Math.cos(a), cy + rr * Math.sin(a)]);
+    }
+  }
+  return pts;
+}
+
+// ---------------------------------------------------------------------------
 // Result screen: the laurel wreath
 // ---------------------------------------------------------------------------
 

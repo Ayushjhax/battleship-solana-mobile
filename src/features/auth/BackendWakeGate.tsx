@@ -9,24 +9,24 @@
  * flight. So nothing downstream of the handoff is allowed to happen until it
  * is done.
  *
- * It is NOT a Modal on purpose. A Modal is its own window, and a BlurView
- * inside one has nothing behind it to sample on Android — it would render as
- * a flat wash. As a sibling of the Stack it blurs the real screen underneath,
- * which is the point: you can see the game waiting behind the frosted sheet.
+ * It is a sibling of the Stack rather than a Modal so it covers whatever route
+ * is up — the boot, onboarding or the menu — on the account screens' own
+ * backdrop, and fades in and out over it instead of popping.
  *
  * It can always be escaped. Offline play is the whole game without a server,
  * so a failure offers "Play offline" rather than trapping anyone.
  */
-import { BlurView } from 'expo-blur';
 import { usePathname, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { useBackendWake } from '@/state/backendWake';
 import { usePrivySync } from '@/state/privySync';
 import { useProfile } from '@/state/profile';
+import { BACKGROUNDS, PAPER_PANEL } from '@/ui/assets';
+import { ImagePanel } from '@/ui/ImagePanel';
 import { InkButton } from '@/ui/InkButton';
-import { InkPanel } from '@/ui/InkPanel';
 import { InkSpinner } from '@/ui/InkSpinner';
 import { Scale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
@@ -45,8 +45,10 @@ const LONG_WAIT_MS = 6_000;
  */
 const ESCAPE_AFTER_MS = 20_000;
 
-const PANEL_W = 452;
+// Matches paper-panel.png's own 728 x 260 aspect, so its scribbled border
+// scales evenly instead of stretching to a different shape.
 const PANEL_H = 196;
+const PANEL_W = Math.round((PANEL_H * 728) / 260);
 
 /** Onboarding routes the boot may have committed to before the handoff landed. */
 const ONBOARDING = new Set(['/name', '/avatar']);
@@ -142,13 +144,15 @@ export function BackendWakeGate() {
       : 'One moment while your captain is brought aboard.';
 
   return (
-    <View style={styles.root} pointerEvents="auto">
-      <BlurView intensity={48} tint="light" style={StyleSheet.absoluteFill} />
-      {/* A paper wash over the blur so the panel sits on the sheet, not on glass. */}
-      <View style={styles.wash} pointerEvents="none" />
-      <Scale transparent>
+    <Animated.View
+      style={styles.root}
+      pointerEvents="auto"
+      entering={FadeIn.duration(260)}
+      exiting={FadeOut.duration(220)}
+    >
+      <Scale backgroundImage={BACKGROUNDS.identity}>
         <View style={styles.card}>
-          <InkPanel w={PANEL_W} h={PANEL_H} seedKey="backend-wake" padding={space.lg}>
+          <ImagePanel source={PAPER_PANEL} w={PANEL_W} h={PANEL_H} padding={space.lg}>
             <View style={styles.header}>
               {failed ? null : <InkSpinner size={26} seedKey="backend-wake" />}
               <Text style={[styles.title, failed ? styles.titleFailed : null]} numberOfLines={1}>
@@ -171,10 +175,10 @@ export function BackendWakeGate() {
                 ) : null}
               </>
             )}
-          </InkPanel>
+          </ImagePanel>
         </View>
       </Scale>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -187,14 +191,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 900,
     elevation: 900,
-  },
-  wash: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(251,252,254,0.55)',
   },
   card: { position: 'absolute', left: (CANVAS_W - PANEL_W) / 2, top: (CANVAS_H - PANEL_H) / 2 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm },

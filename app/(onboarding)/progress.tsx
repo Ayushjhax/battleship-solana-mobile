@@ -14,9 +14,9 @@ import { cloudAsLocal, localAsPatch, type CloudProfile } from '@/net/profileSync
 import { pushProfile } from '@/net/profileSync';
 import { useCloud } from '@/state/cloud';
 import { useProfile, type ProfileData } from '@/state/profile';
+import { BACKGROUNDS } from '@/ui/assets';
 import { InkButton } from '@/ui/InkButton';
 import { InkPanel } from '@/ui/InkPanel';
-import { Paper } from '@/ui/Paper';
 import { RankBadge } from '@/ui/RankBadge';
 import { Scale } from '@/ui/Scale';
 import { TitleRibbon } from '@/ui/TitleRibbon';
@@ -218,18 +218,13 @@ export default function ProgressScreen() {
   }, [router]);
 
   if (!cloud) {
-    return (
-      <Scale>
-        <Paper variant="full" />
-      </Scale>
-    );
+    return <Scale backgroundImage={BACKGROUNDS.identity} />;
   }
 
   const gap = 16;
   const left = (CANVAS_W - PANEL.w * 2 - gap) / 2;
   return (
-    <Scale>
-      <Paper variant="full" />
+    <Scale backgroundImage={BACKGROUNDS.identity}>
       <View style={styles.dim} pointerEvents="none" />
       <View style={styles.ribbon}>
         <TitleRibbon title="Choose game progress" w={420} h={40} size="md" />

@@ -128,6 +128,12 @@ that looks like a rectangle from a UI kit.
   Input is locked while the queue is busy; a tap on the boards calls `skip()`.
 - Every timed step of an animation goes through `player.wait(ms)` so skip cuts it short;
   visuals in flight live in `src/fx/fxStore.ts` and remove themselves.
+- Placement and the battle are drawn in colour art: `scripts/battle-assets.sh` (run by
+  `npm run assets`) cleans the effect sheets into one-strip-per-animation WebPs (`FX_ART`),
+  the fleet (`FLEET_ART`) and the frames and blank buttons (`BATTLE_ART`, `SKETCH_PLATES`).
+  `src/fx/Sprite.tsx` plays a strip by sliding it under a clip on the UI thread. Arsenal
+  copy, groups (attack / defence) and what the weapon list offers live in
+  `src/features/arsenal/catalog.ts`; the mine and AA gun are never "chosen" in battle.
 - Modes plug in behind the store: `ai` schedules `chooseMove` on a 900-1400 ms delay,
   `hotseat` swaps `me` the moment the turn changes hands and covers only the incoming
   player's own board (`fleetCovered`, the `FleetCover` sheet in `Hud.tsx`, lifted by one
@@ -167,7 +173,7 @@ that looks like a rectangle from a UI kit.
 - `src/net/profileSync.ts` (best-effort, never awaited by the game) sits on `api.ts`; the
   pure merge rules live in `src/net/profileMerge.ts`. The boot shows `/progress` only when
   a played-on local profile and a played-on cloud row differ.
-- Text entry is `src/ui/InkKeyboard.tsx` over a rendered string — no TextInput, the OS
+- Text entry is `src/ui/ArtKeyboard.tsx` over a rendered string — no TextInput, the OS
   keyboard never appears.
 - Sound effects go through `playSfx('key')` in `src/audio/sfx.ts`; sources are `null` until
   the files land, and a missing effect is a silent no-op.

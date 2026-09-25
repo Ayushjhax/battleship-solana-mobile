@@ -1,9 +1,11 @@
 /**
- * Main menu — the 800 x 360 composition:
- *   top-left      RankBadge with avatar thumb (tap: profile), player name, rank progress
- *   top-right     point, coin and gem chips
- *   centre        the title mark, then the vertical stack of actions
- *   bottom-left   settings, sound toggle and the wallet
+ * Main menu — the 800 x 360 composition, drawn to its mockup:
+ *   top-left      profile card: captain, name, rank, rank progress (tap: profile)
+ *   top-centre    the logo
+ *   top-right     coin, gem and point pills, then settings, sound and wallet
+ *   centre        the Play online / Play offline cards
+ *   bottom        six tiles: two players, how to play, leaderboard, port city,
+ *                 store (not built yet — says so), points exchange
  *   bottom-right  the version string (P17 makes it the demo-menu tap target)
  *
  * Menu actions deliberately stay as plain views so native-stack reattachment
@@ -11,69 +13,58 @@
  */
 import { rankProgress } from '@engine/ranks';
 import Constants from 'expo-constants';
+import { Image } from 'expo-image';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DemoMenu, useVersionTaps } from '@/features/demo/DemoMenu';
+import {
+  CurrencyPill,
+  GlyphTileButton,
+  IconTileButton,
+  MenuTile,
+  PlayCard,
+  ProfileCard,
+} from '@/features/menu/MenuParts';
 import { useOnlineCount } from '@/net/presence';
 import { usePoints } from '@/state/points';
 import { usePrivySync } from '@/state/privySync';
 import { useProfile } from '@/state/profile';
-import { AVATARS } from '@/ui/assets';
-import { CurrencyChip } from '@/ui/CurrencyChip';
-import { InkButton } from '@/ui/InkButton';
-import { InkIconButton } from '@/ui/InkIconButton';
-import { LogoMark } from '@/ui/LogoMark';
-import { Paper } from '@/ui/Paper';
-import { RankBadge } from '@/ui/RankBadge';
+import { BACKGROUNDS, BRAND, MENU_ART, type Asset } from '@/ui/assets';
 import { Scale } from '@/ui/Scale';
-import { CANVAS_H, CANVAS_W, PAPER_GRID, color, font, space, type as typeScale } from '@/ui/tokens';
+import { CANVAS_W, menuColor, menuFont, space, type as typeScale } from '@/ui/tokens';
 
-const BUTTON_W = 176;
-const BUTTON_H = 36;
-const MENU_W = BUTTON_W * 2 + space.xs;
-/** Rows are spaced like the columns, so the block reads as one grid. */
-const ROW_GAP = space.xs;
-/** The online count keeps its line whether or not it has arrived — otherwise
- *  the whole stack jumps down the moment presence resolves. */
-const ONLINE_LINE_H = 14;
-const MENU_H = BUTTON_H * 4 + ROW_GAP * 3 + ONLINE_LINE_H;
-/**
- * Centred in the band under the title rather than on the canvas, so the stack
- * sits clear of the rank badge and reads as the lower half of the sheet.
- */
-const MENU_TOP = Math.round((CANVAS_H - MENU_H) / 2) + 16;
+const PROFILE = { x: 12, y: 8, w: 236, h: 64 } as const;
+const LOGO = { w: 200, h: 80, y: 2 } as const;
+const PILL = { w: 64, gap: 6, right: 56, y: 12 } as const;
+const SIDE_TILE = 36;
+const CARD = { w: 286, h: 184, gap: 18, y: 84 } as const;
+const TILE = { w: 91, h: 66, gap: 8, y: 274 } as const;
+const CARDS_LEFT = (CANVAS_W - CARD.w * 2 - CARD.gap) / 2;
+const TILES_LEFT = (CANVAS_W - TILE.w * 6 - TILE.gap * 5) / 2;
+const STORE_NOTE_MS = 1800;
 
-interface Action {
+interface Tile {
   label: string;
-  href: Href;
-  tone?: 'ink' | 'confirm';
+  icon: Asset;
+  fill: string;
+  href: Href | null;
 }
 
-const ACTIONS: readonly Action[] = [
+const TILES: readonly Tile[] = [
+  { label: 'TWO PLAYERS', icon: MENU_ART.friends, fill: menuColor.twoPlayers, href: '/hotseat' as Href },
+  { label: 'HOW TO PLAY', icon: MENU_ART.rulebook, fill: menuColor.howToPlay, href: '/tutorial' },
+  { label: 'LEADERBOARD', icon: MENU_ART.trophy, fill: menuColor.leaderboard, href: '/leaderboard' },
+  { label: 'PORT CITY', icon: MENU_ART.harbor, fill: menuColor.portCity, href: '/city' },
+  { label: 'STORE', icon: MENU_ART.shop, fill: menuColor.store, href: null },
   {
-    label: 'Play online',
-    href: '/placement?mode=online' as Href,
-    tone: 'confirm',
+    label: 'POINTS EXCHANGE',
+    icon: MENU_ART.coinStacks,
+    fill: menuColor.pointsExchange,
+    href: '/points' as Href,
   },
-  { label: 'Play offline', href: '/placement?mode=ai' as Href },
-  { label: 'Two players', href: '/hotseat' as Href },
-  { label: 'How to play', href: '/tutorial' },
-  { label: 'Leaderboard', href: '/leaderboard' },
-  { label: 'Port city', href: '/city' },
-  { label: 'Points exchange', href: '/points' },
 ];
-const EXCHANGE_ACTION = ACTIONS[6] as Action;
-
-/**
- * Keep menu actions on the React Native view tree. Reanimated-owned opacity
- * could remain at zero after a native-stack detach/reattach while the touch
- * targets stayed active, producing invisible but clickable buttons.
- */
-function Staggered({ children }: { index: number; children: ReactNode }) {
-  return <View>{children}</View>;
-}
 
 export default function MenuScreen() {
   const router = useRouter();
@@ -85,6 +76,7 @@ export default function MenuScreen() {
   const progress = rankProgress(profile.rankPoints);
   const version = Constants.expoConfig?.version ?? '0.0.0';
   const onVersionTap = useVersionTaps();
+  const [storeNote, setStoreNote] = useState(false);
 
   // Returning home is a safe retry point for an account sync that failed
   // during boot. PrivyProfileSync remains the single owner of the actual
@@ -96,75 +88,48 @@ export default function MenuScreen() {
     }, []),
   );
 
-  return (
-    <Scale>
-      <Paper variant="full" />
+  useEffect(() => {
+    if (!storeNote) return;
+    const timer = setTimeout(() => setStoreNote(false), STORE_NOTE_MS);
+    return () => clearTimeout(timer);
+  }, [storeNote]);
 
-      <View style={styles.topLeft}>
-        <RankBadge
+  return (
+    <Scale backgroundImage={BACKGROUNDS.menu}>
+      <View style={styles.profile}>
+        <ProfileCard
+          w={PROFILE.w}
+          h={PROFILE.h}
           name={profile.name || 'Sailor'}
           rank={progress.rank.name}
           current={progress.current}
           total={progress.total}
-          avatar={{ source: AVATARS[profile.avatarId], tint: profile.avatarColor }}
-          // The profile lives behind the avatar itself — there is no separate
-          // icon for it in the bottom-left row any more.
-          onAvatarPress={() => router.push('/profile' as Href)}
-          seedKey="menu"
+          onPress={() => router.push('/profile' as Href)}
         />
       </View>
 
-      <View style={styles.topRight}>
-        <CurrencyChip kind="points" value={pointBalance} />
-        <CurrencyChip kind="coins" value={profile.coins} />
-        <CurrencyChip kind="gems" value={profile.gems} />
+      <View style={styles.logo} pointerEvents="none">
+        <Image source={BRAND.wordmark} style={StyleSheet.absoluteFill} contentFit="contain" />
       </View>
 
-      <View style={styles.title} pointerEvents="none">
-        <LogoMark w={250} h={50} subtitle="Ocean Warfare" />
+      <View style={styles.pills}>
+        <CurrencyPill icon={MENU_ART.coin} value={profile.coins} w={PILL.w} seedKey="pill-coins" />
+        <CurrencyPill icon={MENU_ART.gem} value={profile.gems} w={PILL.w} seedKey="pill-gems" />
+        <CurrencyPill icon={MENU_ART.star} value={pointBalance} w={PILL.w} seedKey="pill-points" />
       </View>
 
-      <View style={styles.stack}>
-        {[ACTIONS.slice(0, 2), ACTIONS.slice(2, 4), ACTIONS.slice(4, 6)].map((row, rowIndex) => (
-          <View key={`menu-row-${rowIndex}`} style={styles.actionRow}>
-            {row.map((action, columnIndex) => (
-              <Staggered key={action.label} index={rowIndex * 2 + columnIndex}>
-                <InkButton
-                  label={action.label}
-                  tone={action.tone ?? 'ink'}
-                  w={BUTTON_W}
-                  h={BUTTON_H}
-                  size="sm"
-                  onPress={() => router.push(action.href)}
-                />
-                {action.label === 'Play online' ? (
-                  <Text style={styles.online} numberOfLines={1}>
-                    {onlineCount !== null ? `${onlineCount} sailors online` : ' '}
-                  </Text>
-                ) : null}
-              </Staggered>
-            ))}
-          </View>
-        ))}
-        <View style={styles.exchangeRow}>
-          <InkButton
-            label={EXCHANGE_ACTION.label}
-            w={BUTTON_W}
-            h={BUTTON_H}
-            size="sm"
-            onPress={() => router.push(EXCHANGE_ACTION.href)}
-          />
-        </View>
-      </View>
-
-      <View style={styles.bottomLeft}>
-        <InkIconButton
-          icon="settings"
+      <View style={styles.sideButtons}>
+        <IconTileButton
+          source={MENU_ART.settings}
+          size={38}
           accessibilityLabel="Settings"
           onPress={() => router.push('/settings')}
         />
-        <InkIconButton
-          icon={audioOn ? 'sound-on' : 'sound-off'}
+        <GlyphTileButton
+          source={MENU_ART.speaker}
+          size={SIDE_TILE}
+          seedKey="side-sound"
+          crossed={!audioOn}
           accessibilityLabel={audioOn ? 'Sound on' : 'Sound off'}
           onPress={() => {
             // One button, so it has to be a master mute. It only moved
@@ -176,11 +141,58 @@ export default function MenuScreen() {
             profile.setSetting('musicOn', next);
           }}
         />
-        <InkIconButton
-          icon="wallet"
+        <GlyphTileButton
+          source={MENU_ART.wallet}
+          size={SIDE_TILE}
+          seedKey="side-wallet"
           accessibilityLabel="Solana wallet"
           onPress={() => router.push('/wallet' as Href)}
         />
+      </View>
+
+      <View style={styles.cards}>
+        <PlayCard
+          w={CARD.w}
+          h={CARD.h}
+          title="PLAY ONLINE"
+          subtitle="PvP • Ranked Battles"
+          art={MENU_ART.playOnline}
+          fill={menuColor.onlineCard}
+          buttonFill={menuColor.onlineButton}
+          buttonLabel="PLAY ONLINE"
+          // The line keeps its height whether or not presence has answered, so
+          // nothing in the card jumps when the count lands.
+          footer={onlineCount !== null ? `${onlineCount} sailors online` : ' '}
+          seedKey="play-online"
+          onPress={() => router.push('/placement?mode=online' as Href)}
+        />
+        <PlayCard
+          w={CARD.w}
+          h={CARD.h}
+          title="PLAY OFFLINE"
+          subtitle="Practice • AI Battles"
+          art={MENU_ART.playOffline}
+          fill={menuColor.offlineCard}
+          buttonFill={menuColor.offlineButton}
+          buttonLabel="PLAY OFFLINE"
+          seedKey="play-offline"
+          onPress={() => router.push('/placement?mode=ai' as Href)}
+        />
+      </View>
+
+      <View style={styles.tiles}>
+        {TILES.map((tile) => (
+          <MenuTile
+            key={tile.label}
+            w={TILE.w}
+            h={TILE.h}
+            label={tile.href === null && storeNote ? 'COMING SOON' : tile.label}
+            icon={tile.icon}
+            fill={tile.fill}
+            seedKey={`tile-${tile.label}`}
+            onPress={() => (tile.href ? router.push(tile.href) : setStoreNote(true))}
+          />
+        ))}
       </View>
 
       {/* Five taps here open the demo menu (P17) — a plain Pressable, no visible affordance. */}
@@ -198,40 +210,42 @@ export default function MenuScreen() {
 }
 
 const styles = StyleSheet.create({
-  // Corner blocks sit just under the red margin rule; only the title crosses it.
-  topLeft: { position: 'absolute', left: space.md, top: PAPER_GRID.ruleY + 6 },
-  topRight: {
+  profile: { position: 'absolute', left: PROFILE.x, top: PROFILE.y },
+  logo: {
     position: 'absolute',
-    right: space.md,
-    top: PAPER_GRID.ruleY + 6,
+    left: (CANVAS_W - LOGO.w) / 2,
+    top: LOGO.y,
+    width: LOGO.w,
+    height: LOGO.h,
+  },
+  pills: {
+    position: 'absolute',
+    right: PILL.right,
+    top: PILL.y,
     flexDirection: 'row',
-    gap: space.xs,
+    gap: PILL.gap,
   },
-  title: { position: 'absolute', left: (CANVAS_W - 250) / 2, top: 0 },
-  stack: {
+  sideButtons: {
     position: 'absolute',
-    left: (CANVAS_W - MENU_W) / 2,
-    top: MENU_TOP,
-    width: MENU_W,
-    gap: ROW_GAP,
+    right: space.xs,
+    top: 8,
+    alignItems: 'center',
+    gap: 4,
   },
-  actionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.xs },
-  exchangeRow: { alignItems: 'center' },
-  online: {
-    color: color.inkSoft,
-    fontFamily: font.body,
-    fontSize: typeScale.xxs,
-    height: ONLINE_LINE_H,
-    lineHeight: ONLINE_LINE_H,
-    textAlign: 'center',
-  },
-  bottomLeft: {
+  cards: {
     position: 'absolute',
-    left: space.sm,
-    bottom: space.sm,
+    left: CARDS_LEFT,
+    top: CARD.y,
     flexDirection: 'row',
-    gap: space.xs,
+    gap: CARD.gap,
   },
-  version: { position: 'absolute', right: space.md, bottom: space.sm },
-  versionText: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xxs },
+  tiles: {
+    position: 'absolute',
+    left: TILES_LEFT,
+    top: TILE.y,
+    flexDirection: 'row',
+    gap: TILE.gap,
+  },
+  version: { position: 'absolute', right: space.md, bottom: space.xs },
+  versionText: { color: menuColor.navy, fontFamily: menuFont.hand, fontSize: typeScale.xs },
 });

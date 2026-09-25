@@ -1,5 +1,16 @@
-import { ARSENAL_SPEC, atomicFootprint, bomberFootprint, doubleTorpedoRows } from '@engine/arsenal';
+/**
+ * The battle's arsenal: the "Choose a weapon" panel over your own board, and
+ * the targeting overlay on the enemy board once a weapon is picked.
+ *
+ * The panel lists what can be aimed (catalog.ts WEAPON_ORDER): the four
+ * aircraft, the radar and the submarine. The AA gun and the mine are bought
+ * and placed at the start and then work on their own, so they are not
+ * weapons to choose. A row with none left, or any row off your turn, is
+ * drawn faded and does nothing.
+ */
+import { atomicFootprint, bomberFootprint, doubleTorpedoRows } from '@engine/arsenal';
 import type { ArsenalItem, ArsenalKind, Coord, Marks } from '@engine/types';
+import { Image } from 'expo-image';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -9,32 +20,33 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { G } from 'react-native-svg';
 
+import { haptic } from '@/audio/haptics';
 import { BATTLE_BOARD_TOP, BOARD_SIZE, CELL, boardOrigins } from '@/board/layout';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
-import { InkButton } from '@/ui/InkButton';
-import { InkPanel } from '@/ui/InkPanel';
+import { ArtPlate } from '@/ui/ArtPlate';
+import { BATTLE_ART } from '@/ui/assets';
 import { useScale } from '@/ui/Scale';
-import { CANVAS_H, CANVAS_W, color, font, type as typeScale } from '@/ui/tokens';
+import { CANVAS_H, CANVAS_W, artColor, color, font } from '@/ui/tokens';
 import { RoughShape, hashString, useRough } from '@/ui/useRough';
-import { ARSENAL_NAMES, ArsenalInkSprite } from './ShopPanel';
+import { ArsenalIcon } from './ArsenalIcon';
+import { ARSENAL_NAMES, CARD_NAMES, WEAPON_NAMES, WEAPON_ORDER } from './catalog';
 
-const PANEL_W = 398;
-const PANEL_H = 246;
-const CARD_W = 181;
-const CARD_H = 40;
+/** weapon-modal.png is 885 x 466; its close box is centred at (853, 35.5). */
+const PANEL_W = 386;
+const PANEL_H = PANEL_W * (466 / 885);
+const PANEL_K = PANEL_W / 885;
+const ROW_W = 176;
+const ROW_H = ROW_W * (77 / 315);
+const ROW_X = 14;
+const ROW_Y = 40;
+const ROW_GAP = 6;
 const ORIGINS = boardOrigins(BATTLE_BOARD_TOP);
-const TARGETABLE = new Set<ArsenalKind>([
-  'torpedoBomber',
-  'doubleTorpedoBomber',
-  'bomber',
-  'atomicBomber',
-  'submarine',
-  'radar',
-]);
+const TARGETABLE = new Set<ArsenalKind>(WEAPON_ORDER);
 
 export interface ArsenalTarget {
   readonly itemId: string;
@@ -48,41 +60,59 @@ export function remainingItems(
   return arsenal.filter((item) => item.kind === kind && !item.used && !item.destroyed);
 }
 
-function ArsenalCard({
+function WeaponRow({
   kind,
   count,
   enabled,
+  x,
+  y,
   onPress,
 }: {
   kind: ArsenalKind;
   count: number;
   enabled: boolean;
+  x: number;
+  y: number;
   onPress: () => void;
 }) {
   const pressable = enabled && count > 0 && TARGETABLE.has(kind);
-  // The tutorial spotlights and unlocks a card by `card-<kind>` (step 8, the Bomber).
+  // The tutorial spotlights and unlocks a row by `card-<kind>` (step 8, the Bomber).
   const target = useTutorialTarget(`card-${kind.toLowerCase()}`);
+  const press = useSharedValue(1);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
   return (
-    <View {...target} style={{ width: CARD_W, height: CARD_H, opacity: count === 0 ? 0.4 : 1 }}>
-      <InkPanel w={CARD_W} h={CARD_H} seedKey={`battle-arsenal-${kind}`} padding={0}>
-        <View pointerEvents="none" style={styles.cardIcon}>
-          <ArsenalInkSprite kind={kind} />
-        </View>
-        <Text pointerEvents="none" numberOfLines={1} style={styles.cardName}>
-          {ARSENAL_NAMES[kind]}
-        </Text>
-        <Text pointerEvents="none" style={styles.cardCount}>
-          {count}
-        </Text>
-      </InkPanel>
+    <View {...target} style={[styles.row, { left: x, top: y }]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${ARSENAL_NAMES[kind]}, ${count} remaining${TARGETABLE.has(kind) ? '' : ', automatic defence'}`}
+        accessibilityLabel={`${ARSENAL_NAMES[kind]}, ${count} left`}
         accessibilityState={{ disabled: !pressable }}
         disabled={!pressable}
         onPress={onPress}
+        onPressIn={() => {
+          press.value = withTiming(0.95, { duration: 70 });
+          haptic('buttonPress');
+        }}
+        onPressOut={() => {
+          press.value = withSpring(1, { damping: 11, stiffness: 360 });
+        }}
         style={StyleSheet.absoluteFill}
-      />
+      >
+        <Animated.View style={[styles.rowBody, { opacity: pressable ? 1 : 0.42 }, style]}>
+          <Image source={BATTLE_ART.weaponRow} style={StyleSheet.absoluteFill} contentFit="fill" />
+          <View style={styles.rowIcon}>
+            <ArsenalIcon kind={kind} w={38} h={26} />
+          </View>
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
+            style={[styles.rowName, !pressable && styles.rowNameOff]}
+          >
+            {WEAPON_NAMES[kind]}
+          </Text>
+          <Text style={[styles.rowCount, !pressable && styles.rowNameOff]}>{count}</Text>
+        </Animated.View>
+      </Pressable>
     </View>
   );
 }
@@ -102,8 +132,8 @@ export function BattleArsenalPopover({
   const enter = useSharedValue(reduceMotion ? 1 : 0);
   useEffect(() => {
     enter.value = withTiming(1, {
-      duration: reduceMotion ? 0 : 250,
-      easing: Easing.out(Easing.cubic),
+      duration: reduceMotion ? 0 : 230,
+      easing: Easing.out(Easing.back(1.3)),
     });
   }, [enter, reduceMotion]);
   useEffect(() => {
@@ -113,49 +143,50 @@ export function BattleArsenalPopover({
     });
     return () => subscription.remove();
   }, [onClose]);
+  // Transform only: the panel holds the rows, and nothing pressable animates opacity.
   const animated = useAnimatedStyle(() => ({
-    opacity: enter.value,
-    transform: [{ translateY: (enter.value - 1) * PANEL_H }],
+    transform: [{ translateY: -18 * (1 - enter.value) }, { scale: 0.94 + 0.06 * enter.value }],
   }));
-
-  // The AA gun is bought and placed in the shop and then works on its own; it
-  // has no place in a "choose a weapon" list. The grid stays 2 x 5.
-  const kinds = ARSENAL_SPEC.map((entry) => entry.kind).filter((kind) => kind !== 'aaGun');
-  const slots: readonly (ArsenalKind | null)[] = [
-    ...kinds,
-    ...Array.from({ length: 10 - kinds.length }, () => null),
-  ];
+  const shade = useAnimatedStyle(() => ({ opacity: enter.value }));
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <Animated.View pointerEvents="none" style={[styles.scrim, shade]} />
       <Pressable
         style={styles.popoverDismiss}
         accessibilityRole="button"
         accessibilityLabel="Close arsenal"
         onPress={onClose}
       />
-      <Animated.View style={[styles.popover, animated]}>
-        <InkPanel w={PANEL_W} h={PANEL_H} seedKey="battle-arsenal-popover" padding={1}>
-          <Text style={styles.popoverTitle}>Choose a weapon</Text>
-          <View style={styles.cardGrid}>
-            {slots.map((kind, index) =>
-              kind ? (
-                <ArsenalCard
-                  key={kind}
-                  kind={kind}
-                  count={remainingItems(arsenal, kind).length}
-                  enabled={canUse}
-                  onPress={() => {
-                    const item = remainingItems(arsenal, kind)[0];
-                    if (item) onPick({ itemId: item.id, kind });
-                  }}
-                />
-              ) : (
-                <View key={`empty-${index}`} style={styles.emptyCard} pointerEvents="none" />
-              ),
-            )}
-          </View>
-        </InkPanel>
+      <Animated.View style={[styles.popover, animated]} accessibilityViewIsModal>
+        <Image source={BATTLE_ART.weaponModal} style={StyleSheet.absoluteFill} contentFit="fill" />
+        <Text style={styles.popoverTitle} accessibilityRole="header">
+          Choose a weapon
+        </Text>
+        {WEAPON_ORDER.map((kind, index) => (
+          <WeaponRow
+            key={kind}
+            kind={kind}
+            count={remainingItems(arsenal, kind).length}
+            enabled={canUse}
+            x={ROW_X + (index % 2) * (ROW_W + ROW_GAP)}
+            y={ROW_Y + Math.floor(index / 2) * (ROW_H + ROW_GAP)}
+            onPress={() => {
+              const item = remainingItems(arsenal, kind)[0];
+              if (item) onPick({ itemId: item.id, kind });
+            }}
+          />
+        ))}
+        <Text style={styles.popoverHint}>
+          {canUse ? 'Pick a weapon, then aim it on the enemy grid.' : 'Weapons can be fired on your turn.'}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close arsenal"
+          hitSlop={10}
+          onPress={onClose}
+          style={styles.popoverClose}
+        />
       </Animated.View>
     </View>
   );
@@ -228,8 +259,8 @@ function TargetGuide({ kind, at, valid }: { kind: ArsenalKind; at: Coord; valid:
         ))}
       </Svg>
       {aircraft ? (
-        <View style={[styles.launchPlane, { top: launchRow * CELL - 6 }]}>
-          <ArsenalInkSprite kind={kind} />
+        <View style={[styles.launchPlane, { top: launchRow * CELL - 4 }]}>
+          <ArsenalIcon kind={kind} w={34} h={26} />
         </View>
       ) : null}
     </View>
@@ -316,8 +347,8 @@ export function ArsenalTargetingOverlay({
   const [hover, setHover] = useState<Coord>({ r: 4, c: 4 });
   const valid = target.kind !== 'submarine' || !marks[`${hover.r},${hover.c}`];
   const copy = valid
-    ? `${ARSENAL_NAMES[target.kind]} · release to fire`
-    : 'Submarine needs an unshot cell';
+    ? `${CARD_NAMES[target.kind]} · release to fire`
+    : 'Needs an unshot cell';
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -350,10 +381,14 @@ export function ArsenalTargetingOverlay({
         onPress={onCancel}
       />
       <View style={styles.targetBack}>
-        <InkButton label="Back" size="sm" w={78} h={40} onPress={onCancel} />
+        <ArtPlate family="sketch" tone="cream" w={82} h={34} label="Back" fontSize={16} onPress={onCancel} />
       </View>
-      <View style={[styles.targetCopy, !valid && styles.targetCopyInvalid]} pointerEvents="none">
-        <Text style={[styles.targetCopyText, !valid && styles.targetCopyTextInvalid]}>{copy}</Text>
+      <View style={styles.targetCopy} pointerEvents="none">
+        <Image source={BATTLE_ART.weaponRow} style={StyleSheet.absoluteFill} contentFit="fill" />
+        <ArsenalIcon kind={target.kind} w={26} h={18} />
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.targetCopyText, !valid && styles.targetCopyTextInvalid]}>
+          {copy}
+        </Text>
       </View>
       <View style={styles.enemyTarget}>
         <TargetGuide kind={target.kind} at={hover} valid={valid} />
@@ -364,50 +399,75 @@ export function ArsenalTargetingOverlay({
 }
 
 const styles = StyleSheet.create({
-  popoverDismiss: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 },
-  popover: { position: 'absolute', left: 4, top: 0, width: PANEL_W, height: PANEL_H, zIndex: 70 },
+  scrim: {
+    position: 'absolute',
+    left: -200,
+    top: -200,
+    right: -200,
+    bottom: -200,
+    backgroundColor: 'rgba(10, 16, 108, 0.16)',
+  },
+  popoverDismiss: { position: 'absolute', left: -200, top: -200, right: -200, bottom: -200 },
+  popover: {
+    position: 'absolute',
+    left: 7,
+    top: BATTLE_BOARD_TOP + 14,
+    width: PANEL_W,
+    height: PANEL_H,
+    zIndex: 70,
+  },
   popoverTitle: {
-    height: 22,
-    color: color.inkRed,
+    position: 'absolute',
+    left: 30,
+    right: 30,
+    top: 9,
+    color: artColor.red,
     fontFamily: font.display,
-    fontSize: typeScale.sm,
+    fontSize: 20,
     textAlign: 'center',
   },
-  cardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-  cardIcon: {
+  popoverHint: {
     position: 'absolute',
-    left: 5,
-    top: 2,
-    width: 40,
-    height: 31,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ scale: 0.52 }],
-  },
-  cardName: {
-    position: 'absolute',
-    left: 40,
-    right: 32,
-    top: 8,
-    color: color.ink,
+    left: 20,
+    right: 20,
+    bottom: 9,
+    color: artColor.soft,
     fontFamily: font.label,
-    fontSize: typeScale.xs,
+    fontSize: 11,
+    textAlign: 'center',
   },
-  cardCount: {
+  popoverClose: {
     position: 'absolute',
-    right: 10,
-    top: 5,
-    color: color.ink,
-    fontFamily: font.display,
-    fontSize: typeScale.sm,
-    fontVariant: ['tabular-nums'],
+    left: 853 * PANEL_K - 12,
+    top: 35.5 * PANEL_K - 12,
+    width: 24,
+    height: 24,
   },
-  emptyCard: {
-    width: CARD_W,
-    height: CARD_H,
-    borderWidth: 1,
-    borderColor: color.gridMajor,
-    opacity: 0.25,
+  row: { position: 'absolute', width: ROW_W, height: ROW_H },
+  rowBody: { width: ROW_W, height: ROW_H },
+  rowIcon: { position: 'absolute', left: 9, top: (ROW_H - 26) / 2, width: 38, height: 26 },
+  rowName: {
+    position: 'absolute',
+    left: 52,
+    right: 27,
+    top: 0,
+    bottom: 0,
+    textAlignVertical: 'center',
+    lineHeight: ROW_H,
+    color: artColor.navy,
+    fontFamily: font.display,
+    fontSize: 14,
+  },
+  rowNameOff: { color: artColor.muted },
+  rowCount: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    lineHeight: ROW_H,
+    color: artColor.navy,
+    fontFamily: font.display,
+    fontSize: 18,
+    fontVariant: ['tabular-nums'],
   },
   targetCanvas: {
     position: 'absolute',
@@ -439,23 +499,22 @@ const styles = StyleSheet.create({
     width: CANVAS_W,
     bottom: 0,
   },
-  targetBack: { position: 'absolute', right: 8, top: 3, zIndex: 3 },
+  // Both sit where the opponent's plate is: while aiming, the plate is the prompt.
+  targetBack: { position: 'absolute', left: 652, top: 33, zIndex: 3 },
   targetCopy: {
     position: 'absolute',
-    left: ORIGINS.enemy.x + 38,
-    top: BATTLE_BOARD_TOP - 31,
-    width: BOARD_SIZE - 76,
-    minHeight: 26,
-    paddingHorizontal: 8,
-    backgroundColor: color.paper,
-    borderWidth: 1,
-    borderColor: color.ink,
+    left: 478,
+    top: 31,
+    width: 168,
+    height: 38,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
   },
-  targetCopyInvalid: { borderColor: color.inkRed },
-  targetCopyText: { color: color.ink, fontFamily: font.label, fontSize: typeScale.xs },
-  targetCopyTextInvalid: { color: color.inkRed },
+  targetCopyText: { color: artColor.navy, fontFamily: font.display, fontSize: 13, flexShrink: 1 },
+  targetCopyTextInvalid: { color: artColor.red },
   enemyTarget: {
     position: 'absolute',
     left: ORIGINS.enemy.x,
@@ -466,11 +525,10 @@ const styles = StyleSheet.create({
   guide: { position: 'absolute', left: 0, top: 0, width: BOARD_SIZE, height: BOARD_SIZE },
   launchPlane: {
     position: 'absolute',
-    left: -40,
-    width: 52,
-    height: 40,
+    left: -38,
+    width: 34,
+    height: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    transform: [{ scale: 0.62 }],
   },
 });

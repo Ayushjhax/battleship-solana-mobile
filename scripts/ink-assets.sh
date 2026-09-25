@@ -94,4 +94,6 @@ magick "$TMP/paper.png" "$TMP/safe.png" -gravity center -compose over -composite
 rm -rf "$TMP"
 echo "  brand/icon, brand/adaptive-icon, brand/splash — 1024x1024, ship in the 66% safe zone"
 
+bash scripts/color-assets.sh
+
 echo "done: $(du -sh "$DST" | cut -f1) in $DST"

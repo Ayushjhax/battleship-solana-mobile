@@ -1,6 +1,8 @@
 /**
- * The battle. HUD strip on top (IMG_9770), DualBoards under it, the FX layer
- * and the EventPlayer driving everything the player sees.
+ * The battle, drawn to its mockup over BACKGROUNDS.settings: the HUD across
+ * the top (captains, plates, the Arsenal chest, the banner), DualBoards in
+ * the fleet art's frames under it, the FX layer and the EventPlayer driving
+ * everything the player sees.
  *
  * The screen does not care which mode it is in: 'ai', 'hotseat' and (P13)
  * 'online' all feed the same EventPlayer through src/state/battle.ts.
@@ -8,9 +10,10 @@
 import { coordKey } from '@engine/board';
 import type { Coord, Ship } from '@engine/types';
 import { useRouter } from 'expo-router';
+import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
-import {
+import Animated, {
   Easing,
   useAnimatedStyle,
   useReducedMotion,
@@ -23,16 +26,14 @@ import { playSfx } from '@/audio/sfx';
 import { DualBoards } from '@/board/DualBoards';
 import { BATTLE_BOARD_TOP, BOARD_SIZE, boardOrigins, cellCentre } from '@/board/layout';
 import {
-  ArsenalTab,
-  AvatarCard,
-  EmblemChip,
+  ArsenalButton,
   EmoteFloat,
   EmotePanel,
-  FlagChip,
   FleetCover,
-  PlayerBlock,
-  PointsBlock,
-  ShieldChip,
+  PLATE,
+  PORTRAIT,
+  PlayerPlate,
+  PortraitCard,
 } from '@/features/battle/Hud';
 import { ConnectionOverlay, useConnectionKind } from '@/features/battle/ConnectionOverlay';
 import { buildBattleSetup, buildOnlineSetup } from '@/features/battle/setup';
@@ -40,6 +41,7 @@ import { ArsenalTargetingOverlay, BattleArsenalPopover } from '@/features/arsena
 import { createBattleEffects } from '@/fx/battleEffects';
 import { FxLayer } from '@/fx/FxLayer';
 import { useFx } from '@/fx/fxStore';
+import { prefetchBattleArt } from '@/fx/prefetch';
 import { sendEmote, subscribeEmotes } from '@/net/chat';
 import { useMatchClient } from '@/net/match-client';
 import {
@@ -53,17 +55,18 @@ import {
 } from '@/state/battle';
 import { usePlacement } from '@/state/placement';
 import { useProfile } from '@/state/profile';
-import { InkButton } from '@/ui/InkButton';
+import { ArtImageButton } from '@/ui/ArtImageButton';
+import { ArtPlate } from '@/ui/ArtPlate';
+import { BACKGROUNDS, BATTLE_ART } from '@/ui/assets';
 import { InkIconButton } from '@/ui/InkIconButton';
-import { InkPanel } from '@/ui/InkPanel';
 import { InkSpinner } from '@/ui/InkSpinner';
-import { MarginRule, Paper } from '@/ui/Paper';
 import { Scale } from '@/ui/Scale';
-import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
+import { CANVAS_H, CANVAS_W, artColor, font } from '@/ui/tokens';
 
 const ORIGINS = boardOrigins(BATTLE_BOARD_TOP);
-// Rank line + 22-unit name line end at 74, clear of the board frame at BATTLE_BOARD_TOP (78).
-const HUD_Y = 36;
+/** The plates end at 69, clear of the board frames' top line (~71). */
+const PLATE_Y = 29;
+const LOGO_W = 150;
 
 /** Sunk enemy ships come back as cells; rebuild a Ship for the wreck sprite. */
 function wrecksOf(
@@ -99,25 +102,30 @@ function ResignDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
+  const enter = useSharedValue(reduceMotion ? 1 : 0);
+  useEffect(() => {
+    enter.value = withTiming(1, { duration: reduceMotion ? 0 : 200, easing: Easing.out(Easing.back(1.4)) });
+  }, [enter, reduceMotion]);
+  const shade = useAnimatedStyle(() => ({ opacity: enter.value }));
+  const panel = useAnimatedStyle(() => ({
+    transform: [{ translateY: 10 * (1 - enter.value) }, { scale: 0.92 + 0.08 * enter.value }],
+  }));
   return (
     <View style={styles.resignOverlay} accessibilityViewIsModal>
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Paper variant="full" />
-      </View>
-      <InkPanel w={310} h={146} seedKey="resign-confirm" padding={space.md}>
-        <View style={styles.resignContent}>
-          <Text style={styles.resignTitle}>Resign the match?</Text>
-          <Text style={styles.resignBody}>
-            {tutorial
-              ? 'Leave the lesson and return to port?'
-              : 'This battle will count as a loss.'}
-          </Text>
-          <View style={styles.resignButtons}>
-            <InkButton label="Keep playing" w={126} h={42} onPress={onCancel} />
-            <InkButton label="Resign" tone="danger" w={100} h={42} onPress={onConfirm} />
-          </View>
+      <Animated.View pointerEvents="none" style={[styles.resignShade, shade]} />
+      <Pressable style={styles.resignTouch} onPress={onCancel} accessibilityLabel="Keep playing" />
+      <Animated.View style={[styles.resignPanel, panel]}>
+        <Image source={BATTLE_ART.weaponModal} style={StyleSheet.absoluteFill} contentFit="fill" />
+        <Text style={styles.resignTitle}>{tutorial ? 'Leave the lesson?' : 'Resign the match?'}</Text>
+        <Text style={styles.resignBody}>
+          {tutorial ? 'You can come back to it from the menu.' : 'This battle will count as a loss.'}
+        </Text>
+        <View style={styles.resignButtons}>
+          <ArtPlate family="sketch" tone="green" w={140} h={40} label="Keep playing" fontSize={16} onPress={onCancel} />
+          <ArtPlate family="sketch" tone="cream" w={110} h={40} label={tutorial ? 'Leave' : 'Resign'} fontSize={16} onPress={onConfirm} />
         </View>
-      </InkPanel>
+      </Animated.View>
     </View>
   );
 }
@@ -184,6 +192,9 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
       useFx.getState().clear();
     };
   }, []);
+
+  // ---- the effects' art, from memory if placement already warmed it ----
+  useEffect(() => prefetchBattleArt(), []);
 
   // ---- wire the animated effects into the player for the life of the screen ----
   useEffect(() => {
@@ -266,23 +277,24 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
     dim.value = withTiming(dimmed ? 0.6 : 1, { duration: reduceMotion ? 0 : 220 });
   }, [dim, dimmed, reduceMotion]);
 
-  // ---- camera shake: boards only, never the HUD ----
+  // ---- camera shake: boards only, never the HUD; the atomic bomb shakes harder ----
   const shakeNonce = useFx((s) => s.shakeNonce);
   const shakeX = useSharedValue(0);
   const shakeY = useSharedValue(0);
   useEffect(() => {
-    if (shakeNonce === 0) return;
+    if (shakeNonce === 0 || reduceMotion) return;
+    const k = useFx.getState().shakeStrength;
     shakeX.value = withSequence(
-      withTiming(6, { duration: reduceMotion ? 0 : 40, easing: Easing.out(Easing.cubic) }),
-      withTiming(-6, { duration: reduceMotion ? 0 : 60 }),
-      withTiming(4, { duration: reduceMotion ? 0 : 50 }),
-      withTiming(-2, { duration: reduceMotion ? 0 : 50 }),
-      withTiming(0, { duration: reduceMotion ? 0 : 60 }),
+      withTiming(6 * k, { duration: 40, easing: Easing.out(Easing.cubic) }),
+      withTiming(-6 * k, { duration: 60 }),
+      withTiming(4 * k, { duration: 50 }),
+      withTiming(-2 * k, { duration: 50 }),
+      withTiming(0, { duration: 60 + 40 * (k - 1) }),
     );
     shakeY.value = withSequence(
-      withTiming(-3, { duration: reduceMotion ? 0 : 50 }),
-      withTiming(3, { duration: reduceMotion ? 0 : 60 }),
-      withTiming(0, { duration: reduceMotion ? 0 : 80 }),
+      withTiming(-3 * k, { duration: 50 }),
+      withTiming(3 * k, { duration: 60 }),
+      withTiming(0, { duration: 80 + 40 * (k - 1) }),
     );
   }, [reduceMotion, shakeNonce, shakeX, shakeY]);
   const boardStyle = useAnimatedStyle(() => ({
@@ -366,8 +378,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
 
   if (!shown) {
     return (
-      <Scale>
-        <Paper variant="full" />
+      <Scale backgroundImage={BACKGROUNDS.settings}>
         <View style={styles.loading}>
           <InkSpinner size={34} seedKey="battle-start" />
         </View>
@@ -389,13 +400,12 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   const arsenalLeft = shown.you.board.arsenal.filter((i) => !i.used && !i.destroyed).length;
 
   return (
-    <Scale>
-      <Paper variant="full" />
-
+    <Scale backgroundImage={BACKGROUNDS.settings}>
       {/* ---- boards, triangle, fx — the only things that shake ---- */}
       <DualBoards
         top={BATTLE_BOARD_TOP}
         columnLabels={false}
+        skin="art"
         own={{
           cells: shown.you.board.marks,
           ships: shown.you.board.ships,
@@ -440,14 +450,16 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
             onLift={() => useBattle.getState().uncoverFleet()}
           />
         ) : null}
-        <View style={styles.gutterTop}>
-          <InkIconButton
-            icon="chat"
-            size={36}
-            accessibilityLabel="Emotes"
-            onPress={() => setEmotesOpen((v) => !v)}
-          />
-        </View>
+        <Image source={BATTLE_ART.crossedWeapons} style={styles.gutterBadge} contentFit="contain" pointerEvents="none" />
+        <ArtImageButton
+          source={BATTLE_ART.emoteTab}
+          w={34}
+          h={34 * (49 / 68)}
+          label="Emotes"
+          hitSlop={8}
+          onPress={() => setEmotesOpen((v) => !v)}
+          style={styles.gutterEmote}
+        />
         <View style={styles.gutterBottom}>
           <InkIconButton
             icon="home"
@@ -461,18 +473,14 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         ) : null}
       </DualBoards>
 
-      {/* ---- HUD strip ---- */}
+      {/* ---- HUD ---- */}
       <View style={styles.hud} pointerEvents="box-none">
-        <View style={{ position: 'absolute', left: 106, top: 10 }}>
-          <AvatarCard
-            avatarId={mine?.avatarId ?? 1}
-            tint={mine?.avatarColor ?? '#3E2FB8'}
-            seedKey="me"
-          />
+        <View style={styles.portraitOwn}>
+          <PortraitCard avatarId={mine?.avatarId ?? 1} tint={mine?.avatarColor ?? ''} />
         </View>
         {shown.mode === 'advanced' ? (
-          <View style={{ position: 'absolute', left: 176, top: 4 }}>
-            <ArsenalTab
+          <View style={styles.arsenalButton}>
+            <ArsenalButton
               count={arsenalLeft}
               onPress={() => {
                 setEmotesOpen(false);
@@ -481,70 +489,27 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
             />
           </View>
         ) : null}
-        {/* IMG_9770: emblem + shield under the tab; rank/name from x=220; "Points:" at 340 and 424. */}
-        <View
-          style={{
-            position: 'absolute',
-            left: 160,
-            top: HUD_Y + 6,
-            flexDirection: 'row',
-            gap: 6,
-            alignItems: 'center',
-          }}
-        >
-          <EmblemChip seedKey="me" />
-          <ShieldChip seedKey="me" />
+        <View style={styles.plateOwn}>
+          <PlayerPlate side="left" name={mine?.name ?? 'Player'} points={mine?.points ?? 0} />
         </View>
-        <View style={{ position: 'absolute', left: 220, top: HUD_Y }}>
-          <PlayerBlock
-            name={mine?.name ?? 'Player'}
-            points={mine?.points ?? 0}
-            align="left"
-            maxWidth={116}
-          />
-        </View>
-        <View style={{ position: 'absolute', left: 340, top: HUD_Y }}>
-          <PointsBlock points={mine?.points ?? 0} align="left" />
-        </View>
-
-        <View style={{ position: 'absolute', left: 424, top: HUD_Y }}>
-          <PointsBlock points={opponent?.points ?? 0} align="left" />
-        </View>
-        <View style={{ position: 'absolute', right: CANVAS_W - 586, top: HUD_Y }}>
-          <PlayerBlock
+        <Image source={BATTLE_ART.logo} style={styles.logo} contentFit="contain" pointerEvents="none" />
+        <View style={styles.plateThem}>
+          <PlayerPlate
+            side="right"
             name={opponent?.name ?? '—'}
             points={opponent?.points ?? 0}
-            align="right"
-            maxWidth={100}
+            countryCode={opponent?.countryCode}
           />
         </View>
-        <View
-          style={{ position: 'absolute', left: 590, top: HUD_Y + 4, flexDirection: 'row', gap: 6 }}
-        >
-          <ShieldChip seedKey="them" />
-          <FlagChip code={opponent?.countryCode ?? '??'} seedKey="them" />
-        </View>
-        <View style={{ position: 'absolute', left: 640, top: 10 }}>
-          <AvatarCard
-            avatarId={opponent?.avatarId ?? 2}
-            tint={opponent?.avatarColor ?? '#3A3A3A'}
-            seedKey="them"
-          />
+        <View style={styles.portraitThem}>
+          <PortraitCard avatarId={opponent?.avatarId ?? 2} tint={opponent?.avatarColor ?? ''} />
           {emote ? (
-            <View style={{ position: 'absolute', left: 9, top: -4 }}>
+            <View style={styles.emoteFloat}>
               <EmoteFloat id={emote.id} nonce={emote.nonce} />
             </View>
           ) : null}
         </View>
       </View>
-
-      {/*
-        The HUD strip covers y = 0..78, which buried the sheet's red margin
-        rule for the whole match — the one line meant to be constant across
-        every screen was missing exactly where players spend their time. Same
-        seed as Paper's, so it is the identical stroke, just drawn on top.
-      */}
-      <MarginRule />
 
       {arsenalOpen ? (
         <BattleArsenalPopover
@@ -576,6 +541,9 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   );
 }
 
+const RESIGN_W = 340;
+const RESIGN_H = RESIGN_W * (466 / 885);
+
 const styles = StyleSheet.create({
   loading: {
     position: 'absolute',
@@ -583,7 +551,31 @@ const styles = StyleSheet.create({
     top: CANVAS_H / 2 - 17,
   },
   hud: { position: 'absolute', left: 0, top: 0, width: CANVAS_W, height: BATTLE_BOARD_TOP },
-  gutterTop: { position: 'absolute', left: ORIGINS.gutterCentre.x - 18, top: BATTLE_BOARD_TOP + 4 },
+  portraitOwn: { position: 'absolute', left: 6, top: 5 },
+  portraitThem: { position: 'absolute', left: CANVAS_W - 6 - PORTRAIT.w, top: 5 },
+  arsenalButton: { position: 'absolute', left: 62, top: -3 },
+  plateOwn: { position: 'absolute', left: 62, top: PLATE_Y },
+  plateThem: { position: 'absolute', left: CANVAS_W - 62 - PLATE.w, top: PLATE_Y },
+  logo: {
+    position: 'absolute',
+    left: (CANVAS_W - LOGO_W) / 2,
+    top: 1,
+    width: LOGO_W,
+    height: LOGO_W * (157 / 529),
+  },
+  emoteFloat: { position: 'absolute', left: 7, top: -6 },
+  gutterBadge: {
+    position: 'absolute',
+    left: ORIGINS.gutterCentre.x - 12,
+    top: BATTLE_BOARD_TOP + 2,
+    width: 24,
+    height: 33,
+  },
+  gutterEmote: {
+    position: 'absolute',
+    left: ORIGINS.gutterCentre.x - 17,
+    top: BATTLE_BOARD_TOP + 42,
+  },
   gutterBottom: {
     position: 'absolute',
     left: ORIGINS.gutterCentre.x - 18,
@@ -603,14 +595,22 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     zIndex: 200,
-    backgroundColor: color.paper,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  resignContent: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm },
-  resignTitle: { color: color.inkRed, fontFamily: font.display, fontSize: typeScale.lg },
-  resignBody: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.sm },
-  resignButtons: { flexDirection: 'row', gap: space.sm },
+  resignShade: {
+    position: 'absolute',
+    left: -200,
+    top: -200,
+    right: -200,
+    bottom: -200,
+    backgroundColor: 'rgba(10, 16, 108, 0.26)',
+  },
+  resignTouch: { position: 'absolute', left: -200, top: -200, right: -200, bottom: -200 },
+  resignPanel: { width: RESIGN_W, height: RESIGN_H, alignItems: 'center' },
+  resignTitle: { marginTop: 22, color: artColor.red, fontFamily: font.display, fontSize: 22 },
+  resignBody: { marginTop: 6, color: artColor.soft, fontFamily: font.body, fontSize: 14 },
+  resignButtons: { position: 'absolute', bottom: 22, flexDirection: 'row', gap: 12 },
 });
 
 /** The route: a normal match built from what placement left behind. */

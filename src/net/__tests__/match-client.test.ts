@@ -77,6 +77,8 @@ interface FakeServer {
   alice: WebSocket | null;
   /** A half-open socket: stays open, answers nothing. */
   mute: boolean;
+  /** What `queue` is answered with, if not `queued`. */
+  queueReply: ServerMessage | null;
   send(message: ServerMessage): void;
   sendRaw(raw: string): void;
   /** Kill every client socket and stop listening — "the server died". */
@@ -95,6 +97,7 @@ function startFakeServer(port: number, initialRoom = new FakeRoom()): Promise<Fa
     room: initialRoom,
     alice: null,
     mute: false,
+    queueReply: null,
     send(message) {
       if (!server.mute) server.alice?.send(JSON.stringify(message));
     },
@@ -159,7 +162,7 @@ function startFakeServer(port: number, initialRoom = new FakeRoom()): Promise<Fa
             server.send({ t: 'error', v: 1, code: 'not_in_room', message: 'already in a match' });
             return;
           }
-          server.send({ t: 'queued', v: 1, position: 1, onlineCount: 3 });
+          server.send(server.queueReply ?? { t: 'queued', v: 1, position: 1, onlineCount: 3 });
           return;
         case 'cancelQueue':
           server.send({
@@ -562,6 +565,72 @@ describe('match client', () => {
     // The discovery timer must not fire and tear this down underneath us.
     await sleep(4500);
     expect(mc.getState().status).toBe('queued');
+  }, 20000);
+
+  it('queues even when the launch-time discovery had to retry', async () => {
+    // The app asks "is there a match to resume?" on launch. If that first
+    // socket cannot reach the server (a cold start, a network blip), its
+    // retry must not leave the client looking busy: the player's queue()
+    // afterwards has to reach the server.
+    await server.close();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const mc = await client();
+    mc.getState().discover();
+    await sleep(300);
+    server = await startFakeServer(port);
+    await sleep(1500);
+
+    mc.getState().queue('advanced', { wagered: true });
+    await until(() => mc.getState().status === 'queued', 10_000, 'queued');
+    const queued = server.received.find((m) => m.t === 'queue');
+    expect(queued).toMatchObject({ t: 'queue', wagered: true });
+    expect(mc.getState().status).toBe('queued');
+    log.mockRestore();
+  }, 20000);
+
+  it('queues after a launch-time discovery could not get a token', async () => {
+    // A session refresh that fails at launch (slow network, a refresh race)
+    // is a transient for the match client. During discovery nobody asked to
+    // play yet — it must not leave the client "connecting" with no queue in
+    // it, where the player's queue() would be taken for a screen re-mount.
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const api = await import('../api');
+    vi.mocked(api.getAccessToken).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'offline', message: 'Network request failed' },
+    } as never);
+    const mc = await client();
+    mc.getState().discover();
+    await sleep(5000);
+
+    mc.getState().queue('advanced', { wagered: true });
+    await until(() => mc.getState().status === 'queued', 10_000, 'queued');
+    expect(server.received.some((m) => m.t === 'queue')).toBe(true);
+    log.mockRestore();
+  }, 25000);
+
+  it('says so when this account is already searching on another device', async () => {
+    // Two phones on one account: the second is refused `already_queued` on
+    // its very first ask. It used to read that as "still in line" and spin.
+    server.queueReply = { t: 'error', v: 1, code: 'already_queued', message: 'already queued' };
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const mc = await client();
+    mc.getState().queue('advanced', { wagered: true });
+    await until(() => mc.getState().status === 'failed', 8000, 'failed');
+    expect(mc.getState().failure?.reason).toBe('already_searching');
+    log.mockRestore();
+  }, 20000);
+
+  it('drops a discovery that cannot connect instead of looking busy', async () => {
+    await server.close();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const mc = await client();
+    mc.getState().discover();
+    await sleep(400);
+    expect(mc.getState().status).toBe('idle');
+    expect(mc.getState().failure).toBeNull();
+    log.mockRestore();
+    server = await startFakeServer(port);
   }, 20000);
 
   it('gives up cleanly when nothing is listening', async () => {

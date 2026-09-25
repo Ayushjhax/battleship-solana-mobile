@@ -25,6 +25,8 @@ import { createContext, useContext, useMemo, useRef, type ReactNode, type RefObj
 import { useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { Asset } from './assets';
+import { ImageBackdrop } from './ImageBackdrop';
 import { PaperBackdrop } from './PaperBackdrop';
 import { CANVAS_H, CANVAS_W, color } from './tokens';
 
@@ -62,11 +64,17 @@ export function Scale({
   children,
   transparent = false,
   backdrop = 'paper',
+  backgroundImage,
 }: {
   children?: ReactNode;
   transparent?: boolean;
   /** 'paper' continues the rules around the canvas; 'plain' is a bare sheet. */
   backdrop?: 'paper' | 'plain';
+  /**
+   * An illustrated page backdrop, layered over the procedural paper — or, on a
+   * transparent Scale, over whatever is already behind it.
+   */
+  backgroundImage?: Asset;
 }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -110,6 +118,7 @@ export function Scale({
             rules={backdrop === 'paper'}
           />
         )}
+        <ImageBackdrop source={backgroundImage} />
         <View
           ref={canvasRef}
           pointerEvents={transparent ? 'box-none' : 'auto'}

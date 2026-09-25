@@ -1,21 +1,23 @@
 /**
- * The leaderboard (P14): the top-100 view from P11 as a ruled ledger page —
- * rank number, avatar thumb, flag, name, wins, points. Pull to refresh.
+ * The leaderboard (P14): the top-100 view from P11 on the commissioned ledger
+ * (LEADERBOARD_ART.table — its header baked in, its row rules erased so the
+ * live rows scroll under their own), on BACKGROUNDS.settings. Rank, the
+ * captain each player chose in their colour, port, name, wins, points. Pull
+ * to refresh.
  *
  * "You" is found by POSITION, never by id: public.my_leaderboard_row() (0008)
  * returns the caller's 1-based place in the same ordering as the view, so
- * position <= 100 brackets that row in inkRed, and anything beyond pins the
- * row under the list. The view itself exposes no user id at all.
+ * position <= 100 inks that row red, and anything beyond pins the row under
+ * the list. The view itself exposes no user id at all.
  *
  * Budget: the screen must show rows within 400 ms. The two calls run in
- * parallel, the last good page is kept in memory so re-opening paints at
- * once, and the ledger's rules are plain hairlines — Rough is for the
- * brackets and the frame, not for a hundred separators.
+ * parallel and the last good page is kept in memory so re-opening paints at
+ * once.
  */
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg from 'react-native-svg';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 
 import {
   getLeaderboard,
@@ -23,15 +25,22 @@ import {
   type LeaderboardEntry,
   type MyLeaderboardRow,
 } from '@/net/api';
-import { InkButton } from '@/ui/InkButton';
+import { ArtImageButton } from '@/ui/ArtImageButton';
+import { ArtPlate } from '@/ui/ArtPlate';
+import {
+  BACKGROUNDS,
+  LEADERBOARD_ART,
+  LOGIN_ART,
+  MATCHMAKING_ART,
+  POINTS_ART,
+  RESULT_ART,
+  SETTINGS_ART,
+  type Asset,
+} from '@/ui/assets';
 import { InkSpinner } from '@/ui/InkSpinner';
-import { Paper } from '@/ui/Paper';
+import { portraitFor } from '@/ui/portraits';
 import { Scale } from '@/ui/Scale';
-import { TitleRibbon } from '@/ui/TitleRibbon';
-import { AssetSlot } from '@/ui/AssetSlot';
-import { AVATARS, type Asset } from '@/ui/assets';
-import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
-import { RoughShape, hashString, useRough, type Point } from '@/ui/useRough';
+import { CANVAS_W, artColor, font } from '@/ui/tokens';
 
 const LOAD_BUDGET_MS = 400;
 
@@ -62,49 +71,48 @@ async function loadPage(): Promise<{ page?: Page; error?: string }> {
 }
 
 // ---------------------------------------------------------------------------
-// Ledger geometry — canvas units
+// Ledger geometry — the table is drawn at one uniform scale, so its baked
+// header stays where it was drawn and the live columns line up under it.
 // ---------------------------------------------------------------------------
 
-const PAGE_X = 90;
-const PAGE_Y = 58;
-const PAGE_W = CANVAS_W - PAGE_X * 2;
-const PAGE_H = CANVAS_H - PAGE_Y - 14;
-const ROW_H = 30;
-// The list is PAGE_W - 32 = 588 wide; the two 60-wide numeric cells end flush at 588.
-const COL = { rank: 10, avatar: 52, flag: 92, name: 134, wins: 450, points: 528 } as const;
+const TABLE_PX = { w: 890, h: 477 } as const;
+const K = 0.612;
+const TABLE = { w: TABLE_PX.w * K, h: TABLE_PX.h * K, x: (CANVAS_W - TABLE_PX.w * K) / 2, y: 58 } as const;
+/** In table px: the body under the header, and the header's labels. */
+const BODY_PX = { x0: 17, x1: 867, y0: 128, y1: 430 } as const;
+const HEAD_PX = { rank: 144.5, captain: 250, wins: 623, points: 730.5 } as const;
+const BODY = {
+  x: TABLE.x + BODY_PX.x0 * K,
+  y: TABLE.y + BODY_PX.y0 * K,
+  w: (BODY_PX.x1 - BODY_PX.x0) * K,
+  h: (BODY_PX.y1 - BODY_PX.y0) * K,
+} as const;
+/** A header position as an x inside the body. */
+const col = (px: number) => (px - BODY_PX.x0) * K;
+const ROW_H = 26;
+const AVATAR = 22;
+const COL = {
+  rank: col(HEAD_PX.rank) - 20,
+  avatar: col(HEAD_PX.rank) + 12,
+  flag: col(HEAD_PX.rank) + 12 + AVATAR + 4,
+  name: col(HEAD_PX.captain),
+  wins: col(HEAD_PX.wins) - 24,
+  points: col(HEAD_PX.points) - 30,
+} as const;
 
-function Bracket({ side }: { side: 'left' | 'right' }) {
-  const { roughPath } = useRough();
-  const w = 10;
-  const h = ROW_H - 4;
-  const pts: Point[] =
-    side === 'left'
-      ? [
-          [w - 1, 1],
-          [1, 1],
-          [1, h - 1],
-          [w - 1, h - 1],
-        ]
-      : [
-          [1, 1],
-          [w - 1, 1],
-          [w - 1, h - 1],
-          [1, h - 1],
-        ];
-  const path = roughPath(pts, {
-    seed: hashString(`bracket-${side}`),
-    stroke: color.inkRed,
-    strokeWidth: 1.8,
-    roughness: 1.1,
-  });
+function Art({ source, style }: { source: Asset; style: ImageStyle }) {
   return (
-    <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <RoughShape paths={path} />
-    </Svg>
+    <Image
+      source={source}
+      style={[{ position: 'absolute' }, style]}
+      contentFit="contain"
+      cachePolicy="memory-disk"
+      pointerEvents="none"
+    />
   );
 }
 
-function Row({
+const Row = memo(function Row({
   position,
   entry,
   me,
@@ -115,43 +123,31 @@ function Row({
   me: boolean;
   pinned?: boolean;
 }) {
-  const avatar: Asset = (AVATARS as Record<number, Asset>)[entry.avatar_id] ?? null;
   return (
-    <View style={[styles.row, pinned && styles.pinnedRow]}>
-      {me ? (
-        <View style={[styles.bracket, { left: -14 }]}>
-          <Bracket side="left" />
-        </View>
-      ) : null}
-      <Text style={[styles.cell, styles.rank, { left: COL.rank }, me && styles.meText]}>
-        {position}
-      </Text>
-      <View style={{ position: 'absolute', left: COL.avatar, top: 3 }}>
-        <AssetSlot source={avatar} w={24} h={24} label="" tintColor={entry.avatar_color} />
-      </View>
-      <Text style={[styles.cell, styles.flag, { left: COL.flag }]}>
-        {entry.country_code ?? '??'}
-      </Text>
-      <Text
-        style={[styles.cell, styles.name, { left: COL.name }, me && styles.meText]}
-        numberOfLines={1}
-      >
+    <View style={[styles.row, pinned ? styles.pinnedRow : null]} accessible accessibilityLabel={
+      `${me ? 'You, ' : ''}rank ${position}, ${entry.name}, ${entry.battles_won} wins, ${entry.rank_points} points`
+    }>
+      <Text style={[styles.cell, styles.rank, { left: COL.rank }, me && styles.meText]}>{position}</Text>
+      <Image
+        source={portraitFor(entry.avatar_id, entry.avatar_color)}
+        style={[styles.avatar, { left: COL.avatar }]}
+        contentFit="contain"
+        cachePolicy="memory-disk"
+      />
+      <Text style={[styles.cell, styles.flag, { left: COL.flag }]}>{entry.country_code ?? '??'}</Text>
+      <Text style={[styles.cell, styles.name, { left: COL.name }, me && styles.meText]} numberOfLines={1}>
         {entry.name}
       </Text>
-      <Text style={[styles.cell, styles.num, { left: COL.wins }]}>{entry.battles_won}</Text>
-      <Text
-        style={[styles.cell, styles.num, styles.points, { left: COL.points }, me && styles.meText]}
-      >
+      <Text style={[styles.cell, styles.num, { left: COL.wins, width: 48 }]}>{entry.battles_won}</Text>
+      <Text style={[styles.cell, styles.num, { left: COL.points, width: 60 }, me && styles.meText]}>
         {entry.rank_points}
       </Text>
-      {me ? (
-        <View style={[styles.bracket, { right: -14 }]}>
-          <Bracket side="right" />
-        </View>
-      ) : null}
+      {pinned ? null : (
+        <Image source={POINTS_ART.straightDivider} style={styles.divider} contentFit="fill" />
+      )}
     </View>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // The screen
@@ -159,7 +155,6 @@ function Row({
 
 export default function LeaderboardScreen() {
   const router = useRouter();
-  const { roughRect } = useRough();
   const [page, setPage] = useState<Page | null>(cached);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -186,91 +181,58 @@ export default function LeaderboardScreen() {
     };
   }, [load]);
 
-  const frame = roughRect(1.5, 1.5, PAGE_W - 3, PAGE_H - 3, {
-    seed: hashString('ledger-frame'),
-    strokeWidth: 1.8,
-    fill: color.paper,
-    fillStyle: 'solid',
-  });
-
   const myPosition = page?.me?.rank_position ?? null;
   const pinned = page?.me && myPosition !== null && myPosition > page.rows.length ? page.me : null;
 
   return (
-    <Scale>
-      <Paper variant="full" />
-      <View style={styles.title}>
-        <TitleRibbon title="Leaderboard" w={300} h={44} seedKey="leaderboard" />
-      </View>
-      <View style={styles.back}>
-        <InkButton
-          label="↩"
-          size="lg"
-          w={54}
-          h={44}
-          seedKey="leaderboard-back"
-          onPress={() => router.back()}
-        />
-      </View>
+    <Scale backgroundImage={BACKGROUNDS.settings}>
+      <Art source={LOGIN_ART.sailingShip} style={styles.ship} />
+      <Art source={SETTINGS_ART.quote} style={styles.quoteTopLeft} />
+      <Art source={RESULT_ART.oceansQuote} style={styles.quoteTopRight} />
+      <Art source={RESULT_ART.seasQuote} style={styles.quoteLeft} />
+      <Art source={MATCHMAKING_ART.goodCaptainsQuote} style={styles.quoteRight} />
 
-      <View style={styles.page}>
-        <Svg
-          width={PAGE_W}
-          height={PAGE_H}
-          viewBox={`0 0 ${PAGE_W} ${PAGE_H}`}
-          style={StyleSheet.absoluteFill}
-        >
-          <RoughShape paths={frame} />
-        </Svg>
+      <ArtImageButton
+        source={SETTINGS_ART.back}
+        w={72}
+        h={44}
+        label="Back"
+        style={styles.back}
+        onPress={() => (router.canGoBack() ? router.back() : router.replace('/menu'))}
+      />
+      <Art source={LEADERBOARD_ART.banner} style={styles.banner} />
+      <Image source={LEADERBOARD_ART.table} style={styles.table} contentFit="fill" accessibilityLabel="Leaderboard: rank, captain, wins, points" />
 
-        <View style={styles.header}>
-          <Text style={[styles.headCell, { left: COL.rank }]}>#</Text>
-          <Text style={[styles.headCell, { left: COL.name }]}>Captain</Text>
-          <Text style={[styles.headCell, styles.headNum, { left: COL.wins }]}>Wins</Text>
-          <Text style={[styles.headCell, styles.headNum, { left: COL.points }]}>Points</Text>
-        </View>
-
+      <View style={styles.body}>
         {page ? (
           <ScrollView
-            style={styles.list}
-            contentContainerStyle={{ paddingBottom: pinned ? ROW_H + 6 : 6 }}
+            style={StyleSheet.absoluteFill}
+            contentContainerStyle={{ paddingBottom: pinned ? ROW_H + 4 : 4 }}
+            showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={() => void load(true)}
-                tintColor={color.ink}
+                tintColor={artColor.ink}
+                colors={[artColor.ink]}
               />
             }
           >
             {page.rows.map((entry, i) => (
-              <Row
-                key={`${i}-${entry.name}`}
-                position={i + 1}
-                entry={entry}
-                me={myPosition === i + 1}
-              />
+              <Row key={`${i}-${entry.name}`} position={i + 1} entry={entry} me={myPosition === i + 1} />
             ))}
-            {page.rows.length === 0 ? (
-              <Text style={styles.empty}>No battles logged yet. Be the first.</Text>
-            ) : null}
+            {page.rows.length === 0 ? <Text style={styles.empty}>No battles logged yet. Be the first.</Text> : null}
           </ScrollView>
         ) : error ? (
           <View style={styles.centre}>
             <Text style={styles.errorText}>{error}</Text>
-            <InkButton
-              label="Try again"
-              tone="confirm"
-              size="sm"
-              w={120}
-              onPress={() => void load(false)}
-            />
+            <ArtPlate tone="green" w={140} h={34} fontSize={15} label="Try again" onPress={() => void load(false)} />
           </View>
         ) : (
           <View style={styles.centre}>
-            <InkSpinner size={34} seedKey="leaderboard" />
+            <InkSpinner size={30} seedKey="leaderboard" />
           </View>
         )}
-
         {pinned ? (
           <View style={styles.pinned}>
             <Row position={pinned.rank_position} entry={pinned} me pinned />
@@ -282,53 +244,28 @@ export default function LeaderboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { position: 'absolute', left: (CANVAS_W - 300) / 2, top: 8 },
-  back: { position: 'absolute', left: 16, top: 8 },
-  page: { position: 'absolute', left: PAGE_X, top: PAGE_Y, width: PAGE_W, height: PAGE_H },
-  header: { position: 'absolute', left: 16, top: 6, right: 16, height: 22 },
-  headCell: {
-    position: 'absolute',
-    top: 2,
-    color: color.inkSoft,
-    fontFamily: font.label,
-    fontSize: typeScale.xxs,
-  },
-  list: { position: 'absolute', left: 16, right: 16, top: 28, bottom: 4 },
-  row: {
-    height: ROW_H,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: color.gridMajor,
-  },
-  pinnedRow: { borderTopWidth: 1, borderTopColor: color.inkFaint, borderBottomWidth: 0 },
-  pinned: { position: 'absolute', left: 16, right: 16, bottom: 4, backgroundColor: color.paper },
-  bracket: { position: 'absolute', top: 2 },
-  cell: {
-    position: 'absolute',
-    top: 7,
-    color: color.ink,
-    fontFamily: font.body,
-    fontSize: typeScale.sm,
-  },
-  rank: { width: 36, fontFamily: font.label, color: color.inkSoft },
-  flag: { color: color.inkRed, fontFamily: font.label, fontSize: typeScale.xxs, top: 9 },
-  name: { width: 320, fontFamily: font.display },
-  num: { width: 60, textAlign: 'right' },
-  headNum: { width: 60, textAlign: 'right' },
-  points: { fontFamily: font.display },
-  meText: { color: color.inkRed },
-  centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm },
-  errorText: {
-    maxWidth: 360,
-    color: color.ink,
-    fontFamily: font.body,
-    fontSize: typeScale.sm,
-    textAlign: 'center',
-  },
-  empty: {
-    marginTop: space.lg,
-    color: color.inkSoft,
-    fontFamily: font.body,
-    fontSize: typeScale.sm,
-    textAlign: 'center',
-  },
+  back: { position: 'absolute', left: 8, top: 8 },
+  banner: { left: (CANVAS_W - 270) / 2, top: 0, width: 270, height: 270 * (139 / 658) },
+  table: { position: 'absolute', left: TABLE.x, top: TABLE.y, width: TABLE.w, height: TABLE.h },
+  ship: { left: 12, top: 118, width: 96, height: 96 },
+  quoteTopLeft: { left: 86, top: 6, width: 80, height: 51 },
+  quoteTopRight: { left: 692, top: 4, width: 78, height: 56 },
+  quoteLeft: { left: 20, top: 236, width: 74, height: 54 },
+  quoteRight: { left: 700, top: 96, width: 64, height: 67 },
+
+  body: { position: 'absolute', left: BODY.x, top: BODY.y, width: BODY.w, height: BODY.h, overflow: 'hidden' },
+  row: { height: ROW_H },
+  pinnedRow: { borderTopWidth: 1, borderTopColor: artColor.label },
+  pinned: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#F7F2E6' },
+  cell: { position: 'absolute', top: 3, fontFamily: font.display, fontSize: 16, lineHeight: 20 },
+  rank: { width: 40, textAlign: 'center', color: artColor.label },
+  avatar: { position: 'absolute', top: 2, width: AVATAR, height: AVATAR },
+  flag: { top: 6, color: artColor.red, fontFamily: font.label, fontSize: 11, lineHeight: 14 },
+  name: { width: COL.wins - COL.name - 8, color: artColor.ink },
+  num: { textAlign: 'center', color: artColor.ink },
+  meText: { color: artColor.red },
+  divider: { position: 'absolute', left: 8, right: 8, bottom: 0, height: 3, opacity: 0.55 },
+  centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  errorText: { maxWidth: 360, color: artColor.ink, fontFamily: font.body, fontSize: 15, textAlign: 'center' },
+  empty: { marginTop: 24, color: artColor.soft, fontFamily: font.body, fontSize: 15, textAlign: 'center' },
 });

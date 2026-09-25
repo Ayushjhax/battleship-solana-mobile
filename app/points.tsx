@@ -1,8 +1,20 @@
+/**
+ * Points exchange — drawn to its mockup on BACKGROUNDS.settings: the captain's
+ * balance on the left, the buy/sell desk on the right, both on the rope-crowned
+ * panel (one grid-sliced frame, so both crowns match). Every button with words
+ * that change — the tabs, Pay/Finish credit, Exchange/Check payout, Refresh —
+ * is an ArtPlate with a live label.
+ *
+ * The exchange itself is unchanged: buys are credited only after the backend
+ * verifies the transfer on Solana; sells reserve the points first and restore
+ * them if the payout fails.
+ */
 import { useEmbeddedSolanaWallet } from '@privy-io/expo';
 import { Connection, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 
 import {
   confirmPointBuy,
@@ -12,15 +24,45 @@ import {
 } from '@/net/points';
 import { usePoints } from '@/state/points';
 import { randomUuid } from '@/util/uuid';
-import { InkButton } from '@/ui/InkButton';
-import { InkIconButton } from '@/ui/InkIconButton';
-import { InkPanel } from '@/ui/InkPanel';
+import { ArtImageButton } from '@/ui/ArtImageButton';
+import { ArtPlate } from '@/ui/ArtPlate';
+import {
+  BACKGROUNDS,
+  LOGIN_ART,
+  MATCHMAKING_ART,
+  POINTS_ART,
+  SETTINGS_ART,
+  type Asset,
+} from '@/ui/assets';
 import { InkSpinner } from '@/ui/InkSpinner';
-import { Paper } from '@/ui/Paper';
 import { Scale } from '@/ui/Scale';
-import { TitleRibbon } from '@/ui/TitleRibbon';
-import { color, font, space, type as typeScale } from '@/ui/tokens';
+import { GridSlicedImage } from '@/ui/SlicedImage';
+import { CANVAS_W, artColor, color, font } from '@/ui/tokens';
 import { readBalanceAtLeastSlot, solanaConfig } from '@/wallet/solana';
+
+/** The panel frame's grid (points-panel): corners and crown fixed, the rest stretch. */
+const PANEL_GRID = {
+  cells: POINTS_ART.panel,
+  stretchCols: [false, true, false, true, false],
+  stretchRows: [false, true, false],
+  k: 0.45,
+} as const;
+const LEFT = { x: 30, y: 58, w: 298, h: 284 } as const;
+const RIGHT = { x: 336, y: 58, w: 436, h: 284 } as const;
+/** Content starts below the crown's anchor medallion, which hangs ~36 below the frame's top. */
+const CONTENT_TOP = 42;
+
+function Art({ source, style }: { source: Asset; style: ImageStyle }) {
+  return (
+    <Image
+      source={source}
+      style={[{ position: 'absolute' }, style]}
+      contentFit="contain"
+      cachePolicy="memory-disk"
+      pointerEvents="none"
+    />
+  );
+}
 
 type DeskTab = 'buy' | 'sell';
 const NETWORK_FEE_RESERVE = 20_000;
@@ -213,100 +255,220 @@ export default function PointsScreen() {
     );
   }, [balance, busy, pendingSellId, quote, refresh]);
 
+  const buyLabel = pendingBuy ? (busy ? 'Verifying…' : 'Finish credit') : busy ? 'Processing…' : 'Pay 0.001 SOL';
+  const sellLabel = busy ? 'Processing…' : pendingSellId ? 'Check payout' : 'Exchange for SOL';
+  const statusText =
+    error ??
+    notice ??
+    (wallet ? 'Treasury-backed · server verified · replay protected' : 'Waiting for your Privy wallet…');
+
   return (
-    <Scale>
-      <Paper variant="full" />
-      <View style={styles.back}>
-        <InkIconButton
-          icon="back"
-          accessibilityLabel="Back"
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/menu'))}
+    <Scale backgroundImage={BACKGROUNDS.settings}>
+      <Art source={SETTINGS_ART.quote} style={styles.quoteTop} />
+
+      <ArtImageButton
+        source={SETTINGS_ART.back}
+        w={72}
+        h={44}
+        label="Back"
+        style={styles.back}
+        onPress={() => (router.canGoBack() ? router.back() : router.replace('/menu'))}
+      />
+      <Art source={POINTS_ART.banner} style={styles.banner} />
+
+      {/* The captain's balance */}
+      <GridSlicedImage {...PANEL_GRID} w={LEFT.w} h={LEFT.h} style={{ position: 'absolute', left: LEFT.x, top: LEFT.y }} />
+      <View style={styles.leftBox}>
+        <View style={styles.kickerRow}>
+          <Image source={MATCHMAKING_ART.navyDashLeft} style={styles.kickerDash} contentFit="contain" />
+          <Text style={styles.kicker}>CAPTAIN’S POINTS</Text>
+          <Image source={MATCHMAKING_ART.navyDashRight} style={styles.kickerDash} contentFit="contain" />
+        </View>
+        <View style={styles.balanceRow}>
+          <Image source={POINTS_ART.coinStack} style={styles.coins} contentFit="contain" />
+          <View style={styles.balanceCol}>
+            <Text style={styles.balance} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+              {balance.toLocaleString()}
+            </Text>
+            <Text style={styles.balanceLabel}>available points</Text>
+          </View>
+        </View>
+        <Image source={POINTS_ART.waveDivider} style={styles.wave} contentFit="fill" />
+        <Text style={styles.rate}>100 points ⇄ 0.001 SOL</Text>
+        <Text style={styles.helper}>
+          Wager matches reserve 50 points. The winner receives the full 100-point pot.
+        </Text>
+        <Image source={POINTS_ART.straightDivider} style={styles.rule} contentFit="fill" />
+        <Text style={styles.solReadout}>
+          Wallet: {solBalance === null ? '—' : `${(solBalance / 1_000_000_000).toFixed(6)} SOL`}
+        </Text>
+        <ArtPlate
+          tone="cream"
+          w={206}
+          h={34}
+          icon={POINTS_ART.refresh}
+          iconSize={20}
+          fontSize={15}
+          label={loading ? 'Refreshing…' : 'Refresh balances'}
+          disabled={loading || busy}
+          onPress={() => void refresh()}
+          style={styles.refresh}
         />
       </View>
-      <View style={styles.ribbon}>
-        <TitleRibbon title="Points exchange" w={310} h={42} size="md" />
-      </View>
 
-      <View style={styles.account}>
-        <InkPanel w={270} h={272} seedKey="points-account" padding={space.md}>
-          <Text style={styles.kicker}>CAPTAIN’S POINTS</Text>
-          <Text style={styles.balance}>{balance.toLocaleString()}</Text>
-          <Text style={styles.balanceLabel}>available points</Text>
-          <View style={styles.rule} />
-          <Text style={styles.rate}>100 points ⇄ 0.001 SOL</Text>
-          <Text style={styles.helper}>
-            Wager matches reserve 50 points. The winner receives the full 100-point pot.
-          </Text>
-          <Text style={styles.solReadout}>
-            Wallet: {solBalance === null ? '—' : `${(solBalance / 1_000_000_000).toFixed(6)} SOL`}
-          </Text>
-          <InkButton
-            label={loading ? 'Refreshing…' : 'Refresh balances'}
-            w={210}
+      {/* The desk */}
+      <GridSlicedImage {...PANEL_GRID} w={RIGHT.w} h={RIGHT.h} style={{ position: 'absolute', left: RIGHT.x, top: RIGHT.y }} />
+      <View style={styles.rightBox}>
+        <View style={styles.tabs}>
+          <ArtPlate
+            tone={tab === 'buy' ? 'green' : 'cream'}
+            w={186}
             h={36}
-            size="sm"
-            style={styles.refreshButton}
-            disabled={loading || busy}
-            onPress={() => void refresh()}
+            fontSize={16}
+            label="Buy points"
+            accessibilityLabel={`Buy points${tab === 'buy' ? ', selected' : ''}`}
+            onPress={() => setTab('buy')}
           />
-        </InkPanel>
-      </View>
+          <ArtPlate
+            tone={tab === 'sell' ? 'green' : 'cream'}
+            w={186}
+            h={36}
+            fontSize={16}
+            label="Sell points"
+            accessibilityLabel={`Sell points${tab === 'sell' ? ', selected' : ''}`}
+            onPress={() => setTab('sell')}
+          />
+        </View>
 
-      <View style={styles.trade}>
-        <InkPanel w={470} h={272} seedKey="points-trade" padding={space.md}>
-          <View style={styles.tabs}>
-            <InkButton label="Buy points" tone={tab === 'buy' ? 'confirm' : 'ink'} w={200} h={36} size="sm" onPress={() => setTab('buy')} />
-            <InkButton label="Sell points" tone={tab === 'sell' ? 'confirm' : 'ink'} w={200} h={36} size="sm" onPress={() => setTab('sell')} />
+        {loading && !quote ? (
+          <View style={styles.loading}>
+            <InkSpinner size={28} />
+            <Text style={styles.copy}>Opening the points desk…</Text>
           </View>
-          {loading && !quote ? (
-            <View style={styles.loading}><InkSpinner size={28} /><Text style={styles.helper}>Opening the points desk…</Text></View>
-          ) : tab === 'buy' ? (
-            <View style={styles.body}>
-              <Text style={styles.title}>Buy 100 points</Text>
-              <Text style={styles.copy}>Privy will ask you to approve a 0.001 SOL transfer. Points are credited only after the backend verifies it on Solana.</Text>
-              {pendingBuy ? (
-                <InkButton label={busy ? 'Verifying…' : 'Finish credit'} tone="confirm" w={210} h={42} size="sm" disabled={busy} onPress={() => void finishBuyCredit()} />
-              ) : (
-                <InkButton label={busy ? 'Processing…' : 'Pay 0.001 SOL'} tone="confirm" w={210} h={42} size="sm" disabled={busy || !wallet || !quote} onPress={() => void buy()} />
-              )}
-            </View>
-          ) : (
-            <View style={styles.body}>
-              <Text style={styles.title}>Sell 100 points</Text>
-              <Text style={styles.copy}>The backend reserves 100 points, then sends 0.001 SOL from the treasury to your verified Privy wallet. Failed payouts restore the points.</Text>
-              <InkButton label={busy ? 'Processing…' : pendingSellId ? 'Check payout' : 'Exchange for SOL'} tone="confirm" w={210} h={42} size="sm" disabled={busy || !quote || !wallet} onPress={() => void sell()} />
-            </View>
-          )}
-          <View style={styles.notice} accessibilityLiveRegion="polite">
-            <Text style={[styles.noticeText, error ? styles.error : null]} numberOfLines={2}>
-              {error ?? notice ?? (wallet ? 'Treasury-backed · server verified · replay protected' : 'Waiting for your Privy wallet…')}
+        ) : (
+          <View style={styles.desk}>
+            <Art source={LOGIN_ART.sailingShip} style={styles.deskShip} />
+            <Art source={MATCHMAKING_ART.compass} style={styles.deskCompass} />
+            <Text style={styles.title}>{tab === 'buy' ? 'Buy 100 points' : 'Sell 100 points'}</Text>
+            <Image source={POINTS_ART.waveDivider} style={styles.titleWave} contentFit="fill" />
+            <Text style={styles.copy}>
+              {tab === 'buy'
+                ? 'Privy will ask you to approve a 0.001 SOL transfer. Points are credited only after the backend verifies it on Solana.'
+                : 'The backend reserves 100 points, then sends 0.001 SOL from the treasury to your verified Privy wallet. Failed payouts restore the points.'}
             </Text>
+            <View style={styles.actionRow}>
+              <Image source={MATCHMAKING_ART.navyDashLeft} style={styles.actionDash} contentFit="contain" />
+              {tab === 'buy' ? (
+                <ArtPlate
+                  tone="green"
+                  w={246}
+                  h={42}
+                  icon={POINTS_ART.wallet}
+                  iconSize={26}
+                  fontSize={19}
+                  label={buyLabel}
+                  disabled={busy || (!pendingBuy && (!wallet || !quote))}
+                  onPress={() => void (pendingBuy ? finishBuyCredit() : buy())}
+                />
+              ) : (
+                <ArtPlate
+                  tone="green"
+                  w={246}
+                  h={42}
+                  icon={POINTS_ART.wallet}
+                  iconSize={26}
+                  fontSize={19}
+                  label={sellLabel}
+                  disabled={busy || !quote || !wallet}
+                  onPress={() => void sell()}
+                />
+              )}
+              <Image source={MATCHMAKING_ART.navyDashRight} style={styles.actionDash} contentFit="contain" />
+            </View>
           </View>
-        </InkPanel>
+        )}
+
+        <View style={styles.status} accessibilityLiveRegion="polite">
+          {error ? null : <Image source={POINTS_ART.shieldCheck} style={styles.shield} contentFit="contain" />}
+          <Text style={[styles.statusText, error ? styles.error : null]} numberOfLines={2}>
+            {statusText}
+          </Text>
+        </View>
       </View>
     </Scale>
   );
 }
 
 const styles = StyleSheet.create({
-  back: { position: 'absolute', left: 12, top: 8 },
-  ribbon: { position: 'absolute', left: 245, top: 7 },
-  account: { position: 'absolute', left: 24, top: 70 },
-  trade: { position: 'absolute', left: 306, top: 70 },
-  kicker: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.xs, textAlign: 'center', letterSpacing: 1 },
-  balance: { color: color.inkGreen, fontFamily: font.display, fontSize: 36, lineHeight: 40, textAlign: 'center', marginTop: 2 },
-  balanceLabel: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xs, textAlign: 'center' },
-  rule: { height: 1, backgroundColor: color.inkFaint, marginVertical: 5 },
-  rate: { color: color.ink, fontFamily: font.display, fontSize: typeScale.md, textAlign: 'center' },
-  helper: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xs, lineHeight: 15, textAlign: 'center' },
-  solReadout: { color: color.ink, fontFamily: font.label, fontSize: typeScale.xs, textAlign: 'center', marginVertical: 5 },
-  refreshButton: { alignSelf: 'center' },
+  back: { position: 'absolute', left: 8, top: 8 },
+  banner: { left: (CANVAS_W - 300) / 2, top: 0, width: 300, height: 300 * (156 / 738) },
+  quoteTop: { left: 706, top: 4, width: 80, height: 51 },
+
+  leftBox: {
+    position: 'absolute',
+    left: LEFT.x + 16,
+    width: LEFT.w - 32,
+    top: LEFT.y + CONTENT_TOP,
+    height: LEFT.h - CONTENT_TOP - 12,
+    alignItems: 'center',
+  },
+  kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  kickerDash: { width: 7, height: 16 },
+  kicker: { color: artColor.navy, fontFamily: font.display, fontSize: 15, letterSpacing: 0.6 },
+  balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
+  coins: { width: 70, height: 43 },
+  balanceCol: { alignItems: 'center', minWidth: 110 },
+  balance: {
+    color: '#1B8A38',
+    fontFamily: font.display,
+    fontSize: 36,
+    lineHeight: 40,
+    textShadowColor: 'rgba(10,60,20,0.18)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
+  },
+  balanceLabel: { color: artColor.navy, fontFamily: font.body, fontSize: 13, marginTop: -3 },
+  wave: { width: 180, height: 180 * (36 / 359), marginTop: 2 },
+  rate: { color: artColor.ink, fontFamily: font.display, fontSize: 18, marginTop: 2 },
+  helper: {
+    color: artColor.navy,
+    fontFamily: font.body,
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  rule: { width: 220, height: 4, marginTop: 5, opacity: 0.8 },
+  solReadout: { color: artColor.ink, fontFamily: font.label, fontSize: 13, marginTop: 3 },
+  refresh: { marginTop: 'auto' },
+
+  rightBox: {
+    position: 'absolute',
+    left: RIGHT.x + 20,
+    width: RIGHT.w - 40,
+    top: RIGHT.y + CONTENT_TOP,
+    height: RIGHT.h - CONTENT_TOP - 12,
+  },
   tabs: { flexDirection: 'row', justifyContent: 'space-between' },
-  body: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm, paddingHorizontal: space.md, paddingBottom: 22 },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm },
-  title: { color: color.ink, fontFamily: font.display, fontSize: typeScale.xl },
-  copy: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.sm, lineHeight: 19, textAlign: 'center' },
-  notice: { position: 'absolute', left: 20, right: 20, bottom: 8, alignItems: 'center' },
-  noticeText: { color: color.inkGreen, fontFamily: font.body, fontSize: typeScale.xxs, textAlign: 'center' },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  desk: { flex: 1, alignItems: 'center', paddingTop: 6 },
+  deskShip: { left: 2, top: 10, width: 44, height: 44, opacity: 0.9 },
+  deskCompass: { right: 2, top: 52, width: 38, height: 39, opacity: 0.85 },
+  title: { color: artColor.ink, fontFamily: font.display, fontSize: 25, lineHeight: 30 },
+  titleWave: { width: 170, height: 170 * (36 / 359), marginTop: 1 },
+  copy: {
+    color: artColor.navy,
+    fontFamily: font.body,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: 44,
+  },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 'auto', marginBottom: 4 },
+  actionDash: { width: 8, height: 20 },
+  status: { minHeight: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  shield: { width: 15, height: 17 },
+  statusText: { flexShrink: 1, color: artColor.green, fontFamily: font.body, fontSize: 12, textAlign: 'center' },
   error: { color: color.inkRed },
 });

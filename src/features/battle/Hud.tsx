@@ -1,12 +1,14 @@
 /**
- * The HUD strip above the boards — IMG_9770, left to right:
- *   your avatar card · the "Arsenal" tab hanging from the top edge · your
- *   rank, name and points · the opponent's points, rank, name, shield and
- *   flag · their avatar card.
+ * The battle's HUD, drawn to its mockup in the fleet art — left to right:
+ *   your captain in the portrait frame · the Arsenal button (the chest, with
+ *   a red count of what is left) over your plate — star, rank shield, rank,
+ *   name, points · the Empire of Bits banner · the opponent's plate — points,
+ *   rank, name, shield, port — · their captain.
  * Plus the pieces that float over it: the emote sticker and picker, and the
  * hotseat fleet cover.
  */
 import { rankFor } from '@engine/ranks';
+import { Image } from 'expo-image';
 import { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -16,293 +18,164 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import Svg from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 
+import { haptic } from '@/audio/haptics';
 import { BOARD_SIZE } from '@/board/layout';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
-import { AssetSlot } from '@/ui/AssetSlot';
-import { AVATARS, EMOTES, type Asset } from '@/ui/assets';
-import { chevronPoints, shieldPoints, tabOutline } from '@/ui/geometry';
+import { BATTLE_ART, EMOTES } from '@/ui/assets';
 import { InkPanel } from '@/ui/InkPanel';
-import { color, font, space, type as typeScale } from '@/ui/tokens';
-import { RoughShape, hashString, roughCircle, roughPolygon, roughRect } from '@/ui/useRough';
+import { portraitFor } from '@/ui/portraits';
+import { artColor, color, font, space, type as typeScale } from '@/ui/tokens';
 
 // ---------------------------------------------------------------------------
-// Avatar card — framed portrait
+// Portrait — the player's own captain in the frame
 // ---------------------------------------------------------------------------
 
-export const AVATAR_CARD = { w: 54, h: 62 } as const;
+export const PORTRAIT = { w: 52, h: 52 * (183 / 168) } as const;
 
-export function AvatarCard({
-  avatarId,
-  tint,
-  seedKey,
-}: {
-  avatarId: number;
-  tint: string;
-  seedKey: string;
-}) {
-  const { w, h } = AVATAR_CARD;
-  const seed = hashString(`avatar-card-${seedKey}`);
-  const outer = roughRect(1.5, 1.5, w - 3, h - 3, {
-    seed,
-    strokeWidth: 1.8,
-    fill: color.paper,
-    fillStyle: 'solid',
-  });
-  const inner = roughRect(5, 5, w - 10, h - 10, { seed: seed + 1, strokeWidth: 1, roughness: 1 });
-  const source: Asset = (AVATARS as Record<number, Asset>)[avatarId] ?? null;
+/**
+ * The frame's hole (18..149 x 17..163 of 168 x 183) holds the captain's
+ * portrait art, cropped to it: that art carries a mat of its own and its
+ * picture fills ~78 % of the square, so it is scaled up to meet the hole.
+ */
+export function PortraitCard({ avatarId, tint }: { avatarId: number; tint: string }) {
+  const k = PORTRAIT.w / 168;
+  const hole = { x: 18 * k, y: 17 * k, w: 131 * k, h: 146 * k };
+  const pic = Math.max(hole.w, hole.h) / 0.78;
   return (
-    <View style={{ width: w, height: h }}>
-      <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={StyleSheet.absoluteFill}>
-        <RoughShape paths={outer} />
-        <RoughShape paths={inner} />
-      </Svg>
-      <View style={{ position: 'absolute', left: 7, top: 7 }}>
-        <AssetSlot source={source} w={w - 14} h={h - 14} label="avatar" tintColor={tint} />
+    <View style={{ width: PORTRAIT.w, height: PORTRAIT.h }}>
+      <View style={[styles.hole, { left: hole.x, top: hole.y, width: hole.w, height: hole.h }]}>
+        <Image
+          source={portraitFor(avatarId, tint)}
+          style={{ position: 'absolute', left: (hole.w - pic) / 2, top: (hole.h - pic) / 2, width: pic, height: pic }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
       </View>
+      <Image source={BATTLE_ART.portraitFrame} style={StyleSheet.absoluteFill} contentFit="fill" />
     </View>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Arsenal tab — scalloped, hanging from the top edge, with a count badge
+// Arsenal button — the chest, with a red count of what is left
 // ---------------------------------------------------------------------------
 
-export const ARSENAL_TAB = { w: 66, h: 30 } as const;
+export const ARSENAL_BUTTON = { w: 96, h: 96 * (60 / 195) } as const;
+const BADGE = 17;
 
-export function ArsenalTab({ count, onPress }: { count: number; onPress?: () => void }) {
-  const { w, h } = ARSENAL_TAB;
+export function ArsenalButton({ count, onPress }: { count: number; onPress?: () => void }) {
   const target = useTutorialTarget('arsenal-tab');
-  const seed = hashString('arsenal-tab');
-  const tab = roughPolygon(
-    tabOutline(w - 4, h - 6).map(([x, y]) => [x + 2, y] as [number, number]),
-    {
-      seed,
-      strokeWidth: 1.6,
-      fill: color.paper,
-      fillStyle: 'solid',
-      roughness: 0.8,
-      disableMultiStroke: true,
-    },
-  );
-  const badge = roughCircle(w - 6, 8, 14, {
-    seed: seed + 1,
-    stroke: color.inkRed,
-    strokeWidth: 1.2,
-    fill: color.paper,
-    fillStyle: 'solid',
-  });
+  const reduceMotion = useReducedMotion();
+  const press = useSharedValue(1);
+  const bump = useSharedValue(1);
+  const first = useRef(true);
+  // The count pops each time a weapon is spent, so a used one is noticed.
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (reduceMotion) return;
+    bump.value = withSequence(withTiming(1.35, { duration: 110 }), withSpring(1, { damping: 9, stiffness: 260 }));
+  }, [bump, count, reduceMotion]);
+  const pressStyle = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
+  const badgeStyle = useAnimatedStyle(() => ({ transform: [{ scale: bump.value }] }));
   return (
     <Pressable
       {...target}
       onPress={onPress}
+      onPressIn={() => {
+        press.value = withTiming(0.94, { duration: 70 });
+        haptic('buttonPress');
+      }}
+      onPressOut={() => {
+        press.value = withSpring(1, { damping: 11, stiffness: 360 });
+      }}
       disabled={!onPress}
       accessibilityRole="button"
-      accessibilityLabel="Arsenal"
-      style={{ width: w + 8, height: h + 8 }}
+      accessibilityLabel={`Arsenal, ${count} left`}
+      style={{ width: ARSENAL_BUTTON.w + BADGE / 2, height: ARSENAL_BUTTON.h + 4 }}
     >
-      <Svg
-        width={w + 8}
-        height={h + 8}
-        viewBox={`0 0 ${w + 8} ${h + 8}`}
-        style={StyleSheet.absoluteFill}
-      >
-        <RoughShape paths={tab} />
-        {count > 0 ? <RoughShape paths={badge} /> : null}
-      </Svg>
-      <View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 2,
-          width: w,
-          height: h - 8,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: color.inkRed, fontFamily: font.display, fontSize: typeScale.sm }}>
-          Arsenal
-        </Text>
-      </View>
+      <Animated.View style={[{ width: ARSENAL_BUTTON.w, height: ARSENAL_BUTTON.h, marginTop: 4 }, pressStyle]}>
+        <Image source={BATTLE_ART.arsenalButton} style={StyleSheet.absoluteFill} contentFit="fill" />
+      </Animated.View>
       {count > 0 ? (
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: w - 13,
-            top: 1,
-            width: 14,
-            height: 14,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Text style={{ color: color.inkRed, fontFamily: font.display, fontSize: typeScale.xxs }}>
-            {count}
-          </Text>
-        </View>
+        <Animated.View pointerEvents="none" style={[styles.badge, badgeStyle]}>
+          <Svg width={BADGE} height={BADGE} viewBox={`0 0 ${BADGE} ${BADGE}`} style={StyleSheet.absoluteFill}>
+            <Circle cx={BADGE / 2} cy={BADGE / 2} r={BADGE / 2 - 1} fill={artColor.red} stroke="#FFF7EE" strokeWidth={1.2} />
+          </Svg>
+          <Text style={styles.badgeText}>{count}</Text>
+        </Animated.View>
       ) : null}
     </Pressable>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Player block — rank (600/13), name (700/20), "Points: N" in inkRed
+// Player plate — rank, name and points in the info frame
 // ---------------------------------------------------------------------------
 
-export function PlayerBlock({
+export const PLATE = { w: 256, h: 40 } as const;
+
+/**
+ * Yours reads star · shield · rank over name · points; the opponent's is its
+ * mirror — points · rank over name · shield · port — as in the mockup.
+ */
+export function PlayerPlate({
+  side,
   name,
   points,
-  align,
-  maxWidth,
+  countryCode,
 }: {
+  side: 'left' | 'right';
   name: string;
   points: number;
-  align: 'left' | 'right';
-  /** Names are up to 14 characters; long ones step down a size before they ellipsise. */
-  maxWidth?: number;
+  countryCode?: string;
 }) {
-  const textAlign = align;
-  const nameSize = name.length <= 8 ? typeScale.md : name.length <= 11 ? typeScale.sm : typeScale.xs;
-  return (
-    <View style={{ alignItems: align === 'left' ? 'flex-start' : 'flex-end', maxWidth }}>
-      <Text
-        numberOfLines={1}
-        style={{ color: color.deskDark, fontFamily: font.label, fontSize: typeScale.xs, textAlign }}
-      >
-        {rankFor(points).name}
+  const rank = rankFor(points).name;
+  const nameSize = name.length <= 9 ? 18 : name.length <= 12 ? 16 : 14;
+  const left = side === 'left';
+  const who = (
+    <View style={[styles.who, { alignItems: left ? 'flex-start' : 'flex-end' }]}>
+      <Text numberOfLines={1} style={styles.rank}>
+        {rank}
       </Text>
-      <Text
-        numberOfLines={1}
-        style={{
-          color: color.ink,
-          fontFamily: font.display,
-          fontSize: nameSize,
-          lineHeight: 22,
-          textAlign,
-        }}
-      >
+      <Text numberOfLines={1} style={[styles.name, { fontSize: nameSize, textAlign: left ? 'left' : 'right' }]}>
         {name}
       </Text>
     </View>
   );
-}
-
-export function PointsBlock({ points, align }: { points: number; align: 'left' | 'right' }) {
-  return (
-    <View style={{ alignItems: align === 'left' ? 'flex-start' : 'flex-end' }}>
-      <Text style={{ color: color.deskDark, fontFamily: font.label, fontSize: typeScale.xs }}>
-        Points:
-      </Text>
-      <Text
-        style={{
-          color: color.inkRed,
-          fontFamily: font.display,
-          fontSize: typeScale.md,
-          lineHeight: 22,
-        }}
-      >
+  const score = (
+    <View style={[styles.score, { alignItems: left ? 'flex-end' : 'flex-start' }]}>
+      <Text style={styles.pointsLabel}>Points:</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.points}>
         {points}
       </Text>
     </View>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Chips — rank shield and flag
-// ---------------------------------------------------------------------------
-
-export function ShieldChip({ seedKey }: { seedKey: string }) {
-  const w = 22;
-  const h = 26;
-  const seed = hashString(`shield-chip-${seedKey}`);
-  const shield = roughPolygon(shieldPoints(w, h, 1.5), {
-    seed,
-    strokeWidth: 1.3,
-    fill: color.inkSoft,
-    fillStyle: 'hachure',
-    hachureGap: 2.6,
-    fillWeight: 1,
-  });
-  const chevron = roughPolygon(
-    chevronPoints(w).map(([x, y]) => [x, y * 0.72] as [number, number]),
-    { seed: seed + 1, strokeWidth: 1, fill: color.ink, fillStyle: 'solid' },
-  );
   return (
-    <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <RoughShape paths={shield} />
-      <RoughShape paths={chevron} />
-    </Svg>
-  );
-}
-
-/** The square emblem left of your shield in IMG_9770: a four-blade pinwheel in a rough frame. */
-export function EmblemChip({ seedKey }: { seedKey: string }) {
-  const w = 26;
-  const h = 22;
-  const seed = hashString(`emblem-${seedKey}`);
-  const frame = roughRect(1, 1, w - 2, h - 2, {
-    seed,
-    strokeWidth: 1.2,
-    fill: color.paper,
-    fillStyle: 'solid',
-  });
-  const cx = w / 2;
-  const cy = h / 2;
-  const r = 7;
-  const blades = [0, 1, 2, 3].map((i) => {
-    const a = (i * Math.PI) / 2;
-    const b = a + Math.PI / 2;
-    const pts: [number, number][] = [
-      [cx, cy],
-      [cx + r * Math.cos(a), cy + r * Math.sin(a)],
-      [cx + r * 0.8 * Math.cos(a + Math.PI / 4), cy + r * 0.8 * Math.sin(a + Math.PI / 4)],
-      [cx + r * 0.35 * Math.cos(b), cy + r * 0.35 * Math.sin(b)],
-    ];
-    return roughPolygon(pts, {
-      seed: seed + 1 + i,
-      stroke: color.ink,
-      strokeWidth: 0.9,
-      fill: color.ink,
-      fillStyle: 'solid',
-      roughness: 0.7,
-    });
-  });
-  return (
-    <View style={{ width: w, height: h }}>
-      <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={StyleSheet.absoluteFill}>
-        <RoughShape paths={frame} />
-        {blades.map((p, i) => (
-          <RoughShape key={i} paths={p} />
-        ))}
-      </Svg>
-    </View>
-  );
-}
-
-export function FlagChip({ code, seedKey }: { code: string; seedKey: string }) {
-  const w = 30;
-  const h = 20;
-  const frame = roughRect(1, 1, w - 2, h - 2, {
-    seed: hashString(`flag-${seedKey}`),
-    strokeWidth: 1.2,
-    fill: color.paper,
-    fillStyle: 'solid',
-  });
-  return (
-    <View style={{ width: w, height: h }}>
-      <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={StyleSheet.absoluteFill}>
-        <RoughShape paths={frame} />
-      </Svg>
-      <View style={[StyleSheet.absoluteFill, styles.centre]}>
-        <Text style={{ color: color.inkRed, fontFamily: font.label, fontSize: typeScale.xxs }}>
-          {code}
-        </Text>
+    <View style={{ width: PLATE.w, height: PLATE.h }} accessibilityLabel={`${rank} ${name}, ${points} points`}>
+      <Image source={BATTLE_ART.infoFrame} style={StyleSheet.absoluteFill} contentFit="fill" />
+      <View style={[styles.plateRow, { flexDirection: left ? 'row' : 'row-reverse' }]}>
+        {left ? (
+          <Image source={BATTLE_ART.starBadge} style={styles.star} contentFit="contain" />
+        ) : (
+          <View style={styles.port}>
+            <Text style={styles.portText}>{(countryCode || '··').slice(0, 2).toUpperCase()}</Text>
+          </View>
+        )}
+        <Image
+          source={left ? BATTLE_ART.rankBadge : BATTLE_ART.rankBadgeAdmiral}
+          style={styles.shield}
+          contentFit="contain"
+        />
+        {who}
+        {score}
       </View>
     </View>
   );
@@ -315,55 +188,82 @@ export function FlagChip({ code, seedKey }: { code: string; seedKey: string }) {
 export function EmoteFloat({ id, nonce }: { id: number; nonce: number }) {
   const y = useSharedValue(0);
   const opacity = useSharedValue(0);
+  const scale = useSharedValue(0.4);
   useEffect(() => {
     y.value = 0;
     opacity.value = 0;
-    y.value = withTiming(-36, { duration: 1600, easing: Easing.out(Easing.quad) });
+    scale.value = 0.4;
+    scale.value = withSpring(1, { damping: 8, stiffness: 220 });
+    y.value = withTiming(-34, { duration: 1700, easing: Easing.out(Easing.quad) });
     opacity.value = withSequence(
-      withTiming(1, { duration: 150 }),
-      withTiming(1, { duration: 1050 }),
-      withTiming(0, { duration: 400 }),
+      withTiming(1, { duration: 140 }),
+      withTiming(1, { duration: 1100 }),
+      withTiming(0, { duration: 420 }),
     );
-  }, [nonce, y, opacity]);
+  }, [nonce, y, opacity, scale]);
   const style = useAnimatedStyle(() => ({
     opacity: opacity.value,
-    transform: [{ translateY: y.value }],
+    transform: [{ translateY: y.value }, { scale: scale.value }],
   }));
   const emote = EMOTES.find((e) => e.id === id) ?? EMOTES[0];
   return (
     <Animated.View pointerEvents="none" style={[styles.float, style]}>
-      <AssetSlot source={emote?.source ?? null} w={36} h={36} label={emote?.label ?? 'emote'} />
+      {emote?.source ? <Image source={emote.source} style={StyleSheet.absoluteFill} contentFit="contain" /> : null}
     </Animated.View>
   );
 }
 
-export function EmotePanel({
-  onPick,
-  onClose,
-}: {
-  onPick: (id: number) => void;
-  onClose: () => void;
-}) {
+const MENU_W = 250;
+const MENU_H = MENU_W * (275 / 446);
+const TILE_W = 48;
+const TILE_H = TILE_W * (109 / 89);
+
+function EmoteTile({ id, label, source, onPick }: { id: number; label: string; source: (typeof EMOTES)[number]['source']; onPick: (id: number) => void }) {
+  const press = useSharedValue(1);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
+  return (
+    <Pressable
+      onPress={() => onPick(id)}
+      onPressIn={() => {
+        press.value = withTiming(0.9, { duration: 70 });
+        haptic('buttonPress');
+      }}
+      onPressOut={() => {
+        press.value = withSpring(1, { damping: 10, stiffness: 360 });
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Animated.View style={[{ width: TILE_W, height: TILE_H }, style]}>
+        <Image source={BATTLE_ART.emoteTile} style={StyleSheet.absoluteFill} contentFit="fill" />
+        {source ? <Image source={source} style={styles.tileArt} contentFit="contain" /> : null}
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+/** The picker: eight stickers in the menu frame, over the middle of the boards. */
+export function EmotePanel({ onPick, onClose }: { onPick: (id: number) => void; onClose: () => void }) {
+  const reduceMotion = useReducedMotion();
+  const enter = useSharedValue(reduceMotion ? 1 : 0);
+  useEffect(() => {
+    enter.value = withTiming(1, { duration: reduceMotion ? 0 : 190, easing: Easing.out(Easing.back(1.5)) });
+  }, [enter, reduceMotion]);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateY: -12 * (1 - enter.value) }, { scale: 0.9 + 0.1 * enter.value }],
+  }));
   return (
     <View style={styles.panelWrap} pointerEvents="box-none">
-      <Pressable
-        style={StyleSheet.absoluteFill}
-        onPress={onClose}
-        accessibilityLabel="Close emotes"
-      />
-      <InkPanel w={216} h={132} seedKey="emotes" padding={space.xs}>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+      <Pressable style={styles.panelDismiss} onPress={onClose} accessibilityLabel="Close emotes" />
+      <Animated.View style={[styles.menu, style]}>
+        <Image source={BATTLE_ART.emoteMenu} style={StyleSheet.absoluteFill} contentFit="fill" />
+        <Image source={BATTLE_ART.emoteTab} style={styles.menuTab} contentFit="contain" />
+        <View style={styles.tiles}>
           {EMOTES.map((emote) => (
-            <Pressable
-              key={emote.id}
-              onPress={() => onPick(emote.id)}
-              accessibilityLabel={emote.label}
-            >
-              <AssetSlot source={emote.source} w={42} h={42} label={emote.label} />
-            </Pressable>
+            <EmoteTile key={emote.id} id={emote.id} label={emote.label} source={emote.source} onPick={onPick} />
           ))}
         </View>
-      </InkPanel>
+      </Animated.View>
     </View>
   );
 }
@@ -457,8 +357,42 @@ export function FleetCover({
 }
 
 const styles = StyleSheet.create({
-  centre: { alignItems: 'center', justifyContent: 'center' },
-  float: { position: 'absolute', width: 36, height: 36 },
+  hole: { position: 'absolute', overflow: 'hidden' },
+  badge: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: BADGE,
+    height: BADGE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: '#FFF7EE', fontFamily: font.display, fontSize: 11, lineHeight: 13 },
+  plateRow: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    gap: 5,
+  },
+  star: { width: 20, height: 20 },
+  shield: { width: 16, height: 21 },
+  port: {
+    width: 24,
+    height: 17,
+    borderWidth: 1.4,
+    borderColor: artColor.red,
+    backgroundColor: '#FFFDF7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  portText: { color: artColor.red, fontFamily: font.display, fontSize: 10, lineHeight: 12 },
+  who: { flex: 1, minWidth: 0 },
+  rank: { color: artColor.soft, fontFamily: font.label, fontSize: 10, lineHeight: 12, maxWidth: '100%' },
+  name: { color: artColor.navy, fontFamily: font.display, lineHeight: 20, maxWidth: '100%' },
+  score: { width: 64 },
+  pointsLabel: { color: artColor.soft, fontFamily: font.label, fontSize: 10, lineHeight: 12 },
+  points: { color: artColor.red, fontFamily: font.display, fontSize: 18, lineHeight: 20, fontVariant: ['tabular-nums'] },
+  float: { position: 'absolute', width: 38, height: 38 },
   panelWrap: {
     position: 'absolute',
     left: 0,
@@ -467,7 +401,23 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 70,
   },
+  panelDismiss: { position: 'absolute', left: -200, top: -200, right: -200, bottom: -200 },
+  menu: { width: MENU_W, height: MENU_H, marginTop: 24 },
+  menuTab: { position: 'absolute', left: (MENU_W - 30) / 2, top: -14, width: 30, height: 22 },
+  tiles: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    top: 14,
+    bottom: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignContent: 'space-between',
+  },
+  tileArt: { position: 'absolute', left: 7, top: 10, right: 7, bottom: 10 },
   cover: { position: 'absolute', width: COVER_SIZE, height: COVER_SIZE, zIndex: 20 },
   // Under the panel's strokes and a unit past the board on every side.
   coverPaper: {

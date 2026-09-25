@@ -1,207 +1,372 @@
 /**
- * Select your avatar — IMG_9756. Four cards in one large InkPanel: a framed
- * portrait, a 5 x 2 grid of colour swatches and a Choose button each.
+ * Select your avatar — drawn to its mockup on BACKGROUNDS.chooseIcon: the logo,
+ * the rope-crowned panel, and one card per captain with a portrait, the ten
+ * colour swatches and a Choose button.
  *
- * ONE image per avatar, not ten: the portraits are black line art and the
- * swatch recolours them with <Image tintColor>. The same source stays
- * mounted, so a recolour is a tint change with no reload and no flicker.
+ * A swatch recolours that captain's uniform. Every portrait exists in every
+ * AVATAR_TINTS colour (AVATAR_SCREEN_ART.portraits, built ahead of time), so a
+ * tap is a crossfade to a picture that is already there — never a render-time
+ * filter. The profile stores the tint itself, exactly as before, so the battle
+ * HUD and the match server see nothing new.
+ *
+ * Motion, all on the UI thread and all transform-only (no animated opacity on
+ * anything pressable — see menu.tsx): the cards settle in one after another,
+ * a portrait gives a small ink-press as its colour changes, the selection frame
+ * springs onto the swatch, and the chosen card lifts before the screen moves on.
  */
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg from 'react-native-svg';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Image as RNImage, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
+import { haptic } from '@/audio/haptics';
+import { playSfx } from '@/audio/sfx';
 import { pushProfile } from '@/net/profileSync';
 import { useProfile, type AvatarId } from '@/state/profile';
-import { AssetSlot } from '@/ui/AssetSlot';
-import { AVATARS, type Asset } from '@/ui/assets';
-import { InkButton } from '@/ui/InkButton';
-import { InkPanel } from '@/ui/InkPanel';
-import { Paper } from '@/ui/Paper';
+import { AVATAR_SCREEN_ART, BACKGROUNDS, BRAND } from '@/ui/assets';
+import { NATIVE_TINT, tintIndex } from '@/ui/portraits';
 import { Scale } from '@/ui/Scale';
-import {
-  AVATAR_TINTS,
-  CANVAS_W,
-  color,
-  font,
-  space,
-  type as typeScale,
-  type AvatarTint,
-} from '@/ui/tokens';
-import { RoughShape, hashString, useRough } from '@/ui/useRough';
+import { VSlicedImage } from '@/ui/SlicedImage';
+import { AVATAR_TINTS, CANVAS_W, artColor, font, type AvatarTint } from '@/ui/tokens';
 
-const IDS: AvatarId[] = [1, 2, 3, 4];
-const CARD = { w: 156, h: 262 } as const;
-const PORTRAIT = { w: 112, h: 130 } as const;
-const SWATCH = 20;
-const SWATCH_GAP = 4;
+const IDS: readonly AvatarId[] = [1, 2, 3, 4];
 
-function Swatch({
-  tint,
+const PANEL = { x: 96, y: 72, w: 608, h: 284 } as const;
+const ROPE = { w: 372, h: 372 * (113 / 1120) } as const;
+const CARD = { w: 132, h: 216, gap: 12, top: 123 } as const;
+const PORTRAIT = { x: 10, y: 9, w: 112, h: 111 } as const;
+/** The swatch art's paint is ~75% of its file; SWATCH is the paint, the file draws larger. */
+const SWATCH = { size: 17, pitch: 22, top: 126, file: 17 / 0.75 } as const;
+const CHOOSE = { w: 88, h: 30, top: 173 } as const;
+const CHOOSE_DELAY_MS = 260;
+
+// ---------------------------------------------------------------------------
+// One swatch
+// ---------------------------------------------------------------------------
+
+const Swatch = memo(function Swatch({
+  index,
   selected,
-  seed,
   onPress,
 }: {
-  tint: AvatarTint;
+  index: number;
   selected: boolean;
-  seed: number;
-  onPress: () => void;
+  onPress: (index: number) => void;
 }) {
-  const { roughRect } = useRough();
-  const fill = roughRect(2, 2, SWATCH - 4, SWATCH - 4, {
-    seed,
-    stroke: tint,
-    strokeWidth: 1,
-    fill: tint,
-    fillStyle: 'hachure',
-    hachureGap: 2.2,
-    fillWeight: 1.2,
-  });
-  const ring = selected
-    ? roughRect(1, 1, SWATCH - 2, SWATCH - 2, {
-        seed: seed + 1,
-        stroke: color.inkRed,
-        strokeWidth: 2,
-        roughness: 0.8,
-      })
-    : null;
+  const reduceMotion = useReducedMotion();
+  const ring = useSharedValue(selected ? 1 : 0);
+  const press = useSharedValue(1);
+  useEffect(() => {
+    ring.value = reduceMotion
+      ? selected ? 1 : 0
+      : withSpring(selected ? 1 : 0, { damping: 13, stiffness: 320, mass: 0.6 });
+  }, [reduceMotion, ring, selected]);
+  const ringStyle = useAnimatedStyle(() => ({
+    opacity: ring.value,
+    transform: [{ scale: 1.45 - 0.45 * ring.value }],
+  }));
+  const paintStyle = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
+
+  const pad = (SWATCH.file - SWATCH.size) / 2;
   return (
     <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`colour ${tint}`}
-      style={{ width: SWATCH, height: SWATCH }}
+      onPress={() => onPress(index)}
+      onPressIn={() => {
+        press.value = withTiming(0.86, { duration: 70 });
+      }}
+      onPressOut={() => {
+        press.value = withSpring(1, { damping: 10, stiffness: 380 });
+      }}
+      hitSlop={2}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`Colour ${index + 1} of ${AVATAR_TINTS.length}`}
+      style={{ width: SWATCH.size, height: SWATCH.size }}
     >
-      <Svg width={SWATCH} height={SWATCH} viewBox={`0 0 ${SWATCH} ${SWATCH}`}>
-        <RoughShape paths={fill} />
-        {ring ? <RoughShape paths={ring} /> : null}
-      </Svg>
+      <Animated.View style={[styles.swatchPaint, { left: -pad, top: -pad }, paintStyle]}>
+        <Image source={AVATAR_SCREEN_ART.swatches[index]} style={StyleSheet.absoluteFill} contentFit="contain" />
+      </Animated.View>
+      <Animated.View pointerEvents="none" style={[styles.swatchRing, ringStyle]}>
+        <Image source={AVATAR_SCREEN_ART.selection} style={StyleSheet.absoluteFill} contentFit="contain" />
+      </Animated.View>
     </Pressable>
   );
+});
+
+// ---------------------------------------------------------------------------
+// One captain
+// ---------------------------------------------------------------------------
+
+interface CardProps {
+  id: AvatarId;
+  order: number;
+  initialTint: number;
+  chosen: boolean;
+  onChoose: (id: AvatarId, tint: number) => void;
 }
 
-function AvatarCard({
-  id,
-  onChoose,
-}: {
-  id: AvatarId;
-  onChoose: (id: AvatarId, tint: AvatarTint) => void;
-}) {
-  const { roughRect } = useRough();
-  const [tint, setTint] = useState<AvatarTint>(
-    AVATAR_TINTS[(id - 1) % AVATAR_TINTS.length] as AvatarTint,
+const AvatarCard = memo(function AvatarCard({ id, order, initialTint, chosen, onChoose }: CardProps) {
+  const reduceMotion = useReducedMotion();
+  const [tint, setTint] = useState(initialTint);
+
+  // Settle in: a short rise and a hair of scale, one card after another.
+  const enter = useSharedValue(reduceMotion ? 1 : 0);
+  useEffect(() => {
+    if (reduceMotion) return;
+    enter.value = withDelay(80 + order * 75, withSpring(1, { damping: 15, stiffness: 150, mass: 0.8 }));
+  }, [enter, order, reduceMotion]);
+
+  // The chosen card lifts; the rest stay put.
+  const lift = useSharedValue(0);
+  useEffect(() => {
+    lift.value = reduceMotion ? (chosen ? 1 : 0) : withSpring(chosen ? 1 : 0, { damping: 12, stiffness: 260 });
+  }, [chosen, lift, reduceMotion]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: (1 - enter.value) * 18 - lift.value * 4 },
+      { scale: 0.95 + 0.05 * enter.value + 0.035 * lift.value },
+    ],
+  }));
+
+  // A new colour lands like a stamp: the portrait dips, then springs back.
+  const stamp = useSharedValue(1);
+  const portraitStyle = useAnimatedStyle(() => ({ transform: [{ scale: stamp.value }] }));
+
+  const pick = useCallback(
+    (next: number) => {
+      if (next === tint) return;
+      haptic('buttonPress');
+      playSfx('penScratchShort');
+      setTint(next);
+      if (!reduceMotion) {
+        stamp.value = withSequence(
+          withTiming(0.955, { duration: 80, easing: Easing.out(Easing.quad) }),
+          withSpring(1, { damping: 9, stiffness: 300 }),
+        );
+      }
+    },
+    [reduceMotion, stamp, tint],
   );
-  const seed = hashString(`avatar-card-${id}`);
-  const frame = roughRect(2, 2, PORTRAIT.w - 4, PORTRAIT.h - 4, {
-    seed,
-    strokeWidth: 2,
-    roughness: 2,
-    bowing: 0.5,
-  });
-  const source: Asset = AVATARS[id];
+
+  const [pressed, setPressed] = useState(false);
+  const swatchLeft = (CARD.w - (SWATCH.pitch * 4 + SWATCH.size)) / 2;
 
   return (
-    <InkPanel w={CARD.w} h={CARD.h} seedKey={`avatar-${id}`} padding={space.xs}>
-      <View style={styles.cardInner}>
-        <View style={{ width: PORTRAIT.w, height: PORTRAIT.h }}>
-          <Svg
-            width={PORTRAIT.w}
-            height={PORTRAIT.h}
-            viewBox={`0 0 ${PORTRAIT.w} ${PORTRAIT.h}`}
-            style={StyleSheet.absoluteFill}
-          >
-            <RoughShape paths={frame} />
-          </Svg>
-          <View style={{ position: 'absolute', left: 6, top: 6 }}>
-            <AssetSlot
-              source={source}
-              w={PORTRAIT.w - 12}
-              h={PORTRAIT.h - 12}
-              label={`avatar-${id}`}
-              tintColor={tint}
-            />
-          </View>
-        </View>
-        <View style={styles.swatches}>
-          {AVATAR_TINTS.map((t, i) => (
-            <Swatch
-              key={t}
-              tint={t}
-              selected={t === tint}
-              seed={seed + 10 + i}
-              onPress={() => setTint(t)}
-            />
-          ))}
-        </View>
-        <InkButton
-          label="Choose"
-          tone="confirm"
-          w={120}
-          h={32}
-          size="sm"
-          seedKey={`choose-${id}`}
-          onPress={() => onChoose(id, tint)}
+    <Animated.View style={[{ width: CARD.w, height: CARD.h }, cardStyle]}>
+      <VSlicedImage slices={AVATAR_SCREEN_ART.card} w={CARD.w} h={CARD.h} style={StyleSheet.absoluteFill} />
+
+      <Animated.View style={[styles.portrait, portraitStyle]}>
+        <Image
+          source={AVATAR_SCREEN_ART.portraits[id][tint]}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+          transition={{ duration: 220, effect: 'cross-dissolve' }}
+          cachePolicy="memory-disk"
+          accessibilityIgnoresInvertColors
         />
+      </Animated.View>
+
+      <View
+        style={[styles.swatches, { left: swatchLeft }]}
+        accessibilityRole="radiogroup"
+        accessibilityLabel="Uniform colour"
+      >
+        {AVATAR_TINTS.map((_, i) => (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: (i % 5) * SWATCH.pitch,
+              top: Math.floor(i / 5) * SWATCH.pitch,
+            }}
+          >
+            <Swatch index={i} selected={i === tint} onPress={pick} />
+          </View>
+        ))}
       </View>
-    </InkPanel>
+
+      <Image source={AVATAR_SCREEN_ART.greenEmphasis} style={[styles.dash, styles.dashLeft]} contentFit="contain" />
+      <Image source={AVATAR_SCREEN_ART.greenEmphasis} style={[styles.dash, styles.dashRight]} contentFit="contain" />
+      <Pressable
+        onPress={() => onChoose(id, tint)}
+        onPressIn={() => {
+          setPressed(true);
+          haptic('buttonPress');
+        }}
+        onPressOut={() => setPressed(false)}
+        accessibilityRole="button"
+        accessibilityLabel="Choose"
+        style={styles.choose}
+      >
+        <Image
+          source={AVATAR_SCREEN_ART.chooseButton}
+          style={[StyleSheet.absoluteFill, { transform: [{ translateY: pressed ? 1 : 0 }] }]}
+          contentFit="contain"
+        />
+      </Pressable>
+    </Animated.View>
   );
+});
+
+// ---------------------------------------------------------------------------
+// The screen
+// ---------------------------------------------------------------------------
+
+/** Where a captain's card starts: the saved colour for the saved captain, else as drawn. */
+function initialTintFor(id: AvatarId, savedId: AvatarId, savedTint: string): number {
+  return id === savedId ? tintIndex(id, savedTint) : NATIVE_TINT[id];
 }
 
 export default function AvatarScreen() {
   const router = useRouter();
   const name = useProfile((state) => state.name);
+  const savedId = useProfile((state) => state.avatarId);
+  const savedTint = useProfile((state) => state.avatarColor);
+  const [chosen, setChosen] = useState<AvatarId | null>(null);
+  const leaving = useRef(false);
+
+  // Warm every variant, so the first tap on a swatch is as instant as the rest.
+  useEffect(() => {
+    const uris = IDS.flatMap((id) =>
+      AVATAR_SCREEN_ART.portraits[id].flatMap((asset) =>
+        typeof asset === 'number' ? [RNImage.resolveAssetSource(asset).uri] : [],
+      ),
+    );
+    void Image.prefetch(uris, 'memory-disk').catch(() => false);
+  }, []);
+
   const choose = useCallback(
-    (avatarId: AvatarId, avatarColor: AvatarTint) => {
+    (avatarId: AvatarId, tintIndex: number) => {
+      if (leaving.current) return;
+      leaving.current = true;
+      const avatarColor = AVATAR_TINTS[tintIndex] as AvatarTint;
+      haptic('shipPlaced');
+      playSfx('shipPlace');
+      setChosen(avatarId);
       const profile = useProfile.getState();
       profile.setIdentity({ avatarId, avatarColor });
       if (profile.userId) void pushProfile(profile.userId, { avatarId, avatarColor });
-      router.replace('/menu');
+      setTimeout(() => router.replace('/menu'), CHOOSE_DELAY_MS);
     },
     [router],
   );
 
-  const rowW = CARD.w * 4 + 12 * 3;
+  const cardsLeft = (CANVAS_W - (CARD.w * IDS.length + CARD.gap * (IDS.length - 1))) / 2;
+
   return (
-    <Scale>
-      <Paper variant="full" />
-      <View style={styles.outer}>
-        <InkPanel w={CANVAS_W - 48} h={330} seedKey="avatar-outer" padding={space.sm}>
-          {/*
-            The menu shows the avatar with the captain's name beside it, but
-            this screen showed the portraits alone — so you picked a face with
-            no idea what the pairing would actually look like.
-          */}
-          <Text style={styles.title}>
-            Select your avatar
-            {name ? <Text style={styles.titleName}>{`, ${name}`}</Text> : null}
-          </Text>
-          <View style={[styles.row, { width: rowW, alignSelf: 'center' }]}>
-            {IDS.map((id) => (
-              <AvatarCard key={id} id={id} onChoose={choose} />
-            ))}
-          </View>
-        </InkPanel>
+    <Scale backgroundImage={BACKGROUNDS.chooseIcon}>
+      <Image source={BRAND.wordmark} style={styles.logo} contentFit="contain" pointerEvents="none" />
+
+      <VSlicedImage
+        slices={AVATAR_SCREEN_ART.panel}
+        w={PANEL.w}
+        h={PANEL.h}
+        style={{ position: 'absolute', left: PANEL.x, top: PANEL.y }}
+      />
+      <Image source={AVATAR_SCREEN_ART.ropeDivider} style={styles.rope} contentFit="contain" pointerEvents="none" />
+
+      <View style={styles.titleRow} accessibilityRole="header">
+        <Image source={AVATAR_SCREEN_ART.emphasisLeft} style={styles.titleMark} contentFit="contain" />
+        <Image
+          source={AVATAR_SCREEN_ART.title}
+          style={styles.titleLabel}
+          contentFit="contain"
+          accessibilityLabel="Select your avatar,"
+        />
+        <Text style={styles.titleName} numberOfLines={1}>
+          {name.trim() || 'Captain'}
+        </Text>
+        <Image source={AVATAR_SCREEN_ART.emphasisRight} style={styles.titleMark} contentFit="contain" />
+      </View>
+
+      <View style={[styles.cards, { left: cardsLeft }]}>
+        {IDS.map((id, order) => (
+          <AvatarCard
+            key={id}
+            id={id}
+            order={order}
+            initialTint={initialTintFor(id, savedId, savedTint)}
+            chosen={chosen === id}
+            onChoose={choose}
+          />
+        ))}
       </View>
     </Scale>
   );
 }
 
+const TITLE_H = 22;
+
 const styles = StyleSheet.create({
-  outer: { position: 'absolute', left: 24, top: 14 },
-  title: {
-    color: color.ink,
-    fontFamily: font.display,
-    fontSize: typeScale.md,
-    textAlign: 'center',
-    marginBottom: 6,
+  logo: { position: 'absolute', left: (CANVAS_W - 136) / 2, top: -2, width: 136, height: 54 },
+  rope: {
+    position: 'absolute',
+    left: (CANVAS_W - ROPE.w) / 2,
+    top: PANEL.y - ROPE.h / 2 + 2,
+    width: ROPE.w,
+    height: ROPE.h,
   },
-  titleName: { color: color.inkRed, fontFamily: font.display },
-  row: { flexDirection: 'row', gap: 12 },
-  cardInner: { alignItems: 'center', gap: 8 },
-  swatches: {
-    width: SWATCH * 5 + SWATCH_GAP * 4,
+  titleRow: {
+    position: 'absolute',
+    left: PANEL.x,
+    width: PANEL.w,
+    top: PANEL.y + 25,
+    height: TITLE_H,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SWATCH_GAP,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  titleMark: { width: 14, height: TITLE_H - 2, marginHorizontal: 6 },
+  titleLabel: { width: TITLE_H * (605 / 93), height: TITLE_H },
+  titleName: {
+    color: artColor.red,
+    fontFamily: font.display,
+    fontSize: 19,
+    lineHeight: TITLE_H + 2,
+    marginLeft: 5,
+    maxWidth: 190,
+  },
+  cards: { position: 'absolute', top: CARD.top, flexDirection: 'row', gap: CARD.gap },
+  portrait: {
+    position: 'absolute',
+    left: PORTRAIT.x,
+    top: PORTRAIT.y,
+    width: PORTRAIT.w,
+    height: PORTRAIT.h,
+  },
+  swatches: {
+    position: 'absolute',
+    top: SWATCH.top,
+    width: SWATCH.pitch * 4 + SWATCH.size,
+    height: SWATCH.pitch + SWATCH.size,
+  },
+  swatchPaint: { position: 'absolute', width: SWATCH.file, height: SWATCH.file },
+  swatchRing: {
+    position: 'absolute',
+    left: -4,
+    top: -4,
+    width: SWATCH.size + 8,
+    height: SWATCH.size + 8,
+  },
+  choose: {
+    position: 'absolute',
+    left: (CARD.w - CHOOSE.w) / 2,
+    top: CHOOSE.top,
+    width: CHOOSE.w,
+    height: CHOOSE.h,
+  },
+  dash: { position: 'absolute', top: CHOOSE.top + 6, width: 10, height: 17 },
+  dashLeft: { left: (CARD.w - CHOOSE.w) / 2 - 12, transform: [{ scaleX: -1 }] },
+  dashRight: { left: (CARD.w + CHOOSE.w) / 2 + 2 },
 });

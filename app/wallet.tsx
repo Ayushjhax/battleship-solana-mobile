@@ -12,12 +12,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import QRCodeStyled from 'react-native-qrcode-styled';
 
+import { BACKGROUNDS } from '@/ui/assets';
 import { InkButton } from '@/ui/InkButton';
 import { InkIconButton } from '@/ui/InkIconButton';
 import { InkPanel } from '@/ui/InkPanel';
 import { InkSpinner } from '@/ui/InkSpinner';
 import { InkTextInput } from '@/ui/InkTextInput';
-import { Paper } from '@/ui/Paper';
 import { Scale } from '@/ui/Scale';
 import { TitleRibbon } from '@/ui/TitleRibbon';
 import { color, font, space, type as typeScale } from '@/ui/tokens';
@@ -180,8 +180,7 @@ export default function WalletScreen() {
   const walletStatus = walletState.status.replace('-', ' ');
 
   return (
-    <Scale>
-      <Paper variant="full" />
+    <Scale backgroundImage={BACKGROUNDS.settings}>
       <View style={styles.back}>
         <InkIconButton
           icon="back"

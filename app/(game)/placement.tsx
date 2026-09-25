@@ -5,6 +5,7 @@ import { makeFleet } from '@engine/fleet';
 import { validateSubmission } from '@engine/match';
 import { validateArsenalPlacement } from '@engine/placement';
 import type { ArsenalItem, ArsenalKind, Orientation, ShipClass } from '@engine/types';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   forwardRef,
@@ -32,14 +33,16 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { G } from 'react-native-svg';
+import Svg, { G, Line } from 'react-native-svg';
 
 import { haptic } from '@/audio/haptics';
 import { playSfx } from '@/audio/sfx';
 import { GridBoard, LABEL_MARGIN } from '@/board/GridBoard';
 import { BOARD_SIZE, CELL } from '@/board/layout';
-import { ShipBacking, ShipSprite, shipSpriteSize } from '@/board/ShipSprite';
-import { ARSENAL_NAMES, ArsenalInkSprite, ShopPanel } from '@/features/arsenal/ShopPanel';
+import { ShipSprite, shipSpriteSize } from '@/board/ShipSprite';
+import { ArsenalInfoModal, INFO_W } from '@/features/arsenal/ArsenalInfoModal';
+import { prefetchBattleArt } from '@/fx/prefetch';
+import { ARSENAL_NAMES, SHOP_H, SHOP_W, ShopPanel } from '@/features/arsenal/ShopPanel';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 import {
   buildPlacementPreview,
@@ -49,18 +52,21 @@ import {
 } from '@/state/placement';
 import { stakeOfflineWager } from '@/net/offlineWager';
 import { usePoints } from '@/state/points';
-import { InkButton } from '@/ui/InkButton';
-import { InkPanel } from '@/ui/InkPanel';
-import { Paper } from '@/ui/Paper';
+import { ArtImageButton } from '@/ui/ArtImageButton';
+import { ArtPlate } from '@/ui/ArtPlate';
+import { BACKGROUNDS, BATTLE_ART, FLEET_ART } from '@/ui/assets';
 import { Scale, useScale } from '@/ui/Scale';
-import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
+import { CANVAS_H, CANVAS_W, artColor, color, font } from '@/ui/tokens';
 import { RoughShape, hashString, useRough } from '@/ui/useRough';
 
 /**
- * Layout, left to right on the 800-unit canvas: the dock (unplaced ships,
- * drawn at half size in their own frame so they never read as placed), the
- * row letters, the 280 board, then the shop. Classic mode has no shop and
- * centres the board; the dock keeps its place to the left of the letters.
+ * Fleet placement, drawn to its mockup over BACKGROUNDS.settings. Left to
+ * right on the 800-unit canvas: the dock (unplaced ships, drawn at half size
+ * in their own dashed frame so they never read as placed), the row letters,
+ * the 280 board in its hand-drawn frame, then the Arsenal. Across the top:
+ * back, the AI level, the wager and the fuel gauge; under the Arsenal:
+ * reset, shuffle and Battle!. Classic mode has no Arsenal and centres the
+ * board; the dock keeps its place to the left of the letters.
  */
 const BOARD_Y = 68;
 const TRAY_W = 62;
@@ -73,12 +79,11 @@ const ADVANCED_BOARD_X = TRAY_X + TRAY_W + TRAY_GAP + LABEL_MARGIN; // 96
 const CLASSIC_BOARD_X = (CANVAS_W - BOARD_SIZE) / 2;
 const CLASSIC_TRAY_X = CLASSIC_BOARD_X - LABEL_MARGIN - TRAY_GAP - TRAY_W;
 const SHOP_X = 388;
-const SHOP_Y = 62;
-const SHOP_W = 400;
-const SHOP_H = 226;
+const SHOP_Y = 58;
 /** Ships in the dock are drawn at this scale and grow to 1 as they are picked up. */
-const TRAY_SCALE = 0.5;
-const TRAY_HEADER = 20;
+const TRAY_SCALE = 0.46;
+/** "Dock" and its anchor sit above the ships. */
+const TRAY_HEADER = 48;
 const TRAY_PITCH = 24;
 /** What the dock knows about a drag: nothing, a ship in the hand, that ship over it. */
 const DOCK_IDLE = 0;
@@ -86,9 +91,19 @@ const DOCK_LIVE = 1;
 const DOCK_HOVER = 2;
 const SPRING = { damping: 18, stiffness: 230, mass: 0.7 } as const;
 const SHIP_PLACE_SOURCE = 'shipPlace' as const;
+/** The top bar's buttons. */
+const BAR_Y = 6;
+const BAR_H = 32;
 
 /** The fleet table from the engine — the same list autoPlaceFleet fills. */
 const FLEET = makeFleet();
+
+/** The own-board pieces a player drags: the same art the battle board draws. */
+const ITEM_ART: Partial<Record<ArsenalKind, (typeof FLEET_ART)['aaGun']>> = {
+  aaGun: FLEET_ART.aaGun,
+  mine: FLEET_ART.mine,
+  radar: FLEET_ART.radar,
+};
 
 function parseMode(value: string | string[] | undefined): PlacementMode {
   const mode = Array.isArray(value) ? value[0] : value;
@@ -154,8 +169,11 @@ const PreviewHud = forwardRef<PreviewHandle, { boardX: number }>(function Previe
         );
       })}
       {reason ? (
-        <View style={[styles.reasonPill, { left: boardX + 8 }]}>
-          <Text style={styles.reasonText}>{reason}</Text>
+        <View style={[styles.reasonPill, { left: boardX + 14 }]}>
+          <Image source={BATTLE_ART.weaponRow} style={StyleSheet.absoluteFill} contentFit="fill" />
+          <Text style={styles.reasonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+            {reason}
+          </Text>
         </View>
       ) : null}
     </View>
@@ -217,6 +235,11 @@ function AlignmentBands({
   );
 }
 
+/**
+ * The fuel left to spend, beside the barrel and the compass of the mockup.
+ * The number rolls in when it changes and the gauge shakes on a buy it
+ * cannot cover.
+ */
 function FuelGauge({
   spent,
   budget,
@@ -254,15 +277,12 @@ function FuelGauge({
     transform: [{ translateY: roll.value }],
   }));
 
-  // Was an ink barrel beside a filling bar. The barrel read as a mailbox and
-  // the bar read as a health meter, so the number people actually needed —
-  // fuel left to spend — was the least legible thing on the strip. It is a
-  // plain readout now; the shake on an unaffordable buy is kept.
   return (
     <Animated.View
       style={[styles.fuelGauge, gaugeStyle]}
       accessibilityLabel={`${remaining} of ${budget} fuel remaining`}
     >
+      <Image source={BATTLE_ART.fuel} style={styles.fuelIcon} contentFit="contain" />
       <Text style={styles.fuelCaption}>Fuel</Text>
       <Animated.View style={numberStyle}>
         <Text style={styles.fuelReadout}>
@@ -271,14 +291,6 @@ function FuelGauge({
         </Text>
       </Animated.View>
     </Animated.View>
-  );
-}
-
-function ArsenalFrame({ onUnaffordable }: { onUnaffordable: () => void }) {
-  return (
-    <InkPanel w={SHOP_W} h={SHOP_H} seedKey="placement-arsenal" padding={0}>
-      <ShopPanel onUnaffordable={onUnaffordable} />
-    </InkPanel>
   );
 }
 
@@ -322,7 +334,7 @@ const DraggableShip = memo(function DraggableShip({
   // In the dock the sprite is drawn at TRAY_SCALE about its own centre, so the
   // box is offset to put the SCALED ship's bow at the dock's left margin.
   const dockLeft = trayX + 5;
-  const dockTop = TRAY_Y + TRAY_HEADER + 6 + fleetIndex * TRAY_PITCH;
+  const dockTop = TRAY_Y + TRAY_HEADER + 4 + fleetIndex * TRAY_PITCH;
   const baseX = placed
     ? boardX + placed.origin.c * CELL
     : dockLeft - (size.width * (1 - TRAY_SCALE)) / 2;
@@ -610,19 +622,17 @@ const DraggableShip = memo(function DraggableShip({
       { scale: 1 + lifted.value * 0.06 },
     ],
   }));
-  const shadowStyle = useAnimatedStyle(() => ({ opacity: lifted.value * 0.38 }));
-  const groupStyle = useAnimatedStyle(() => ({ transform: [{ scale: shipScale.value }] }));
-  // The paper hull lifts away with the ship so the grid and any conflict tint
-  // show through a hovering ghost, and settles back under it on the drop.
-  // Tray ships get none: they sit over the row letters, which must stay legible.
-  const backingStyle = useAnimatedStyle(() => ({
-    opacity: placed ? Math.max(0, 1 - lifted.value) : 0,
+  // Lifted, the ship casts a navy shadow onto the paper below it.
+  const shadowStyle = useAnimatedStyle(() => ({
+    opacity: lifted.value * 0.28,
+    transform: [{ translateX: 2 + lifted.value * 3 }, { translateY: 3 + lifted.value * 4 }],
   }));
-  const inkStyle = useAnimatedStyle(() => ({
-    opacity: held.value && hoverIndex.value >= 0 && valid.value === 0 ? 0.2 : 1,
+  const groupStyle = useAnimatedStyle(() => ({ transform: [{ scale: shipScale.value }] }));
+  const artStyle = useAnimatedStyle(() => ({
+    opacity: held.value && hoverIndex.value >= 0 && valid.value === 0 ? 0.35 : 1,
   }));
   const redStyle = useAnimatedStyle(() => ({
-    opacity: held.value && hoverIndex.value >= 0 && valid.value === 0 ? 1 : 0,
+    opacity: held.value && hoverIndex.value >= 0 && valid.value === 0 ? 0.72 : 0,
   }));
 
   return (
@@ -649,27 +659,14 @@ const DraggableShip = memo(function DraggableShip({
             groupStyle,
           ]}
         >
-          <Animated.View style={[styles.shipLayer, styles.shipShadow, shadowStyle]}>
-            <ShipSprite
-              shipClass={shipClass}
-              orientation={orientation}
-              stroke={color.inkSoft}
-              backing={false}
-            />
+          <Animated.View style={[styles.shipLayer, shadowStyle]}>
+            <ShipSprite shipClass={shipClass} orientation={orientation} tint={artColor.ink} />
           </Animated.View>
-          <Animated.View style={[styles.shipLayer, backingStyle]}>
-            <ShipBacking shipClass={shipClass} orientation={orientation} />
-          </Animated.View>
-          <Animated.View style={[styles.shipLayer, inkStyle]}>
-            <ShipSprite shipClass={shipClass} orientation={orientation} backing={false} />
+          <Animated.View style={[styles.shipLayer, artStyle]}>
+            <ShipSprite shipClass={shipClass} orientation={orientation} />
           </Animated.View>
           <Animated.View style={[styles.shipLayer, redStyle]}>
-            <ShipSprite
-              shipClass={shipClass}
-              orientation={orientation}
-              stroke={color.inkRed}
-              backing={false}
-            />
+            <ShipSprite shipClass={shipClass} orientation={orientation} tint={color.inkRed} />
           </Animated.View>
         </Animated.View>
       </Animated.View>
@@ -835,19 +832,22 @@ const DraggableArsenal = memo(function DraggableArsenal({
   const gesture = Gesture.Race(pan, longPress);
   const animated = useAnimatedStyle(() => ({
     zIndex: lifted.value ? 35 : 5,
-    opacity: valid.value || !lifted.value ? 1 : 0.55,
     transform: [
       { translateX: tx.value },
       { translateY: ty.value },
-      { scale: 1 + lifted.value * 0.06 },
+      { scale: 1 + lifted.value * 0.12 },
     ],
   }));
+  // An invalid cell under a carried item shows it faded; the gesture view
+  // itself never animates opacity, only the art inside it.
+  const artStyle = useAnimatedStyle(() => ({ opacity: valid.value || !lifted.value ? 1 : 0.45 }));
+  const source = ITEM_ART[item.kind] ?? null;
 
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View
         accessibilityRole="button"
-        accessibilityLabel={`${item.kind}. Drag to move or hold to sell.`}
+        accessibilityLabel={`${ARSENAL_NAMES[item.kind]}. Drag to move or hold to sell.`}
         style={[
           styles.arsenalDrag,
           { left: baseX - pad, top: baseY - pad, width: hit, height: hit },
@@ -855,14 +855,15 @@ const DraggableArsenal = memo(function DraggableArsenal({
         ]}
       >
         {/* Absolute child: placed at the pad by hand, as in DraggableShip. */}
-        <View style={[styles.arsenalSpriteOnBoard, { left: pad - 7, top: pad - 7 }]}>
-          <ArsenalInkSprite kind={item.kind} />
-        </View>
+        <Animated.View style={[styles.arsenalSpriteOnBoard, { left: pad, top: pad }, artStyle]}>
+          {source ? <Image source={source} style={StyleSheet.absoluteFill} contentFit="contain" /> : null}
+        </Animated.View>
       </Animated.View>
     </GestureDetector>
   );
 });
 
+/** The green plate, breathing gently once the fleet is ready to sail. */
 function PulsingBattleButton({
   enabled,
   label = 'Battle!',
@@ -881,9 +882,9 @@ function PulsingBattleButton({
     if (!enabled || reduceMotion) return;
     pulse.value = withRepeat(
       withSequence(
-        withTiming(1.035, { duration: 150, easing: Easing.out(Easing.cubic) }),
-        withTiming(1, { duration: 250, easing: Easing.inOut(Easing.cubic) }),
-        withDelay(2600, withTiming(1, { duration: 0 })),
+        withTiming(1.04, { duration: 160, easing: Easing.out(Easing.cubic) }),
+        withTiming(1, { duration: 260, easing: Easing.inOut(Easing.cubic) }),
+        withDelay(2400, withTiming(1, { duration: 0 })),
       ),
       -1,
       false,
@@ -894,12 +895,13 @@ function PulsingBattleButton({
   const style = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
   return (
     <Animated.View style={[styles.battleButton, style]}>
-      <InkButton
+      <ArtPlate
+        family="sketch"
+        tone="green"
+        w={172}
+        h={52}
         label={label}
-        tone="confirm"
-        size="xl"
-        w={148}
-        h={60}
+        fontSize={27}
         disabled={!enabled}
         onPress={onPress}
       />
@@ -913,21 +915,22 @@ const DIFFICULTIES: readonly { value: Difficulty; label: string }[] = [
   { value: 'hard', label: 'Hard' },
 ];
 
+/** AI: Easy · Normal · Hard — the chosen level on the green plate, the rest cream. */
 function DifficultyPicker({ value }: { value: Difficulty }) {
   return (
     <View style={styles.difficultyPicker} accessibilityRole="radiogroup">
       <Text style={styles.difficultyLabel}>AI:</Text>
       {DIFFICULTIES.map((option) => (
-        <InkButton
+        <ArtPlate
           key={option.value}
+          family="sketch"
+          tone={value === option.value ? 'green' : 'cream'}
+          w={70}
+          h={BAR_H}
           label={option.label}
-          tone={value === option.value ? 'confirm' : 'ink'}
-          size="sm"
-          w={74}
-          h={40}
-          seedKey={`difficulty-${option.value}`}
-          accessibilityRole="radio"
-          accessibilityState={{ checked: value === option.value }}
+          fontSize={15}
+          checked={value === option.value}
+          accessibilityLabel={`AI ${option.label}`}
           onPress={() => usePlacement.getState().setDifficulty(option.value)}
         />
       ))}
@@ -936,16 +939,13 @@ function DifficultyPicker({ value }: { value: Difficulty }) {
 }
 
 /**
- * The dock: a dashed rough frame left of the row letters holding the ships
- * still to be placed (drawn at half size by DraggableShip), with a running
- * count so a missed ship is never mistaken for a placed one.
+ * The dock: the dashed frame left of the row letters holding the ships still
+ * to be placed (drawn at half size by DraggableShip), with a running count so
+ * a missed ship is never mistaken for a placed one.
  *
- * It is also where a placed ship goes back to, so it answers the drag. The
- * frame used to fade to inkFaint as soon as the fleet was complete — which
- * is exactly the state while a ship is being carried back, so the one place
- * that would take it looked disabled until the drop had landed. The faint
- * frame is now for an idle, complete dock only: a ship in the hand keeps it
- * in ink, and a ship over it turns it green with "Drop here".
+ * It is also where a placed ship goes back to, so it answers the drag: idle
+ * and complete it rests faded; a ship in the hand brings it up to full ink,
+ * and a ship over it hatches it green with "Drop here".
  */
 function TrayDock({
   x,
@@ -958,30 +958,8 @@ function TrayDock({
 }) {
   const { roughRect } = useRough();
   const reduceMotion = useReducedMotion();
-  const seed = hashString('placement-dock');
-  // One opaque paper fill under three stroke-only frames that cross-fade, so
-  // the sheet's grid never shows through mid-fade.
-  const sheet = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
-    seed,
-    stroke: 'none',
-    roughness: 1.2,
-    fill: color.paper,
-    fillStyle: 'solid',
-  });
-  const faintFrame = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
-    seed,
-    stroke: color.inkFaint,
-    strokeWidth: 1.3,
-    roughness: 1.2,
-  });
-  const inkFrame = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
-    seed,
-    stroke: color.ink,
-    strokeWidth: 1.3,
-    roughness: 1.2,
-  });
-  const hoverFrame = roughRect(1.5, 1.5, TRAY_W - 3, TRAY_H - 3, {
-    seed,
+  const hoverFrame = roughRect(4, 4, TRAY_W - 8, TRAY_H - 8, {
+    seed: hashString('placement-dock'),
     stroke: color.inkGreen,
     strokeWidth: 2,
     roughness: 1.2,
@@ -991,17 +969,11 @@ function TrayDock({
     fillWeight: 0.7,
   });
   const fade = { duration: reduceMotion ? 0 : 120 };
-  const faintStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(remaining === 0 && drag.value === DOCK_IDLE ? 1 : 0, fade),
-  }));
-  const inkStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(
-      drag.value === DOCK_HOVER ? 0 : remaining > 0 || drag.value === DOCK_LIVE ? 1 : 0,
-      fade,
-    ),
+  const frameStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(remaining === 0 && drag.value === DOCK_IDLE ? 0.7 : 1, fade),
   }));
   const hoverStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(drag.value === DOCK_HOVER ? 1 : 0, fade),
+    opacity: withTiming(drag.value === DOCK_HOVER ? 0.85 : 0, fade),
   }));
   const countStyle = useAnimatedStyle(() => ({
     opacity: withTiming(drag.value === DOCK_HOVER ? 0 : 1, fade),
@@ -1012,25 +984,16 @@ function TrayDock({
 
   return (
     <View pointerEvents="none" style={[styles.dock, { left: x }]}>
-      <Svg width={TRAY_W} height={TRAY_H} viewBox={`0 0 ${TRAY_W} ${TRAY_H}`}>
-        <RoughShape paths={sheet} opacity={0.9} />
-      </Svg>
-      <Animated.View style={[StyleSheet.absoluteFill, faintStyle]}>
-        <Svg width={TRAY_W} height={TRAY_H} viewBox={`0 0 ${TRAY_W} ${TRAY_H}`}>
-          <RoughShape paths={faintFrame} dash={[5, 4]} opacity={0.9} />
-        </Svg>
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, inkStyle]}>
-        <Svg width={TRAY_W} height={TRAY_H} viewBox={`0 0 ${TRAY_W} ${TRAY_H}`}>
-          <RoughShape paths={inkFrame} dash={[5, 4]} opacity={0.9} />
-        </Svg>
+      <Animated.View style={[StyleSheet.absoluteFill, frameStyle]}>
+        <Image source={BATTLE_ART.dock} style={StyleSheet.absoluteFill} contentFit="fill" />
       </Animated.View>
       <Animated.View style={[StyleSheet.absoluteFill, hoverStyle]}>
         <Svg width={TRAY_W} height={TRAY_H} viewBox={`0 0 ${TRAY_W} ${TRAY_H}`}>
-          <RoughShape paths={hoverFrame} dash={[5, 4]} opacity={0.9} />
+          <RoughShape paths={hoverFrame} dash={[5, 4]} opacity={0.55} />
         </Svg>
       </Animated.View>
       <Text style={styles.dockTitle}>Dock</Text>
+      <Image source={BATTLE_ART.dockAnchor} style={styles.dockAnchor} contentFit="contain" />
       <Animated.Text
         style={[styles.dockCount, remaining === 0 && styles.dockCountDone, countStyle]}
       >
@@ -1040,6 +1003,22 @@ function TrayDock({
         Drop here
       </Animated.Text>
     </View>
+  );
+}
+
+/** The quiet dim behind a modal, with a tap-anywhere dismiss. */
+function ModalScrim({ onPress, label }: { onPress: () => void; label: string }) {
+  const reduceMotion = useReducedMotion();
+  const shade = useSharedValue(reduceMotion ? 1 : 0);
+  useEffect(() => {
+    shade.value = withTiming(1, { duration: reduceMotion ? 0 : 160 });
+  }, [reduceMotion, shade]);
+  const style = useAnimatedStyle(() => ({ opacity: shade.value }));
+  return (
+    <>
+      <Animated.View pointerEvents="none" style={[styles.scrim, style]} />
+      <Pressable style={styles.scrimTouch} onPress={onPress} accessibilityLabel={label} />
+    </>
   );
 }
 
@@ -1085,28 +1064,28 @@ function ConfirmClearDialog({
 
   return (
     <View style={styles.dialogRoot} accessibilityViewIsModal>
-      <Pressable style={styles.dialogDim} onPress={onCancel} accessibilityLabel="Cancel" />
+      <ModalScrim onPress={onCancel} label="Cancel" />
       <View style={styles.dialogPanel}>
-        <InkPanel w={400} h={172} seedKey="placement-clear" padding={space.sm}>
-          <Text style={styles.dialogTitle}>
-            {action === 'shuffle' ? 'Shuffle the fleet?' : 'Clear the board?'}
-          </Text>
-          <Text style={styles.dialogBody}>
-            {verb} takes {list} off the board too. {their} {refund} fuel goes back to your gauge;
-            the bombers and torpedoes you bought stay yours.
-          </Text>
-          <View style={styles.dialogButtons}>
-            <InkButton label="Keep them" size="sm" w={120} h={40} onPress={onCancel} />
-            <InkButton
-              label={action === 'shuffle' ? 'Shuffle anyway' : 'Clear anyway'}
-              tone="confirm"
-              size="sm"
-              w={150}
-              h={40}
-              onPress={onConfirm}
-            />
-          </View>
-        </InkPanel>
+        <Image source={BATTLE_ART.weaponModal} style={StyleSheet.absoluteFill} contentFit="fill" />
+        <Text style={styles.dialogTitle}>
+          {action === 'shuffle' ? 'Shuffle the fleet?' : 'Clear the board?'}
+        </Text>
+        <Text style={styles.dialogBody}>
+          {verb} takes {list} off the board too. {their} {refund} fuel goes back to your gauge;
+          the bombers and torpedoes you bought stay yours.
+        </Text>
+        <View style={styles.dialogButtons}>
+          <ArtPlate family="sketch" tone="cream" w={130} h={38} label="Keep them" fontSize={16} onPress={onCancel} />
+          <ArtPlate
+            family="sketch"
+            tone="green"
+            w={164}
+            h={38}
+            label={action === 'shuffle' ? 'Shuffle anyway' : 'Clear anyway'}
+            fontSize={16}
+            onPress={onConfirm}
+          />
+        </View>
       </View>
     </View>
   );
@@ -1115,12 +1094,15 @@ function ConfirmClearDialog({
 function HandoffCurtain({ name, onReady }: { name: string; onReady: () => void }) {
   return (
     <View style={styles.handoff} accessibilityViewIsModal>
-      <Paper variant="full" />
-      <View style={styles.handoffCopy}>
+      <Image source={BACKGROUNDS.settings} style={styles.handoffPage} contentFit="cover" />
+      <View style={styles.handoffPanel}>
+        <Image source={BATTLE_ART.infoModal} style={StyleSheet.absoluteFill} contentFit="fill" />
         <Text style={styles.handoffEyebrow}>Pass the device</Text>
-        <Text style={styles.handoffTitle}>{name}&apos;s turn</Text>
+        <Text style={styles.handoffTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+          {name}&apos;s turn
+        </Text>
         <Text style={styles.handoffBody}>Tap Ready when only {name} can see the screen.</Text>
-        <InkButton label="Ready" tone="confirm" size="lg" w={150} onPress={onReady} />
+        <ArtPlate family="sketch" tone="green" w={150} h={44} label="Ready" fontSize={22} onPress={onReady} />
       </View>
     </View>
   );
@@ -1143,6 +1125,7 @@ function PlacementCanvas() {
   const [wagered, setWagered] = useState(requestedWager);
   /** The offline stake is in flight — Battle! stays down until it lands. */
   const [staking, setStaking] = useState(false);
+  const [infoKind, setInfoKind] = useState<ArsenalKind | null>(null);
   const activeBand = useSharedValue(0);
   const hoverRow = useSharedValue(-1);
   const hoverCol = useSharedValue(-1);
@@ -1164,6 +1147,9 @@ function PlacementCanvas() {
   useEffect(() => {
     usePlacement.getState().initialize(mode, sessionSeed.current, requestedRuleset);
   }, [mode, requestedRuleset]);
+
+  // The battle is the next screen: its effects decode while the fleet is laid out.
+  useEffect(() => prefetchBattleArt(), []);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -1329,30 +1315,45 @@ function PlacementCanvas() {
     router.push('/battle');
   }, [pointBalance, pointsReady, router, staking, wagered]);
 
-  return (
-    <Scale>
-      <Paper variant="full" />
+  const showsPicker = mode === 'ai';
+  const showsWager = mode !== 'hotseat';
 
-      <View style={styles.backButton}>
-        <InkButton label="↩" size="lg" w={54} h={48} seedKey="placement-back" onPress={back} />
-      </View>
-      {ruleset === 'advanced' ? (
-        <FuelGauge spent={fuelSpent} budget={fuelBudget} shakeNonce={fuelShakeNonce} />
+  return (
+    <Scale backgroundImage={BACKGROUNDS.settings}>
+      <ArtImageButton
+        source={BATTLE_ART.back}
+        w={58}
+        h={58 * (81 / 147)}
+        label="Back"
+        onPress={back}
+        style={styles.backButton}
+      />
+      {showsPicker ? <DifficultyPicker value={difficulty} /> : null}
+      {showsPicker && showsWager ? (
+        <Svg width={4} height={BAR_H + 4} style={styles.barDivider} pointerEvents="none">
+          <Line x1={2} y1={2} x2={2} y2={BAR_H + 2} stroke={artColor.navy} strokeWidth={1.6} strokeLinecap="round" />
+        </Svg>
       ) : null}
-      {mode === 'ai' ? <DifficultyPicker value={difficulty} /> : null}
-      {mode !== 'hotseat' ? (
-        <View style={styles.wagerButton}>
-          <InkButton
+      {showsWager ? (
+        <View style={[styles.wagerButton, !showsPicker && styles.wagerButtonAlone]}>
+          <ArtPlate
+            family="sketch"
+            tone={wagered ? 'green' : 'cream'}
+            w={wagered ? 166 : 140}
+            h={BAR_H}
             label={wagered ? 'Wager ON · 50 P' : 'Wager OFF'}
-            tone={wagered ? 'confirm' : 'ink'}
-            size="sm"
-            w={150}
-            h={42}
-            seedKey="placement-wager"
+            icon={wagered ? BATTLE_ART.coins : undefined}
+            iconSize={24}
+            fontSize={15}
+            accessibilityLabel={wagered ? 'Wager on, 50 points. Tap to turn off.' : 'Wager off. Tap to wager 50 points.'}
             onPress={toggleWager}
           />
         </View>
       ) : null}
+      {ruleset === 'advanced' ? (
+        <FuelGauge spent={fuelSpent} budget={fuelBudget} shakeNonce={fuelShakeNonce} />
+      ) : null}
+      <Image source={BATTLE_ART.compass} style={styles.compass} contentFit="contain" pointerEvents="none" />
 
       <TrayDock x={trayX} remaining={FLEET.length - ships.length} drag={dockDrag} />
       <GridBoard
@@ -1361,6 +1362,7 @@ function PlacementCanvas() {
         revealShips
         hideShips
         seedKey="placement"
+        skin="art"
         onPressCell={pendingArsenalId ? placePendingArsenal : undefined}
       />
       <AlignmentBands active={activeBand} hoverRow={hoverRow} hoverCol={hoverCol} boardX={boardX} />
@@ -1368,7 +1370,7 @@ function PlacementCanvas() {
 
       {ruleset === 'advanced' ? (
         <View style={styles.shopFrame}>
-          <ArsenalFrame onUnaffordable={() => setFuelShakeNonce((value) => value + 1)} />
+          <ShopPanel onUnaffordable={() => setFuelShakeNonce((value) => value + 1)} onInfo={setInfoKind} />
         </View>
       ) : null}
 
@@ -1407,17 +1409,39 @@ function PlacementCanvas() {
         ) : null,
       )}
 
-      <View style={[styles.resetButton, ruleset === 'classic' && styles.resetButtonClassic]}>
-        <InkButton label="↻" size="lg" w={50} h={52} seedKey="placement-reset" onPress={reset} />
-      </View>
-      <View style={[styles.shuffleButton, ruleset === 'classic' && styles.shuffleButtonClassic]}>
-        <InkButton label="Shuffle" size="sm" w={116} h={48} onPress={shuffle} />
-      </View>
+      <ArtImageButton
+        source={BATTLE_ART.rotate}
+        w={48}
+        h={48 * (91 / 98)}
+        label="Clear the board"
+        onPress={reset}
+        style={ruleset === 'classic' ? styles.resetButtonClassic : styles.resetButton}
+      />
+      <ArtImageButton
+        source={BATTLE_ART.shuffle}
+        w={122}
+        h={122 * (89 / 235)}
+        label="Shuffle"
+        onPress={shuffle}
+        style={ruleset === 'classic' ? styles.shuffleButtonClassic : styles.shuffleButton}
+      />
       <PulsingBattleButton
         enabled={ships.length === FLEET.length && pendingArsenalId === null && !staking}
         label={staking ? 'Staking…' : 'Battle!'}
         onPress={beginBattle}
       />
+
+      {infoKind ? (
+        <View style={styles.dialogRoot}>
+          <ModalScrim onPress={() => setInfoKind(null)} label="Close" />
+          <ArsenalInfoModal
+            kind={infoKind}
+            left={boardX + (BOARD_SIZE - INFO_W) / 2}
+            top={BOARD_Y + 34}
+            onClose={() => setInfoKind(null)}
+          />
+        </View>
+      ) : null}
 
       {confirmClear ? (
         <ConfirmClearDialog
@@ -1443,102 +1467,112 @@ export default function PlacementScreen() {
   return <PlacementCanvas />;
 }
 
+const DIALOG_W = 400;
+const DIALOG_H = DIALOG_W * (466 / 885);
+const HANDOFF_W = 330;
+const HANDOFF_H = HANDOFF_W * (364 / 552);
+
 const styles = StyleSheet.create({
-  backButton: { position: 'absolute', left: 8, top: 0 },
+  backButton: { position: 'absolute', left: 8, top: BAR_Y },
   difficultyPicker: {
     position: 'absolute',
-    left: 84,
-    top: 4,
+    left: 76,
+    top: BAR_Y,
+    height: BAR_H,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  wagerButton: { position: 'absolute', left: 350, top: 3, zIndex: 50 },
   difficultyLabel: {
-    color: color.ink,
-    fontFamily: font.label,
-    fontSize: typeScale.xs,
+    color: artColor.navy,
+    fontFamily: font.display,
+    fontSize: 16,
+    marginRight: 2,
   },
+  barDivider: { position: 'absolute', left: 322, top: BAR_Y - 2 },
+  wagerButton: { position: 'absolute', left: 334, top: BAR_Y, zIndex: 50 },
+  wagerButtonAlone: { left: 78 },
   fuelGauge: {
     position: 'absolute',
-    right: 12,
-    top: 3,
+    right: 60,
+    top: BAR_Y - 2,
+    height: BAR_H + 4,
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
+    alignItems: 'center',
+    gap: 5,
     zIndex: 50,
   },
-  fuelCaption: {
-    color: color.inkSoft,
-    fontFamily: font.label,
-    fontSize: typeScale.xs,
-  },
-  fuelReadout: {
-    color: color.ink,
-    fontFamily: font.display,
-    fontSize: typeScale.lg,
-  },
-  fuelReadoutEmpty: { color: color.inkRed },
-  fuelReadoutBudget: {
-    color: color.inkFaint,
-    fontFamily: font.label,
-    fontSize: typeScale.sm,
-  },
+  fuelIcon: { width: 24, height: 26 },
+  fuelCaption: { color: artColor.navy, fontFamily: font.display, fontSize: 15 },
+  fuelReadout: { color: artColor.navy, fontFamily: font.display, fontSize: 26, lineHeight: 32 },
+  fuelReadoutEmpty: { color: artColor.red },
+  fuelReadoutBudget: { color: artColor.muted, fontFamily: font.label, fontSize: 15 },
+  compass: { position: 'absolute', right: 8, top: 1, width: 46, height: 45 },
   dock: { position: 'absolute', top: TRAY_Y, width: TRAY_W, height: TRAY_H },
   dockTitle: {
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 3,
+    top: 6,
     textAlign: 'center',
-    color: color.ink,
-    fontFamily: font.label,
-    fontSize: typeScale.xs,
+    color: artColor.navy,
+    fontFamily: font.display,
+    fontSize: 14,
   },
+  dockAnchor: { position: 'absolute', left: (TRAY_W - 18) / 2, top: 25, width: 18, height: 23 },
   dockCount: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 6,
+    bottom: 8,
     textAlign: 'center',
-    color: color.inkRed,
-    fontFamily: font.label,
-    fontSize: typeScale.xxs,
+    color: artColor.red,
+    fontFamily: font.display,
+    fontSize: 11,
   },
-  dockCountDone: { color: color.inkGreen },
+  dockCountDone: { color: artColor.green },
   dialogRoot: { position: 'absolute', left: 0, top: 0, width: CANVAS_W, height: CANVAS_H, zIndex: 90 },
-  // Runs past the canvas so the paper beside it dims as well.
-  dialogDim: {
+  // Both run past the canvas so the page beside it dims as well.
+  scrim: {
     position: 'absolute',
     left: -200,
     top: -200,
     right: -200,
     bottom: -200,
-    backgroundColor: 'rgba(62, 47, 184, 0.28)',
+    backgroundColor: 'rgba(10, 16, 108, 0.22)',
   },
-  dialogPanel: { position: 'absolute', left: (CANVAS_W - 400) / 2, top: 94 },
+  scrimTouch: { position: 'absolute', left: -200, top: -200, right: -200, bottom: -200 },
+  dialogPanel: {
+    position: 'absolute',
+    left: (CANVAS_W - DIALOG_W) / 2,
+    top: (CANVAS_H - DIALOG_H) / 2,
+    width: DIALOG_W,
+    height: DIALOG_H,
+  },
   dialogTitle: {
-    color: color.inkRed,
+    marginTop: 18,
+    color: artColor.red,
     fontFamily: font.display,
-    fontSize: typeScale.md,
+    fontSize: 21,
     textAlign: 'center',
   },
   dialogBody: {
-    marginTop: 6,
-    color: color.ink,
+    marginTop: 8,
+    marginHorizontal: 30,
+    color: artColor.navy,
     fontFamily: font.body,
-    fontSize: typeScale.xs,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
     textAlign: 'center',
   },
   dialogButtons: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 10,
+    bottom: 22,
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: space.sm,
+    gap: 12,
   },
   bandLayer: {
     position: 'absolute',
@@ -1549,50 +1583,31 @@ const styles = StyleSheet.create({
   },
   rowBand: { position: 'absolute', left: 0, top: 0, width: BOARD_SIZE, height: CELL },
   colBand: { position: 'absolute', left: 0, top: 0, width: CELL, height: BOARD_SIZE },
-  shopFrame: { position: 'absolute', left: SHOP_X, top: SHOP_Y, zIndex: 40 },
-  arsenalTitle: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 7,
-    color: color.inkRed,
-    fontFamily: font.display,
-    fontSize: typeScale.md,
-    textAlign: 'center',
-  },
+  shopFrame: { position: 'absolute', left: SHOP_X, top: SHOP_Y, width: SHOP_W, height: SHOP_H, zIndex: 40 },
   reasonPill: {
     position: 'absolute',
-    top: BOARD_Y + BOARD_SIZE - 24,
-    minWidth: 190,
-    maxWidth: BOARD_SIZE - 16,
-    paddingHorizontal: space.xs,
-    paddingVertical: 2,
-    backgroundColor: color.paper,
+    top: BOARD_Y + BOARD_SIZE - 34,
+    width: BOARD_SIZE - 28,
+    height: 26,
+    paddingHorizontal: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   reasonText: {
-    color: color.inkRed,
-    fontFamily: font.label,
-    fontSize: typeScale.xxs,
+    color: artColor.red,
+    fontFamily: font.display,
+    fontSize: 12,
   },
   draggable: { position: 'absolute', overflow: 'visible' },
   shipGroup: { position: 'absolute', overflow: 'visible' },
   shipLayer: { position: 'absolute', left: 0, top: 0 },
-  shipShadow: { left: 3, top: 3 },
   arsenalDrag: { position: 'absolute', overflow: 'visible' },
-  arsenalSpriteOnBoard: {
-    position: 'absolute',
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ scale: 0.67 }],
-  },
-  resetButton: { position: 'absolute', left: SHOP_X + 6, top: 299 },
-  resetButtonClassic: { left: 570, top: 82 },
-  shuffleButton: { position: 'absolute', left: SHOP_X + 64, top: 301 },
-  shuffleButtonClassic: { left: 630, top: 84 },
-  battleButton: { position: 'absolute', right: 12, bottom: 2 },
+  arsenalSpriteOnBoard: { position: 'absolute', width: CELL, height: CELL },
+  resetButton: { position: 'absolute', left: SHOP_X + 4, top: SHOP_Y + SHOP_H + 8 },
+  resetButtonClassic: { position: 'absolute', left: 570, top: 82 },
+  shuffleButton: { position: 'absolute', left: SHOP_X + 60, top: SHOP_Y + SHOP_H + 9 },
+  shuffleButtonClassic: { position: 'absolute', left: 628, top: 84 },
+  battleButton: { position: 'absolute', right: 10, bottom: 6 },
   handoff: {
     position: 'absolute',
     left: 0,
@@ -1601,22 +1616,26 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 100,
     backgroundColor: color.paper,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  handoffCopy: {
+  handoffPage: { position: 'absolute', left: -200, top: -200, right: -200, bottom: -200 },
+  handoffPanel: {
     position: 'absolute',
-    left: 220,
-    top: 72,
-    width: 360,
+    left: (CANVAS_W - HANDOFF_W) / 2,
+    top: (CANVAS_H - HANDOFF_H) / 2,
+    width: HANDOFF_W,
+    height: HANDOFF_H,
     alignItems: 'center',
-    gap: space.sm,
+    paddingTop: 20,
+    gap: 6,
   },
-  handoffEyebrow: {
-    color: color.inkRed,
-    fontFamily: font.label,
-    fontSize: typeScale.sm,
+  handoffEyebrow: { color: artColor.red, fontFamily: font.display, fontSize: 15 },
+  handoffTitle: { color: artColor.navy, fontFamily: font.display, fontSize: 34, maxWidth: HANDOFF_W - 50 },
+  handoffBody: {
+    color: artColor.soft,
+    fontFamily: font.body,
+    fontSize: 13,
+    textAlign: 'center',
+    marginHorizontal: 30,
+    marginBottom: 6,
   },
-  handoffTitle: { color: color.ink, fontFamily: font.display, fontSize: typeScale.xxl },
-  handoffBody: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xs },
 });

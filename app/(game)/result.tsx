@@ -1,14 +1,16 @@
 /**
- * The result (P14). One composition for both verdicts:
+ * The result (P14), drawn to its mockup on BACKGROUNDS.result. One composition
+ * for both verdicts:
  *
- *   Win   TitleRibbon "Victory", an ink laurel flanking the panel, both cards
- *         facing each other, coins flying from the loser's card to the
- *         winner's, the rank bar filling with a number roll.
- *   Loss  the same, muted — 70 % ink, no laurel, coin flow reversed. Nothing
- *         else changes: a result screen that sulks makes people quit.
+ *   Win   the green "Victory" banner drops in, both captains — each the
+ *         portrait they chose, in their colour — face each other across the
+ *         results, gold coins fly from the loser to the winner, and the rank
+ *         bar fills with a number roll.
+ *   Loss  the same with the red "Defeat" banner and the coin flow reversed.
+ *         Nothing else changes: a result screen that sulks makes people quit.
  *
- * Rank-up is the one extra beat: the badge scales up, the new shield inks
- * itself over the old, the rank name types on. sfx rankUp.
+ * Rank-up is the one extra beat: the badge swells, the rank name types on.
+ * sfx rankUp.
  *
  * Where the numbers come from: offline results were queued into the profile
  * (battle.ts markFinished) before this route opened; an online match was
@@ -17,10 +19,11 @@
  * client never writes score columns to Supabase, only to its own store.
  * "Before" is simply "after minus the reward", in either case.
  */
-import { REWARD, rankFor, rankProgress, type Rank } from '@engine/ranks';
+import { REWARD, rankFor, rankProgress } from '@engine/ranks';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, type ImageStyle } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -31,24 +34,19 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import Svg from 'react-native-svg';
 
 import { playSfx } from '@/audio/sfx';
 import { haptic } from '@/audio/haptics';
-import { AvatarCard, FlagChip } from '@/features/battle/Hud';
 import { useMatchClient } from '@/net/match-client';
 import { flushPendingWager } from '@/net/offlineWager';
 import { usePoints, WAGER_STAKE } from '@/state/points';
 import { useProfile } from '@/state/profile';
+import { ArtImageButton } from '@/ui/ArtImageButton';
+import { BACKGROUNDS, MATCHMAKING_ART, RESULT_ART, SETTINGS_ART, type Asset } from '@/ui/assets';
 import { COIN_GOLD } from '@/ui/CurrencyChip';
-import { chevronPoints, laurelBranch, shieldPoints } from '@/ui/geometry';
-import { InkButton } from '@/ui/InkButton';
-import { InkPanel } from '@/ui/InkPanel';
-import { Paper } from '@/ui/Paper';
+import { portraitFor } from '@/ui/portraits';
 import { Scale } from '@/ui/Scale';
-import { TitleRibbon } from '@/ui/TitleRibbon';
-import { CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
-import { RoughShape, hashString, useRough } from '@/ui/useRough';
+import { CANVAS_W, artColor, color, font } from '@/ui/tokens';
 
 // ---------------------------------------------------------------------------
 // Timeline (ms from mount)
@@ -62,16 +60,20 @@ const COIN_FLIGHT = 720;
 const T_ROLL = T_COINS + COIN_COUNT * COIN_STAGGER + 200; // counters + bar
 const ROLL_MS = 900;
 const T_RANK_UP = T_ROLL + ROLL_MS + 150;
-const MUTED = 0.7;
 
-// Layout
-const CARD_Y = 128;
-const CARD_X_LEFT = 62;
-const CARD_X_RIGHT = CANVAS_W - 62 - 54;
-const PANEL_W = 336;
-const PANEL_H = 176;
+// Layout — canvas units. The panel art (results-panel-frame, 796 x 503) is
+// drawn at its own shape; its border sits 38 px down under the rope crown.
+const PANEL_W = 356;
+const PANEL_H = PANEL_W * (503 / 796);
 const PANEL_X = (CANVAS_W - PANEL_W) / 2;
-const PANEL_Y = 92;
+const PANEL_Y = 62;
+const PANEL_BORDER = 38 * (PANEL_W / 796);
+/** The captain cards: portrait frame (218 x 243), name ribbon, port and points. */
+const PORTRAIT = { w: 94, h: 94 * (243 / 218) } as const;
+const CARD_Y = 84;
+const CARD_CX_LEFT = 116;
+const CARD_CX_RIGHT = CANVAS_W - 116;
+const COIN = 20;
 
 interface Totals {
   readonly pointsBefore: number;
@@ -189,40 +191,23 @@ function useRoll(from: number, to: number, delay: number, ms: number, enabled = 
   return value;
 }
 
-function Laurel({ side }: { side: 'left' | 'right' }) {
-  const { roughPolygon, roughPath } = useRough();
-  const h = 150;
-  const w = 60;
-  const { stem, leaves } = laurelBranch(side, h);
-  const seed = hashString(`laurel-${side}`);
-  const stemPath = roughPath(stem, {
-    seed,
-    stroke: color.inkGreen,
-    strokeWidth: 1.6,
-    roughness: 0.9,
-  });
-  const leafPaths = leaves.map((leaf, i) =>
-    roughPolygon(leaf.points, {
-      seed: seed + 1 + i,
-      stroke: color.inkGreen,
-      strokeWidth: 1,
-      fill: color.inkGreen,
-      fillStyle: 'hachure',
-      hachureGap: 2.6,
-      fillWeight: 0.8,
-      roughness: 0.8,
-    }),
-  );
+function Art({ source, style }: { source: Asset; style: ImageStyle }) {
   return (
-    <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <RoughShape paths={stemPath} />
-      {leafPaths.map((p, i) => (
-        <RoughShape key={i} paths={p} />
-      ))}
-    </Svg>
+    <Image
+      source={source}
+      style={[{ position: 'absolute' }, style]}
+      contentFit="contain"
+      cachePolicy="memory-disk"
+      pointerEvents="none"
+    />
   );
 }
 
+/**
+ * One captain: their portrait inside the rope frame (the frame's hole is
+ * x 23..196, y 22..206 of 218 x 243; the portrait art's picture is its middle
+ * 78%, so it is cropped to the hole), the name ribbon, their port and points.
+ */
 function Card({
   side,
   name,
@@ -230,7 +215,6 @@ function Card({
   avatarId,
   tint,
   flag,
-  seedKey,
 }: {
   side: 'left' | 'right';
   name: string;
@@ -238,44 +222,53 @@ function Card({
   avatarId: number;
   tint: string;
   flag: string;
-  seedKey: string;
 }) {
   const reduceMotion = useReducedMotion();
-  const x = useSharedValue(reduceMotion ? 0 : side === 'left' ? -160 : 160);
+  const x = useSharedValue(reduceMotion ? 0 : side === 'left' ? -200 : 200);
   useEffect(() => {
     x.value = withDelay(T_CARDS, withSpring(0, { duration: 560, dampingRatio: 0.74 }));
   }, [x]);
   const slide = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
+  const k = PORTRAIT.w / 218;
+  const hole = { x: 23 * k, y: 22 * k, w: 173 * k, h: 184 * k };
+  const pic = Math.max(hole.w, hole.h) / 0.78;
+  const cx = side === 'left' ? CARD_CX_LEFT : CARD_CX_RIGHT;
   const right = side === 'right';
   return (
-    <Animated.View
-      style={[
-        styles.card,
-        {
-          left: side === 'left' ? CARD_X_LEFT : CARD_X_RIGHT,
-          alignItems: right ? 'flex-end' : 'flex-start',
-        },
-        slide,
-      ]}
-    >
-      <AvatarCard avatarId={avatarId} tint={tint} seedKey={seedKey} />
-      <Text style={styles.cardName} numberOfLines={1}>
-        {name}
-      </Text>
+    <Animated.View style={[styles.card, { left: cx - 64 }, slide]}>
+      <View style={{ width: PORTRAIT.w, height: PORTRAIT.h }}>
+        <View style={[styles.hole, { left: hole.x, top: hole.y, width: hole.w, height: hole.h }]}>
+          <Image
+            source={portraitFor(avatarId, tint)}
+            style={{ position: 'absolute', left: (hole.w - pic) / 2, top: (hole.h - pic) / 2, width: pic, height: pic }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            accessibilityIgnoresInvertColors
+          />
+        </View>
+        <Image source={RESULT_ART.portraitFrame} style={StyleSheet.absoluteFill} contentFit="fill" />
+      </View>
+      <View style={styles.ribbon}>
+        <Image source={RESULT_ART.nameRibbon} style={StyleSheet.absoluteFill} contentFit="fill" />
+        <Text style={styles.cardName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {name}
+        </Text>
+      </View>
       <View style={[styles.cardMeta, right ? { flexDirection: 'row-reverse' } : null]}>
-        <FlagChip code={flag} seedKey={seedKey} />
+        <View style={styles.badge}>
+          <Image source={RESULT_ART.countryBadge} style={StyleSheet.absoluteFill} contentFit="fill" />
+          <Text style={styles.badgeText}>{flag}</Text>
+        </View>
         <Text style={styles.cardPoints}>{points} pts</Text>
       </View>
     </Animated.View>
   );
 }
 
-/** One coin, thrown from `from` to `to` on a lob. */
+/** One gold coin, thrown from `from` to `to` on a lob, spinning as it flies. */
 function Coin({ index, from, to }: { index: number; from: number; to: number }) {
-  const { roughCircle } = useRough();
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
-  const seed = hashString(`coin-${index}`);
   useEffect(() => {
     if (reduceMotion) return;
     t.value = withDelay(
@@ -285,75 +278,33 @@ function Coin({ index, from, to }: { index: number; from: number; to: number }) 
   }, [index, reduceMotion, t]);
   const style = useAnimatedStyle(() => {
     const p = t.value;
-    const lob = -Math.sin(p * Math.PI) * (46 + index * 6);
+    const lob = -Math.sin(p * Math.PI) * (52 + index * 7);
     return {
       opacity: p <= 0 || p >= 1 ? 0 : 1,
-      transform: [{ translateX: from + (to - from) * p }, { translateY: lob }],
+      transform: [
+        { translateX: from + (to - from) * p - COIN / 2 },
+        { translateY: lob },
+        { scaleX: Math.cos(p * Math.PI * 3) },
+      ],
     };
   });
-  const face = roughCircle(9, 9, 14, {
-    seed,
-    stroke: COIN_GOLD,
-    strokeWidth: 1.4,
-    fill: COIN_GOLD,
-    fillStyle: 'hachure',
-    hachureGap: 2.2,
-    fillWeight: 1,
-  });
-  const rim = roughCircle(9, 9, 8, { seed: seed + 1, stroke: COIN_GOLD, strokeWidth: 1 });
   if (reduceMotion) return null;
   return (
     <Animated.View style={[styles.coin, style]} pointerEvents="none">
-      <Svg width={18} height={18} viewBox="0 0 18 18">
-        <RoughShape paths={face} />
-        <RoughShape paths={rim} />
-      </Svg>
+      <Image source={RESULT_ART.coin} style={StyleSheet.absoluteFill} contentFit="contain" />
     </Animated.View>
   );
 }
 
-/** The shield from RankBadge at a larger size, so the new one can ink over the old. */
-function Shield({ seedKey, size = 1 }: { seedKey: string; size?: number }) {
-  const { roughPolygon } = useRough();
-  const w = 34 * size;
-  const h = 40 * size;
-  const seed = hashString(`rank-${seedKey}`);
-  const shield = roughPolygon(shieldPoints(w, h, 2), {
-    seed,
-    strokeWidth: 1.5,
-    fill: color.inkFaint,
-    fillStyle: 'hachure',
-    hachureGap: 3,
-    fillWeight: 1,
-  });
-  const chevron = roughPolygon(chevronPoints(w), {
-    seed: seed + 1,
-    stroke: color.ink,
-    strokeWidth: 1,
-    fill: color.ink,
-    fillStyle: 'solid',
-  });
-  return (
-    <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <RoughShape paths={shield} />
-      <RoughShape paths={chevron} />
-    </Svg>
-  );
-}
-
-/** The rank row: shield + name + progress bar; the rank-up beat lives here. */
+/** The rank row: badge + name + progress bar; the rank-up beat lives here. */
 function RankRow({ totals, rankedUp }: { totals: Totals; rankedUp: boolean }) {
-  const { roughRect } = useRough();
   const reduceMotion = useReducedMotion();
-  const before = rankProgress(totals.pointsBefore);
   const after = rankProgress(totals.pointsAfter);
   const shown = useRoll(totals.pointsBefore, totals.pointsAfter, T_ROLL, ROLL_MS, !reduceMotion);
   // The bar reads against the band the rolling number is in right now.
   const live = rankProgress(shown);
   const [typed, setTyped] = useState(rankedUp ? '' : after.rank.name);
   const badge = useSharedValue(1);
-  const oldShield = useSharedValue(1);
-  const newShield = useSharedValue(rankedUp ? 0 : 1);
   const beatStarted = useRef(false);
 
   useEffect(() => {
@@ -365,17 +316,12 @@ function RankRow({ totals, rankedUp }: { totals: Totals; rankedUp: boolean }) {
       haptic('rankUp');
       if (!reduceMotion) {
         badge.value = withSequence(
-          withSpring(1.28, { duration: 320, dampingRatio: 0.55 }),
+          withSpring(1.32, { duration: 320, dampingRatio: 0.55 }),
           withSpring(1, { duration: 420, dampingRatio: 0.7 }),
         );
-        oldShield.value = withTiming(0, { duration: 380 });
-        newShield.value = withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) });
-      } else {
-        oldShield.value = 0;
-        newShield.value = 1;
       }
     }, t0);
-    // The name types on, character by character, once the shield has inked.
+    // The name types on, character by character, once the badge has swelled.
     const name = after.rank.name;
     const typers: ReturnType<typeof setTimeout>[] = [];
     const perChar = reduceMotion ? 0 : 55;
@@ -386,61 +332,30 @@ function RankRow({ totals, rankedUp }: { totals: Totals; rankedUp: boolean }) {
       clearTimeout(timer);
       typers.forEach(clearTimeout);
     };
-  }, [after.rank.name, badge, newShield, oldShield, rankedUp, reduceMotion]);
+  }, [after.rank.name, badge, rankedUp, reduceMotion]);
 
   const badgeStyle = useAnimatedStyle(() => ({ transform: [{ scale: badge.value }] }));
-  const oldStyle = useAnimatedStyle(() => ({ opacity: oldShield.value }));
-  const newStyle = useAnimatedStyle(() => ({
-    opacity: newShield.value,
-    transform: [{ scale: 0.7 + 0.3 * newShield.value }],
-  }));
-
-  const BAR_W = 180;
-  const BAR_H = 10;
   const ratio = live.total > 0 ? Math.min(1, live.current / live.total) : 1;
-  const outline = roughRect(1, 1, BAR_W - 2, BAR_H - 2, {
-    seed: hashString('result-bar'),
-    strokeWidth: 1.2,
-  });
-  const fill =
-    ratio > 0
-      ? roughRect(2, 2, Math.max(2, (BAR_W - 4) * ratio), BAR_H - 4, {
-          seed: hashString('result-bar-fill'),
-          stroke: 'none',
-          fill: color.inkGreen,
-          fillStyle: 'solid',
-        })
-      : null;
-
-  const oldRank: Rank = before.rank;
   return (
     <View style={styles.rankRow}>
-      <Animated.View style={[{ width: 34, height: 40 }, badgeStyle]}>
-        <Animated.View style={[StyleSheet.absoluteFill, oldStyle]}>
-          <Shield seedKey={`old-${oldRank.name}`} />
-        </Animated.View>
-        <Animated.View style={[StyleSheet.absoluteFill, newStyle]}>
-          <Shield seedKey={`new-${after.rank.name}`} />
-        </Animated.View>
+      <Animated.View style={[styles.rankBadge, badgeStyle]}>
+        <Image source={RESULT_ART.rankBadge} style={StyleSheet.absoluteFill} contentFit="contain" />
       </Animated.View>
-      <View style={{ gap: 3 }}>
+      <View style={{ flex: 1, gap: 4 }}>
         <Text style={styles.rankName} numberOfLines={1}>
           {rankedUp ? typed || ' ' : after.rank.name}
-          {rankedUp && typed.length < after.rank.name.length ? (
-            <Text style={styles.caret}>|</Text>
-          ) : null}
+          {rankedUp && typed.length < after.rank.name.length ? <Text style={styles.caret}>|</Text> : null}
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
-          <View style={{ width: BAR_W, height: BAR_H }}>
-            <Svg
-              width={BAR_W}
-              height={BAR_H}
-              viewBox={`0 0 ${BAR_W} ${BAR_H}`}
-              style={StyleSheet.absoluteFill}
-            >
-              {fill ? <RoughShape paths={fill} /> : null}
-              <RoughShape paths={outline} />
-            </Svg>
+        <View style={styles.barRow}>
+          <View style={styles.bar}>
+            <Image source={RESULT_ART.barFrame} style={StyleSheet.absoluteFill} contentFit="fill" />
+            {ratio > 0 ? (
+              <Image
+                source={RESULT_ART.barFill}
+                style={[styles.barFill, { width: Math.max(4, (BAR.w - BAR.inset * 2) * ratio) }]}
+                contentFit="fill"
+              />
+            ) : null}
           </View>
           <Text style={styles.rankReadout}>
             {live.current}/{live.total}
@@ -558,135 +473,178 @@ export default function ResultScreen() {
   };
 
   // Coins fly loser -> winner. Me on the left, them on the right.
-  const coinFrom = won ? CARD_X_RIGHT + 18 : CARD_X_LEFT + 18;
-  const coinTo = won ? CARD_X_LEFT + 18 : CARD_X_RIGHT + 18;
+  const coinFrom = won ? CARD_CX_RIGHT : CARD_CX_LEFT;
+  const coinTo = won ? CARD_CX_LEFT : CARD_CX_RIGHT;
+
+  const wagerLabel = settling
+    ? settlementFailed
+      ? won
+        ? 'Wager won · payout pending'
+        : 'Stake lost · confirming'
+      : won
+        ? 'Wager won · paying out…'
+        : 'Stake lost · settling…'
+    : won
+      ? `Wager won · ${pointBalance} total`
+      : `Stake lost · ${pointBalance} left`;
+
+  const rows: { key: string; label: string; value: string; tone?: string }[] = [
+    { key: 'points', label: 'Points gained', value: `+${points}` },
+    { key: 'coins', label: 'Coins', value: `${coins}`, tone: COIN_GOLD },
+  ];
+  if (totals.wager) {
+    // Both sides staked before the first shot, so the winner's pot is twice
+    // the stake — a net +50 — and the loser is out the 50 they already paid.
+    rows.push({
+      key: 'wager',
+      label: wagerLabel,
+      value: won ? `+${totals.wager.prize}` : `-${totals.wager.stake}`,
+      tone: settlementFailed ? artColor.soft : won ? artColor.green : color.inkRed,
+    });
+  }
+  if (rankedUp) {
+    rows.push({ key: 'rank', label: 'New rank', value: rankFor(totals.pointsAfter).name, tone: artColor.green });
+  }
 
   return (
-    <Scale>
-      <Paper variant="full" />
-      <View style={[StyleSheet.absoluteFill, { opacity: won ? 1 : MUTED }]}>
-        <Animated.View style={[styles.ribbon, ribbonStyle]}>
-          <TitleRibbon title={won ? 'Victory' : 'Defeat'} w={300} h={48} seedKey="result" />
-        </Animated.View>
+    <Scale backgroundImage={BACKGROUNDS.result}>
+      <Art source={RESULT_ART.wordmark} style={styles.wordmark} />
+      <Art source={RESULT_ART.oceansQuote} style={styles.quoteTopRight} />
+      <Art source={won ? RESULT_ART.seasQuote : RESULT_ART.watersQuote} style={styles.quoteLowLeft} />
+      <Art source={won ? MATCHMAKING_ART.goodCaptainsQuote : RESULT_ART.seasQuote} style={styles.quoteLowRight} />
+      <Art source={RESULT_ART.gulls[0] ?? null} style={styles.gullA} />
+      <Art source={RESULT_ART.gulls[2] ?? null} style={styles.gullB} />
 
-        {won ? (
-          <>
-            <View style={[styles.laurel, { left: PANEL_X - 58 }]}>
-              <Laurel side="left" />
-            </View>
-            <View style={[styles.laurel, { left: PANEL_X + PANEL_W - 2 }]}>
-              <Laurel side="right" />
-            </View>
-          </>
-        ) : null}
+      <Animated.View style={[styles.banner, ribbonStyle]} accessibilityRole="header" accessibilityLabel={won ? 'Victory' : 'Defeat'}>
+        <Image
+          source={won ? RESULT_ART.victoryBanner : RESULT_ART.defeatBanner}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+        />
+      </Animated.View>
 
-        <View style={{ position: 'absolute', left: PANEL_X, top: PANEL_Y }}>
-          <InkPanel w={PANEL_W} h={PANEL_H} seedKey="result-panel" padding={space.md}>
-            <View style={styles.rows}>
-              <View style={styles.row}>
-                <Text style={styles.label}>Points gained</Text>
-                <Text style={styles.value}>+{points}</Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Coins</Text>
-                <Text style={[styles.value, { color: COIN_GOLD }]}>{coins}</Text>
-              </View>
-              {totals.wager ? (
-                <View style={styles.row}>
-                  <Text style={styles.label} numberOfLines={1}>
-                    {settling
-                      ? settlementFailed
-                        ? won
-                          ? 'Wager won · payout pending'
-                          : 'Stake lost · confirming'
-                        : won
-                          ? 'Wager won · paying out…'
-                          : 'Stake lost · settling…'
-                      : won
-                        ? `Wager won · ${pointBalance} total`
-                        : `Stake lost · ${pointBalance} left`}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.value,
-                      { color: settlementFailed ? color.inkSoft : won ? color.inkGreen : color.inkRed },
-                    ]}
-                  >
-                    {/* Both sides staked before the first shot, so the winner's
-                        pot is twice the stake — a net +50 — and the loser is
-                        out the 50 they already paid. */}
-                    {won ? `+${totals.wager.prize}` : `-${totals.wager.stake}`}
-                  </Text>
-                </View>
+      <View style={styles.panel}>
+        <Image source={RESULT_ART.panel} style={StyleSheet.absoluteFill} contentFit="fill" />
+        <View style={styles.rows}>
+          {rows.map((row, i) => (
+            <View key={row.key} style={styles.row}>
+              <Text style={styles.label} numberOfLines={1}>
+                {row.label}
+              </Text>
+              <Text
+                style={[styles.value, row.tone ? { color: row.tone } : null]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.65}
+              >
+                {row.value}
+              </Text>
+              {i < rows.length - 1 ? (
+                <Image source={SETTINGS_ART.dashedDivider} style={styles.divider} contentFit="fill" />
               ) : null}
-              {rankedUp ? (
-                <View style={styles.row}>
-                  <Text style={styles.label}>New rank</Text>
-                  <Text style={[styles.value, { color: color.inkGreen }]}>
-                    {rankFor(totals.pointsAfter).name}
-                  </Text>
-                </View>
-              ) : null}
-              <RankRow totals={totals} rankedUp={rankedUp} />
             </View>
-          </InkPanel>
+          ))}
+          <RankRow totals={totals} rankedUp={rankedUp} />
         </View>
-
-        <Card
-          side="left"
-          name={myName || 'You'}
-          points={totals.pointsAfter}
-          avatarId={myAvatarId}
-          tint={myTint}
-          flag={myFlag}
-          seedKey="me"
-        />
-        <Card
-          side="right"
-          name={opponent.name}
-          points={opponent.points}
-          avatarId={opponent.avatarId}
-          tint={opponent.tint}
-          flag={opponent.flag}
-          seedKey="them"
-        />
-
-        {Array.from({ length: COIN_COUNT }, (_, i) => (
-          <Coin key={i} index={i} from={coinFrom} to={coinTo} />
-        ))}
       </View>
 
+      <Card
+        side="left"
+        name={myName || 'You'}
+        points={totals.pointsAfter}
+        avatarId={myAvatarId}
+        tint={myTint}
+        flag={myFlag || '??'}
+      />
+      <Card
+        side="right"
+        name={opponent.name}
+        points={opponent.points}
+        avatarId={opponent.avatarId}
+        tint={opponent.tint}
+        flag={opponent.flag}
+      />
+
+      {Array.from({ length: COIN_COUNT }, (_, i) => (
+        <Coin key={i} index={i} from={coinFrom} to={coinTo} />
+      ))}
+
       <View style={styles.buttons}>
-        <InkButton label="Play again" tone="confirm" size="md" w={150} h={38} onPress={playAgain} />
-        <InkButton label="Menu" size="md" w={110} h={38} onPress={() => router.replace('/menu')} />
+        <ArtImageButton source={RESULT_ART.playAgain} w={150} h={150 * (101 / 357)} label="Play again" onPress={playAgain} />
+        <ArtImageButton
+          source={RESULT_ART.menu}
+          w={126}
+          h={126 * (100 / 299)}
+          label="Menu"
+          onPress={() => router.replace('/menu')}
+        />
       </View>
     </Scale>
   );
 }
 
+const BAR = { w: 168, h: 168 * (34 / 373), inset: 3 } as const;
+
 const styles = StyleSheet.create({
-  ribbon: { position: 'absolute', left: (CANVAS_W - 300) / 2, top: 14 },
-  laurel: { position: 'absolute', top: PANEL_Y + 8 },
-  rows: { flex: 1, justifyContent: 'space-between' },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  label: { color: color.inkSoft, fontFamily: font.label, fontSize: typeScale.sm },
-  value: { color: color.ink, fontFamily: font.display, fontSize: typeScale.md },
-  rankRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 2 },
-  rankName: { color: color.ink, fontFamily: font.display, fontSize: typeScale.sm },
-  caret: { color: color.inkSoft, fontFamily: font.body },
-  rankReadout: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xxs },
-  card: { position: 'absolute', top: CARD_Y, width: 120, gap: 4 },
-  cardName: { color: color.ink, fontFamily: font.display, fontSize: typeScale.sm, maxWidth: 120 },
-  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-  cardPoints: { color: color.inkSoft, fontFamily: font.body, fontSize: typeScale.xxs },
-  coin: { position: 'absolute', top: CARD_Y + 18, left: 0, width: 18, height: 18 },
+  banner: { position: 'absolute', left: (CANVAS_W - 312) / 2, top: -1, width: 312, height: 66 },
+  wordmark: { left: 6, top: 4, width: 80, height: 47 },
+  quoteTopRight: { left: 604, top: 4, width: 70, height: 51 },
+  quoteLowLeft: { left: 196, top: 296, width: 58, height: 48 },
+  quoteLowRight: { left: 548, top: 294, width: 64, height: 50 },
+  gullA: { left: 560, top: 40, width: 24, height: 12 },
+  gullB: { left: 206, top: 50, width: 30, height: 16 },
+
+  panel: { position: 'absolute', left: PANEL_X, top: PANEL_Y, width: PANEL_W, height: PANEL_H },
+  rows: {
+    position: 'absolute',
+    left: 30,
+    right: 30,
+    top: PANEL_BORDER + 14,
+    bottom: 20,
+    justifyContent: 'center',
+  },
+  row: {
+    height: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  label: { flexShrink: 1, color: artColor.ink, fontFamily: font.label, fontSize: 16 },
+  value: { maxWidth: '64%', color: artColor.ink, fontFamily: font.display, fontSize: 19, textAlign: 'right' },
+  divider: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, opacity: 0.7 },
+  rankRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
+  rankBadge: { width: 34, height: 34 * (106 / 93) },
+  rankName: { color: artColor.ink, fontFamily: font.display, fontSize: 16 },
+  caret: { color: artColor.soft, fontFamily: font.body },
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bar: { width: BAR.w, height: BAR.h },
+  barFill: { position: 'absolute', left: BAR.inset, top: BAR.inset, height: BAR.h - BAR.inset * 2 },
+  rankReadout: { color: artColor.ink, fontFamily: font.body, fontSize: 12, fontVariant: ['tabular-nums'] },
+
+  card: { position: 'absolute', top: CARD_Y, width: 128, alignItems: 'center' },
+  hole: { position: 'absolute', overflow: 'hidden' },
+  ribbon: {
+    width: 122,
+    height: 122 * (62 / 256),
+    marginTop: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  cardName: { color: artColor.ink, fontFamily: font.display, fontSize: 15 },
+  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  badge: { width: 38, height: 38 * (47 / 85), alignItems: 'center', justifyContent: 'center' },
+  badgeText: { color: artColor.red, fontFamily: font.display, fontSize: 12 },
+  cardPoints: { color: artColor.ink, fontFamily: font.body, fontSize: 13 },
+  coin: { position: 'absolute', top: CARD_Y + PORTRAIT.h / 2 - COIN / 2, left: 0, width: COIN, height: COIN },
   buttons: {
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 296,
+    top: PANEL_Y + PANEL_H + 8,
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: space.md,
+    gap: 22,
   },
 });

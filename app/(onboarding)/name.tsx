@@ -1,15 +1,17 @@
 /**
- * Enter your name — IMG_9755. An InkPanel modal in the upper half with the
- * value rendered as a string (never a TextInput, so the OS keyboard never
- * appears) and the hand-drawn InkKeyboard filling the bottom of the canvas.
+ * Enter your name — drawn to its mockup on BACKGROUNDS.nameEntry: the taped
+ * paper note (label, field, Save, close) up top, the commissioned keyboard
+ * across the bottom, the logo and the notes around them. The field is a
+ * rendered string, never a TextInput, so the OS keyboard never appears.
  *
  * Validation: 1-14 characters, trimmed. Save writes the profile store and the
  * Supabase row. First run continues to the avatar screen; from settings
  * (`?next=back`) it returns.
  */
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -17,23 +19,22 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import Svg from 'react-native-svg';
 
+import { haptic } from '@/audio/haptics';
 import { pushProfile } from '@/net/profileSync';
 import { useProfile } from '@/state/profile';
-import { InkButton } from '@/ui/InkButton';
-import { InkIconButton } from '@/ui/InkIconButton';
-import { InkKeyboard } from '@/ui/InkKeyboard';
-import { InkPanel } from '@/ui/InkPanel';
-import { Paper } from '@/ui/Paper';
+import { ArtKeyboard, ART_KEYBOARD_W } from '@/ui/ArtKeyboard';
+import { BACKGROUNDS, NAME_ART, PAPER_PANEL, type Asset } from '@/ui/assets';
 import { Scale } from '@/ui/Scale';
-import { CANVAS_H, CANVAS_W, color, font, space, type as typeScale } from '@/ui/tokens';
-import { RoughShape, hashString, useRough } from '@/ui/useRough';
+import { SlicedImage } from '@/ui/SlicedImage';
+import { artColor, menuFont } from '@/ui/tokens';
 
 const MAX_LEN = 14;
-const KEYBOARD_H = Math.round(CANVAS_H * 0.55);
-const PANEL = { w: 300, h: 148 } as const;
-const FIELD = { w: 236, h: 44 } as const;
+/** The note's paper, stretched to the mockup's taller card; its torn edge takes it. */
+const NOTE = { x: 235, y: 24, w: 334, h: 145 } as const;
+const FIELD = { x: 276, y: 75, w: 256, h: 36 } as const;
+const SAVE = { x: 346, y: 111, w: 112, h: 46 } as const;
+const KEYBOARD = { x: 110, y: 172 } as const;
 
 function Caret() {
   const opacity = useSharedValue(1);
@@ -45,7 +46,65 @@ function Caret() {
     );
   }, [opacity]);
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  return <Animated.View style={[styles.caret, style]} />;
+  return (
+    <Animated.View style={[styles.caret, style]}>
+      <Image source={NAME_ART.cursor} style={StyleSheet.absoluteFill} contentFit="contain" />
+    </Animated.View>
+  );
+}
+
+/** A piece of art at a fixed place on the canvas, never in the way of a touch. */
+function Art({ source, style }: { source: Asset; style: ImageStyle }) {
+  return (
+    <Image
+      source={source}
+      style={[{ position: 'absolute' }, style]}
+      contentFit="contain"
+      cachePolicy="memory-disk"
+      pointerEvents="none"
+    />
+  );
+}
+
+/** A button that is one piece of art: haptic and a 1-unit drop on press. */
+function ArtPress({
+  source,
+  style,
+  label,
+  disabled = false,
+  onPress,
+}: {
+  source: Asset;
+  style: ImageStyle;
+  label: string;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => {
+        setPressed(true);
+        haptic('buttonPress');
+      }}
+      onPressOut={() => setPressed(false)}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      style={[{ position: 'absolute' }, style]}
+    >
+      <Image
+        source={source}
+        style={[
+          StyleSheet.absoluteFill,
+          { opacity: disabled ? 0.55 : 1, transform: [{ translateY: pressed ? 1 : 0 }] },
+        ]}
+        contentFit="fill"
+      />
+    </Pressable>
+  );
 }
 
 export default function NameScreen() {
@@ -54,7 +113,6 @@ export default function NameScreen() {
   const next = Array.isArray(params.next) ? params.next[0] : params.next;
   const storedName = useProfile((s) => s.name);
   const [value, setValue] = useState(storedName);
-  const { roughRect } = useRough();
 
   const trimmed = value.trim();
   const valid = trimmed.length >= 1 && trimmed.length <= MAX_LEN;
@@ -79,103 +137,79 @@ export default function NameScreen() {
     leave();
   }, [leave]);
 
-  const field = roughRect(2, 2, FIELD.w - 4, FIELD.h - 4, {
-    seed: hashString('name-field'),
-    strokeWidth: 2.2,
-    roughness: 2.2,
-    bowing: 0.6,
-    fill: color.paper,
-    fillStyle: 'solid',
-  });
-
   return (
-    <Scale>
-      <Paper variant="full" />
-      {/* the sheet above the keyboard is dimmed, like the reference */}
-      <View pointerEvents="none" style={[styles.dim, { height: CANVAS_H - KEYBOARD_H }]} />
+    <Scale backgroundImage={BACKGROUNDS.nameEntry}>
+      <Art source={NAME_ART.logo} style={styles.logo} />
+      <Art source={NAME_ART.greatCaptainQuote} style={styles.quoteLeft} />
+      <Art source={NAME_ART.differentCaptainsQuote} style={styles.quoteRight} />
+      <Art source={NAME_ART.strategyNote} style={styles.strategyNote} />
 
-      <View style={styles.modal}>
-        <InkPanel w={PANEL.w} h={PANEL.h} seedKey="name-modal" padding={space.sm}>
-          <View style={styles.centre}>
-            <Text style={styles.title}>Enter your name:</Text>
-            <View style={{ width: FIELD.w, height: FIELD.h, marginTop: 6 }}>
-              <Svg
-                width={FIELD.w}
-                height={FIELD.h}
-                viewBox={`0 0 ${FIELD.w} ${FIELD.h}`}
-                style={StyleSheet.absoluteFill}
-              >
-                <RoughShape paths={field} />
-              </Svg>
-              <View style={[StyleSheet.absoluteFill, styles.fieldRow]}>
-                <Text numberOfLines={1} style={styles.value}>
-                  {value}
-                </Text>
-                <Caret />
-              </View>
-            </View>
-            <View style={{ marginTop: 8 }}>
-              <InkButton
-                label="Save"
-                w={120}
-                h={36}
-                size="md"
-                seedKey="name-save"
-                disabled={!valid}
-                onPress={save}
-              />
-            </View>
-          </View>
-        </InkPanel>
-        <View style={styles.close}>
-          <InkIconButton icon="close" size={30} accessibilityLabel="Close" onPress={close} />
+      <Image
+        source={PAPER_PANEL}
+        style={[styles.abs, { left: NOTE.x, top: NOTE.y, width: NOTE.w, height: NOTE.h }]}
+        contentFit="fill"
+        pointerEvents="none"
+      />
+      <Art source={NAME_ART.tape} style={styles.tape} />
+      <Art source={NAME_ART.label} style={styles.label} />
+      <Art source={NAME_ART.emphasis} style={styles.emphasis} />
+
+      <View
+        style={[styles.abs, { left: FIELD.x, top: FIELD.y, width: FIELD.w, height: FIELD.h }]}
+        accessibilityLabel={value ? `Name, ${value}` : 'Name, empty'}
+      >
+        <SlicedImage slices={NAME_ART.input} w={FIELD.w} h={FIELD.h} style={StyleSheet.absoluteFill} />
+        <View style={styles.fieldRow}>
+          <Text numberOfLines={1} style={styles.value}>
+            {value}
+          </Text>
+          <Caret />
+          {value ? null : (
+            <Image source={NAME_ART.placeholder} style={styles.placeholder} contentFit="contain" />
+          )}
         </View>
       </View>
 
-      <View style={{ position: 'absolute', left: 0, top: CANVAS_H - KEYBOARD_H }}>
-        <InkKeyboard
-          value={value}
-          onChange={setValue}
-          onSubmit={save}
-          maxLength={MAX_LEN}
-          w={CANVAS_W}
-          h={KEYBOARD_H}
-        />
+      <ArtPress
+        source={NAME_ART.save}
+        style={{ left: SAVE.x, top: SAVE.y, width: SAVE.w, height: SAVE.h }}
+        label="Save"
+        disabled={!valid}
+        onPress={save}
+      />
+      <ArtPress source={NAME_ART.close} style={styles.close} label="Close" onPress={close} />
+
+      <View style={[styles.abs, { left: KEYBOARD.x, top: KEYBOARD.y, width: ART_KEYBOARD_W }]}>
+        <ArtKeyboard value={value} onChange={setValue} onSubmit={save} maxLength={MAX_LEN} />
       </View>
     </Scale>
   );
 }
 
 const styles = StyleSheet.create({
-  dim: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    width: CANVAS_W,
-    backgroundColor: color.deskDark,
-    opacity: 0.35,
-  },
-  modal: {
-    position: 'absolute',
-    left: (CANVAS_W - PANEL.w) / 2,
-    top: 8,
-    width: PANEL.w,
-    height: PANEL.h,
-  },
-  close: { position: 'absolute', right: -6, top: -6 },
-  centre: { alignItems: 'center' },
-  title: { color: color.ink, fontFamily: font.display, fontSize: typeScale.md },
+  abs: { position: 'absolute' },
+  logo: { left: 16, top: 36, width: 200, height: 80 },
+  quoteLeft: { left: 74, top: 110, width: 104, height: 51 },
+  quoteRight: { left: 580, top: 92, width: 94, height: 63 },
+  strategyNote: { left: 700, top: 205, width: 85, height: 76 },
+  tape: { left: 371, top: 10, width: 62, height: 34 },
+  label: { left: 317, top: 36, width: 170, height: 43 },
+  emphasis: { left: 256, top: 56, width: 22, height: 24 },
+  close: { left: 527, top: 29, width: 34, height: 32 },
   fieldRow: {
+    ...StyleSheet.absoluteFill,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
+    paddingLeft: 12,
+    paddingRight: 10,
+    paddingBottom: 2,
   },
   value: {
-    color: color.ink,
-    fontFamily: font.display,
-    fontSize: typeScale.lg,
-    maxWidth: FIELD.w - 36,
+    color: artColor.ink,
+    fontFamily: menuFont.caps,
+    fontSize: 20,
+    maxWidth: FIELD.w - 40,
   },
-  caret: { width: 2, height: 24, backgroundColor: color.ink, marginLeft: 2 },
+  caret: { width: 7, height: 22, marginLeft: 1 },
+  placeholder: { width: 82, height: 34, marginLeft: 2 },
 });

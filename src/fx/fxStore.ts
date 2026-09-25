@@ -1,14 +1,22 @@
 /**
- * Transient visuals in flight — shells, bursts, the mine flash, the crosshair,
- * the camera shake nonce. The battle effects push into it; FxLayer renders it;
- * each visual removes itself when its animation ends (or when skipped).
+ * Transient visuals in flight — shells, sprite effects, aircraft, bombs,
+ * torpedoes, the submarine, the radar, the crosshair, the flashes and the
+ * camera-shake nonce. The battle effects push into it; FxLayer renders it.
+ *
+ * Two lifetimes:
+ *   - timed pieces (sprite effects, aircraft, bombs, stamps) carry their own
+ *     length and remove themselves when it runs out, so an explosion can
+ *     keep smoking over the mark it left while the next event already plays
+ *     — and a skip never strands one on screen;
+ *   - the attack's set pieces (torpedoes, radar) live until the effect that
+ *     added them removes them or `clearAttack` ends the attack. The
+ *     submarine is told to dive rather than vanish.
+ * `clear()` (the screen unmounting) drops everything, timers and all.
  */
 import type { ArsenalKind, Coord } from '@engine/types';
 import { create } from 'zustand';
 
 import type { Point } from '@/board/layout';
-
-export type BurstKind = 'hit' | 'miss' | 'mine';
 
 export interface Shell {
   readonly id: number;
@@ -17,29 +25,63 @@ export interface Shell {
   readonly durationMs: number;
 }
 
-export interface Burst {
+/** Which FX_ART strip a sprite effect plays. */
+export type SpriteKind =
+  | 'explosionInk'
+  | 'explosionFire'
+  | 'explosionAtomic'
+  | 'explosionPuff'
+  | 'mine'
+  | 'smoke'
+  | 'smokeAtomic'
+  | 'turret'
+  | 'splash';
+
+/** One run of a strip at a point: an explosion, a splash, smoke, the AA gun firing. */
+export interface SpriteFx {
   readonly id: number;
+  readonly kind: SpriteKind;
   readonly at: Point;
-  readonly kind: BurstKind;
+  /** A cell's width in canvas units. */
+  readonly width: number;
+  readonly durationMs: number;
+  readonly delayMs?: number;
+  /** Where in the cell `at` falls, top 0 to bottom 1. */
+  readonly anchorY?: number;
+  /** Drift upward this far while it plays (smoke rising). */
+  readonly rise?: number;
 }
+
+export type AircraftKind = Extract<
+  ArsenalKind,
+  'torpedoBomber' | 'doubleTorpedoBomber' | 'bomber' | 'atomicBomber'
+>;
 
 export interface Aircraft {
   readonly id: number;
-  readonly kind: Extract<
-    ArsenalKind,
-    'torpedoBomber' | 'doubleTorpedoBomber' | 'bomber' | 'atomicBomber'
-  >;
+  readonly kind: AircraftKind;
+  /** The plane's centre, start and end of a straight, level run. */
   readonly from: Point;
   readonly to: Point;
   readonly durationMs: number;
-  readonly downedAt?: Point;
+  /** When, into the run, the bay opens and the load falls away. */
+  readonly dropAtMs?: number;
+  /** Shot down: it stops where it is and goes down in a spin. */
+  readonly downed?: boolean;
 }
 
+/**
+ * A bomb falling onto a cell. It falls for `durationMs`, then waits small
+ * on the water until its impact is shown (`removeBombAt`) — impacts play in
+ * order after the whole stick has dropped, and a sinking in between holds
+ * the rest, so the fall can never be timed to land exactly on its impact.
+ */
 export interface Bomb {
   readonly id: number;
+  /** The target cell's coordKey. */
+  readonly key: string;
   readonly kind: 'bomber' | 'atomicBomber';
-  readonly from: Point;
-  readonly to: Point;
+  readonly at: Point;
   readonly durationMs: number;
 }
 
@@ -52,6 +94,8 @@ export interface TorpedoTrack {
 export interface SubmarineFx {
   readonly id: number;
   readonly at: Point;
+  /** The attack is over: it goes back under. */
+  readonly diving?: boolean;
 }
 
 export interface RadarFx {
@@ -62,10 +106,12 @@ export interface RadarFx {
   readonly durationMs: number;
 }
 
-export interface InterceptFx {
+/** A stamped word over the board ("Shot down!", "AA gun revealed"). */
+export interface StampFx {
   readonly id: number;
   readonly at: Point;
-  readonly revealed: boolean;
+  readonly text: string;
+  readonly tone: 'red' | 'green';
 }
 
 export interface Crosshair {
@@ -76,13 +122,13 @@ export interface Crosshair {
 
 interface FxData {
   shells: readonly Shell[];
-  bursts: readonly Burst[];
+  sprites: readonly SpriteFx[];
   aircraft: readonly Aircraft[];
   bombs: readonly Bomb[];
   torpedoes: readonly TorpedoTrack[];
   submarines: readonly SubmarineFx[];
   radars: readonly RadarFx[];
-  intercepts: readonly InterceptFx[];
+  stamps: readonly StampFx[];
   crosshair: Crosshair | null;
   /** Online only: our shell has landed but the server hasn't said hit or miss yet. */
   pendingShot: Crosshair | null;
@@ -90,84 +136,119 @@ interface FxData {
   whiteFlashNonce: number;
   whiteFlashAt: Point | null;
   shakeNonce: number;
+  /** How hard the last shake was: 1 a hit, more for the atomic bomb. */
+  shakeStrength: number;
 }
 
 interface FxActions {
   addShell: (shell: Omit<Shell, 'id'>) => number;
   removeShell: (id: number) => void;
-  addBurst: (burst: Omit<Burst, 'id'>) => number;
-  removeBurst: (id: number) => void;
+  /** Plays once and removes itself after its delay and length. */
+  addSprite: (sprite: Omit<SpriteFx, 'id'>) => number;
+  /** Removes itself when the run (or, once downed, the fall) is over. */
   addAircraft: (aircraft: Omit<Aircraft, 'id'>) => number;
-  downAircraft: (id: number, at: Point) => void;
-  removeAircraft: (id: number) => void;
+  downAircraft: (id: number) => void;
   addBomb: (bomb: Omit<Bomb, 'id'>) => number;
-  removeBomb: (id: number) => void;
+  removeBombAt: (key: string) => void;
   addTorpedo: (torpedo: Omit<TorpedoTrack, 'id'>) => number;
   removeTorpedo: (id: number) => void;
   addSubmarine: (submarine: Omit<SubmarineFx, 'id'>) => number;
-  removeSubmarine: (id: number) => void;
   addRadar: (radar: Omit<RadarFx, 'id'>) => number;
   removeRadar: (id: number) => void;
-  addIntercept: (intercept: Omit<InterceptFx, 'id'>) => number;
-  revealIntercept: (id: number) => void;
-  removeIntercept: (id: number) => void;
+  addStamp: (stamp: Omit<StampFx, 'id'>, ms: number) => number;
   setCrosshair: (crosshair: Crosshair | null) => void;
   setPendingShot: (pendingShot: Crosshair | null) => void;
   flash: () => void;
   whiteFlash: (at: Point) => void;
-  shake: () => void;
+  shake: (strength?: number) => void;
   clearAttack: () => void;
   clear: () => void;
 }
 
-let nextId = 1;
+/** How long a downed plane takes to fall, and a diving submarine to go under. */
+export const CRASH_MS = 900;
+export const DIVE_MS = 520;
 
-export const useFx = create<FxData & FxActions>((set) => ({
+let nextId = 1;
+/** Every pending self-removal, so clear() can cancel them. */
+const timers = new Set<ReturnType<typeof setTimeout>>();
+const aircraftTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+function later(ms: number, run: () => void): ReturnType<typeof setTimeout> {
+  const timer = setTimeout(() => {
+    timers.delete(timer);
+    run();
+  }, ms);
+  timers.add(timer);
+  return timer;
+}
+
+export const useFx = create<FxData & FxActions>((set, get) => ({
   shells: [],
-  bursts: [],
+  sprites: [],
   aircraft: [],
   bombs: [],
   torpedoes: [],
   submarines: [],
   radars: [],
-  intercepts: [],
+  stamps: [],
   crosshair: null,
   pendingShot: null,
   flashNonce: 0,
   whiteFlashNonce: 0,
   whiteFlashAt: null,
   shakeNonce: 0,
+  shakeStrength: 1,
   addShell: (shell) => {
     const id = nextId++;
     set((s) => ({ shells: [...s.shells, { ...shell, id }] }));
     return id;
   },
   removeShell: (id) => set((s) => ({ shells: s.shells.filter((x) => x.id !== id) })),
-  addBurst: (burst) => {
+  addSprite: (sprite) => {
     const id = nextId++;
-    set((s) => ({ bursts: [...s.bursts, { ...burst, id }] }));
+    set((s) => ({ sprites: [...s.sprites, { ...sprite, id }] }));
+    later((sprite.delayMs ?? 0) + sprite.durationMs + 60, () =>
+      set((s) => ({ sprites: s.sprites.filter((x) => x.id !== id) })),
+    );
     return id;
   },
-  removeBurst: (id) => set((s) => ({ bursts: s.bursts.filter((x) => x.id !== id) })),
   addAircraft: (aircraft) => {
     const id = nextId++;
     set((s) => ({ aircraft: [...s.aircraft, { ...aircraft, id }] }));
+    aircraftTimers.set(
+      id,
+      later(aircraft.durationMs + 80, () => {
+        aircraftTimers.delete(id);
+        set((s) => ({ aircraft: s.aircraft.filter((x) => x.id !== id) }));
+      }),
+    );
     return id;
   },
-  downAircraft: (id, at) =>
-    set((s) => ({
-      aircraft: s.aircraft.map((aircraft) =>
-        aircraft.id === id ? { ...aircraft, downedAt: at } : aircraft,
-      ),
-    })),
-  removeAircraft: (id) =>
-    set((s) => ({ aircraft: s.aircraft.filter((aircraft) => aircraft.id !== id) })),
+  downAircraft: (id) => {
+    if (!get().aircraft.some((a) => a.id === id)) return;
+    set((s) => ({ aircraft: s.aircraft.map((a) => (a.id === id ? { ...a, downed: true } : a)) }));
+    const pending = aircraftTimers.get(id);
+    if (pending) {
+      clearTimeout(pending);
+      timers.delete(pending);
+    }
+    aircraftTimers.set(
+      id,
+      later(CRASH_MS + 700, () => {
+        aircraftTimers.delete(id);
+        set((s) => ({ aircraft: s.aircraft.filter((x) => x.id !== id) }));
+      }),
+    );
+  },
   addBomb: (bomb) => {
     const id = nextId++;
     set((s) => ({ bombs: [...s.bombs, { ...bomb, id }] }));
+    // A backstop only: the impact (or the end of the attack) removes it first.
+    later(bomb.durationMs + 2600, () => set((s) => ({ bombs: s.bombs.filter((x) => x.id !== id) })));
     return id;
   },
-  removeBomb: (id) => set((s) => ({ bombs: s.bombs.filter((bomb) => bomb.id !== id) })),
+  removeBombAt: (key) => set((s) => ({ bombs: s.bombs.filter((x) => x.key !== key) })),
   addTorpedo: (torpedo) => {
     const id = nextId++;
     set((s) => ({ torpedoes: [...s.torpedoes, { ...torpedo, id }] }));
@@ -180,45 +261,53 @@ export const useFx = create<FxData & FxActions>((set) => ({
     set((s) => ({ submarines: [...s.submarines, { ...submarine, id }] }));
     return id;
   },
-  removeSubmarine: (id) =>
-    set((s) => ({ submarines: s.submarines.filter((submarine) => submarine.id !== id) })),
   addRadar: (radar) => {
     const id = nextId++;
     set((s) => ({ radars: [...s.radars, { ...radar, id }] }));
     return id;
   },
   removeRadar: (id) => set((s) => ({ radars: s.radars.filter((radar) => radar.id !== id) })),
-  addIntercept: (intercept) => {
+  addStamp: (stamp, ms) => {
     const id = nextId++;
-    set((s) => ({ intercepts: [...s.intercepts, { ...intercept, id }] }));
+    set((s) => ({ stamps: [...s.stamps, { ...stamp, id }] }));
+    later(ms, () => set((s) => ({ stamps: s.stamps.filter((x) => x.id !== id) })));
     return id;
   },
-  revealIntercept: (id) =>
-    set((s) => ({
-      intercepts: s.intercepts.map((intercept) =>
-        intercept.id === id ? { ...intercept, revealed: true } : intercept,
-      ),
-    })),
-  removeIntercept: (id) =>
-    set((s) => ({ intercepts: s.intercepts.filter((intercept) => intercept.id !== id) })),
   setCrosshair: (crosshair) => set({ crosshair }),
   setPendingShot: (pendingShot) => set({ pendingShot }),
   flash: () => set((s) => ({ flashNonce: s.flashNonce + 1 })),
   whiteFlash: (at) => set((s) => ({ whiteFlashNonce: s.whiteFlashNonce + 1, whiteFlashAt: at })),
-  shake: () => set((s) => ({ shakeNonce: s.shakeNonce + 1 })),
-  clearAttack: () =>
-    set({ aircraft: [], bombs: [], torpedoes: [], submarines: [], radars: [], intercepts: [] }),
-  clear: () =>
+  shake: (strength = 1) => set((s) => ({ shakeNonce: s.shakeNonce + 1, shakeStrength: strength })),
+  clearAttack: () => {
+    const diving = get().submarines.filter((sub) => !sub.diving);
+    set((s) => ({
+      bombs: [],
+      torpedoes: [],
+      radars: [],
+      submarines: s.submarines.map((sub) => ({ ...sub, diving: true })),
+    }));
+    if (diving.length > 0) {
+      const ids = new Set(diving.map((sub) => sub.id));
+      later(DIVE_MS + 60, () =>
+        set((s) => ({ submarines: s.submarines.filter((sub) => !ids.has(sub.id)) })),
+      );
+    }
+  },
+  clear: () => {
+    for (const timer of timers) clearTimeout(timer);
+    timers.clear();
+    aircraftTimers.clear();
     set({
       shells: [],
-      bursts: [],
+      sprites: [],
       aircraft: [],
       bombs: [],
       torpedoes: [],
       submarines: [],
       radars: [],
-      intercepts: [],
+      stamps: [],
       crosshair: null,
       pendingShot: null,
-    }),
+    });
+  },
 }));
