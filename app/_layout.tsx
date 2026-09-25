@@ -241,6 +241,7 @@ function AuthenticatedApp() {
         <Stack.Screen name="menu" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="wallet" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="store" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="points" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="(onboarding)/name" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="(onboarding)/progress" options={{ animation: 'slide_from_right' }} />

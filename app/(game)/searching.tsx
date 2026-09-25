@@ -36,6 +36,7 @@ import Animated, {
 
 import { haptic } from '@/audio/haptics';
 import { playSfx } from '@/audio/sfx';
+import { FlagBadge } from '@/features/flags/FlagBadge';
 import { createMatchHandoff } from '@/features/matchmaking/handoff';
 import { subscribeEmotes } from '@/net/chat';
 import { failureCopy, useMatchClient } from '@/net/match-client';
@@ -141,10 +142,7 @@ function PlayerCard({ summary, side }: { summary: OpponentSummary; side: 'left' 
             {summary.name}
           </Text>
           <Text style={styles.cardPoints}>{summary.rankPoints} pts</Text>
-          <View style={styles.badge}>
-            <Image source={MATCH_ART.countryBadge} style={StyleSheet.absoluteFill} contentFit="fill" />
-            <Text style={styles.badgeText}>{summary.countryCode ?? '??'}</Text>
-          </View>
+          <FlagBadge code={summary.countryCode} w={34} style={styles.badge} />
         </View>
       </View>
     </Animated.View>
@@ -233,7 +231,14 @@ export default function SearchingScreen() {
   const status = useMatchClient((s) => s.status);
   const failure = useMatchClient((s) => s.failure);
   const matchId = useMatchClient((s) => s.matchId);
-  const you = useMatchClient((s) => s.you);
+  const serverYou = useMatchClient((s) => s.you);
+  const myCountry = useProfile((s) => s.countryCode);
+  // Your own flag is the one you picked on this device; the server's row can
+  // trail it by a sync.
+  const you = useMemo(
+    () => (serverYou ? { ...serverYou, countryCode: myCountry || serverYou.countryCode } : null),
+    [myCountry, serverYou],
+  );
   const opponent = useMatchClient((s) => s.opponent);
   const queuedCount = useMatchClient((s) => s.onlineCount);
   const presenceCount = useOnlineCount(ruleset);
@@ -576,8 +581,7 @@ const styles = StyleSheet.create({
   cardText: { flex: 1, gap: 2 },
   cardName: { color: artColor.navy, fontFamily: font.display, fontSize: 21 },
   cardPoints: { color: artColor.navy, fontFamily: font.body, fontSize: 15 },
-  badge: { width: 46, height: 25, marginTop: 4, alignItems: 'center', justifyContent: 'center' },
-  badgeText: { color: artColor.red, fontFamily: font.display, fontSize: 13, marginTop: -1 },
+  badge: { marginTop: 4 },
   versus: {
     position: 'absolute',
     left: (CANVAS_W - VERSUS.w) / 2,

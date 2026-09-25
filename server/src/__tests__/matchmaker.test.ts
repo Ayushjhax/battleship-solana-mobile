@@ -288,3 +288,30 @@ describe('matchmaking under concurrency', () => {
     await server.close();
   }, 20000);
 });
+
+describe('a slow database behind a queue join', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installAuthMock();
+    installDbMock({ profileDelayMs: 3000 });
+  });
+
+  // The app treats 20 s without a frame as a dead socket. A ping answered only
+  // after the queue join ahead of it finished would make a healthy socket look
+  // dead whenever the database was slow, and the app would drop it and queue
+  // again at the back of the line.
+  it('answers a ping at once while the queue join waits on the database', async () => {
+    const server = await startTestServer();
+    const waiter = await connectClient(server.port, 'waiter');
+    waiter.send({ t: 'queue', v: 1, mode: 'classic' });
+    const sent = Date.now();
+    waiter.send({ t: 'ping', v: 1 });
+    await waiter.waitFor((m) => m.t === 'pong', 1000);
+    expect(Date.now() - sent).toBeLessThan(1000);
+    // The queue join itself still completes, in order, once the lookup lands.
+    await waiter.waitFor((m) => m.t === 'queued', 6000);
+
+    waiter.close();
+    await server.close();
+  }, 15000);
+});

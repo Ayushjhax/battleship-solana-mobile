@@ -11,7 +11,16 @@ import type { Server } from 'node:http';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
 import { verifyAccessToken } from './auth';
-import { decode, encode, PROTOCOL_VERSION, toMatchAction, toSubmitLayoutAction, type ErrorCode, type ServerMessage } from './protocol';
+import {
+  decode,
+  encode,
+  PROTOCOL_VERSION,
+  toMatchAction,
+  toSubmitLayoutAction,
+  type ClientMessage,
+  type ErrorCode,
+  type ServerMessage,
+} from './protocol';
 import { cancelBeforeMatchStart, dequeue, enqueue } from './matchmaker';
 import { findRoomForPlayer, rooms } from './room';
 
@@ -82,9 +91,16 @@ export function attachWebSocketServer(server: Server, log: (msg: string) => void
       conn.missedPongs = 0;
     });
 
-    socket.on('message', (raw, isBinary) => {
+    socket.on('message', (raw) => {
+      // Admission (rate limit, size cap, decoding) happens on arrival, and a
+      // ping is answered right here. Only real requests wait their turn in the
+      // chain — a ping stuck behind a queue that is waiting on the database
+      // would make a healthy socket look dead to the app, which then drops it
+      // and queues again at the back of the line.
+      const message = admit(conn, raw, log);
+      if (!message) return;
       conn.messageChain = conn.messageChain
-        .then(() => handleMessage(conn, raw, isBinary, log))
+        .then(() => handleMessage(conn, message, log))
         .catch((error: unknown) => {
           log(`[ws] player=${conn.playerId ?? 'unauthenticated'} handler failed: ${String(error)}`);
           sendError(conn, 'internal', 'the match server could not process that request');
@@ -133,7 +149,11 @@ function connOf(socket: WebSocket): Connection | undefined {
   return connections.get(socket);
 }
 
-async function handleMessage(conn: Connection, raw: RawData, _isBinary: boolean, log: (msg: string) => void): Promise<void> {
+/**
+ * The safety rails every frame passes on arrival. Returns the decoded message
+ * to dispatch, or null when it was rejected — or was a ping, already answered.
+ */
+function admit(conn: Connection, raw: RawData, log: (msg: string) => void): ClientMessage | null {
   // Rate limit: 10 messages/second per socket, then close.
   const now = Date.now();
   conn.recentMessages = conn.recentMessages.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
@@ -142,29 +162,31 @@ async function handleMessage(conn: Connection, raw: RawData, _isBinary: boolean,
     sendError(conn, 'rate_limited', 'too many messages');
     log(`[ws] player=${conn.playerId ?? 'unauthenticated'} rate-limited, closing`);
     conn.socket.close(4002, 'rate limited');
-    return;
+    return null;
   }
 
   // 16KB message size cap.
   if (messageBytes(raw) > MAX_MESSAGE_BYTES) {
     sendError(conn, 'too_large', 'message exceeds 16KB');
     conn.socket.close(4003, 'message too large');
-    return;
+    return null;
   }
 
   const decoded = decode(raw.toString('utf8'));
   if (!decoded.ok) {
     sendError(conn, 'bad_message', decoded.error);
     violate(conn, `unparseable/unknown message: ${decoded.error}`, log);
-    return;
+    return null;
   }
-  const message = decoded.message;
 
-  if (message.t === 'ping') {
+  if (decoded.message.t === 'ping') {
     send(conn, { t: 'pong', v: 1 });
-    return;
+    return null;
   }
+  return decoded.message;
+}
 
+async function handleMessage(conn: Connection, message: ClientMessage, log: (msg: string) => void): Promise<void> {
   if (message.t === 'hello') {
     const result = await verifyAccessToken(message.token);
     if (!result.ok) {

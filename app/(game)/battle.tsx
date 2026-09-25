@@ -27,8 +27,8 @@ import { DualBoards } from '@/board/DualBoards';
 import { BATTLE_BOARD_TOP, BOARD_SIZE, boardOrigins, cellCentre } from '@/board/layout';
 import {
   ArsenalButton,
-  EmoteFloat,
   EmotePanel,
+  FloatingEmotes,
   FleetCover,
   PLATE,
   PORTRAIT,
@@ -58,7 +58,6 @@ import { useProfile } from '@/state/profile';
 import { ArtImageButton } from '@/ui/ArtImageButton';
 import { ArtPlate } from '@/ui/ArtPlate';
 import { BACKGROUNDS, BATTLE_ART } from '@/ui/assets';
-import { InkIconButton } from '@/ui/InkIconButton';
 import { InkSpinner } from '@/ui/InkSpinner';
 import { Scale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, artColor, font } from '@/ui/tokens';
@@ -139,7 +138,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   const snapTurn = useBattle((s) => s.snapTurn);
   const aiming = useBattle((s) => s.aiming);
   const finished = useBattle((s) => s.finished);
-  const emote = useBattle((s) => s.emote);
+  const emotes = useBattle((s) => s.emotes);
   const combatants = useBattle((s) => s.combatants);
   const arsenalOpen = useBattle((s) => s.arsenalOpen);
   const targeting = useBattle((s) => s.targeting);
@@ -215,7 +214,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   useEffect(() => {
     if (!matchId) return;
     return subscribeEmotes(matchId, (m) => {
-      if (m.from !== useBattle.getState().me) useBattle.getState().showEmote(m.emoteId);
+      if (m.from !== useBattle.getState().me) useBattle.getState().showEmote(m.emoteId, 'them');
     });
   }, [matchId]);
 
@@ -340,7 +339,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   const onEmote = useCallback(
     (id: number) => {
       setEmotesOpen(false);
-      useBattle.getState().showEmote(id);
+      useBattle.getState().showEmote(id, 'me');
       const id2 = useBattle.getState().matchId;
       if (id2) void sendEmote({ matchId: id2, from: me, emoteId: id });
     },
@@ -452,22 +451,23 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         ) : null}
         <Image source={BATTLE_ART.crossedWeapons} style={styles.gutterBadge} contentFit="contain" pointerEvents="none" />
         <ArtImageButton
-          source={BATTLE_ART.emoteTab}
+          source={BATTLE_ART.emoteButton}
           w={34}
-          h={34 * (49 / 68)}
+          h={34 * (174 / 176)}
           label="Emotes"
           hitSlop={8}
           onPress={() => setEmotesOpen((v) => !v)}
           style={styles.gutterEmote}
         />
-        <View style={styles.gutterBottom}>
-          <InkIconButton
-            icon="home"
-            size={36}
-            accessibilityLabel="Leave the match"
-            onPress={onLeave}
-          />
-        </View>
+        <ArtImageButton
+          source={BATTLE_ART.homeButton}
+          w={34}
+          h={34 * (166 / 176)}
+          label="Leave the match"
+          hitSlop={8}
+          onPress={onLeave}
+          style={styles.gutterBottom}
+        />
         {animating ? (
           <Pressable style={styles.skip} onPress={onSkip} accessibilityLabel="Skip animation" />
         ) : null}
@@ -476,7 +476,12 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
       {/* ---- HUD ---- */}
       <View style={styles.hud} pointerEvents="box-none">
         <View style={styles.portraitOwn}>
-          <PortraitCard avatarId={mine?.avatarId ?? 1} tint={mine?.avatarColor ?? ''} />
+          <PortraitCard
+            avatarId={mine?.avatarId ?? 1}
+            tint={mine?.avatarColor ?? ''}
+            countryCode={mine?.countryCode ?? ''}
+            flagSide="right"
+          />
         </View>
         {shown.mode === 'advanced' ? (
           <View style={styles.arsenalButton}>
@@ -494,22 +499,20 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         </View>
         <Image source={BATTLE_ART.logo} style={styles.logo} contentFit="contain" pointerEvents="none" />
         <View style={styles.plateThem}>
-          <PlayerPlate
-            side="right"
-            name={opponent?.name ?? '—'}
-            points={opponent?.points ?? 0}
-            countryCode={opponent?.countryCode}
-          />
+          <PlayerPlate side="right" name={opponent?.name ?? '—'} points={opponent?.points ?? 0} />
         </View>
         <View style={styles.portraitThem}>
-          <PortraitCard avatarId={opponent?.avatarId ?? 2} tint={opponent?.avatarColor ?? ''} />
-          {emote ? (
-            <View style={styles.emoteFloat}>
-              <EmoteFloat id={emote.id} nonce={emote.nonce} />
-            </View>
-          ) : null}
+          <PortraitCard
+            avatarId={opponent?.avatarId ?? 2}
+            tint={opponent?.avatarColor ?? ''}
+            countryCode={opponent?.countryCode ?? ''}
+            flagSide="left"
+          />
         </View>
       </View>
+
+      {/* Sent and received emotes, rising up the sheet like Meet's reactions. */}
+      <FloatingEmotes emotes={emotes} opponentName={opponent?.name ?? 'Opponent'} />
 
       {arsenalOpen ? (
         <BattleArsenalPopover
@@ -563,7 +566,6 @@ const styles = StyleSheet.create({
     width: LOGO_W,
     height: LOGO_W * (157 / 529),
   },
-  emoteFloat: { position: 'absolute', left: 7, top: -6 },
   gutterBadge: {
     position: 'absolute',
     left: ORIGINS.gutterCentre.x - 12,
@@ -578,8 +580,8 @@ const styles = StyleSheet.create({
   },
   gutterBottom: {
     position: 'absolute',
-    left: ORIGINS.gutterCentre.x - 18,
-    top: BATTLE_BOARD_TOP + BOARD_SIZE - 40,
+    left: ORIGINS.gutterCentre.x - 17,
+    top: BATTLE_BOARD_TOP + BOARD_SIZE - 38,
   },
   skip: {
     position: 'absolute',

@@ -54,6 +54,30 @@ export const menuColor = {
 } as const;
 
 /**
+ * The store's palette: the section pastels sampled from its header art, the
+ * price and owned pills, and each colour edition's wash (a bought card) and
+ * ink (its labels).
+ */
+export const storeColor = {
+  attack: '#FDCDCC',
+  boards: '#D0ECFC',
+  defence: '#DEF9E2',
+  fleet: '#E7D4FC',
+  price: '#FCE7A8',
+  owned: '#CFEFC6',
+  ownedInk: '#23793A',
+  short: '#B3261E',
+  confirm: '#BFDB6A',
+  cancel: '#FFFDF8',
+  crimsonWash: '#FDEBEB',
+  emeraldWash: '#E4F6EC',
+  purpleWash: '#EFE6FB',
+  crimsonInk: '#B4212C',
+  emeraldInk: '#16794A',
+  purpleInk: '#6A2EC0',
+} as const;
+
+/**
  * The commissioned art's own ink (assets/images/login-assets, keyboard,
  * name-screen): `ink` is the baked labels' glyph colour, sampled, so the live
  * labels drawn on that art sit beside its own lettering.

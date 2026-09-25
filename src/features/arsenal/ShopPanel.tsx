@@ -11,6 +11,11 @@
  * Each group has its own header line saying exactly that, so a first-time
  * player can tell a purchase for later from one that is placed now.
  *
+ * Nothing bought is final before Battle!: a card holding one or more shows a
+ * "−" beside its ⓘ that puts one back and returns its fuel — one not on the
+ * board first, then the one waiting for its cell, else one off the board. An
+ * item waiting for its cell can also be put back from the prompt itself.
+ *
  * 3 * CARD_W + 2 * GAP + 2 * PAD = PANEL_W.
  */
 import { specFor } from '@engine/arsenal';
@@ -27,10 +32,11 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Line, Polygon } from 'react-native-svg';
+import Svg, { Circle, Line, Polygon } from 'react-native-svg';
 
 import { haptic } from '@/audio/haptics';
 import { usePlacement } from '@/state/placement';
+import { ArtPlate } from '@/ui/ArtPlate';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 import { BATTLE_ART } from '@/ui/assets';
 import { artColor, font } from '@/ui/tokens';
@@ -165,6 +171,20 @@ const ShopCard = memo(function ShopCard({
     if (!result.ok && result.reason) onNotice({ text: result.reason, tone: 'red' });
   };
 
+  const putBack = () => {
+    const state = usePlacement.getState();
+    const owned = state.arsenal.filter((item) => item.kind === kind);
+    const pick =
+      owned.find((item) => item.at === undefined && item.id !== state.pendingArsenalId) ??
+      owned.find((item) => item.id === state.pendingArsenalId) ??
+      owned[owned.length - 1];
+    if (!pick) return;
+    haptic('buttonPress');
+    if (state.sellArsenal(pick.id).ok) {
+      onNotice({ text: `${label} put back · ${spec.cost} fuel returned`, tone: 'green' });
+    }
+  };
+
   return (
     <View {...tutorialTarget} style={[styles.card, { left: x, top: y }]}>
       <Pressable
@@ -189,7 +209,7 @@ const ShopCard = memo(function ShopCard({
             <Image source={BATTLE_ART.diamond} style={styles.diamond} contentFit="contain" />
           </View>
           <View style={styles.icon}>
-            <ArsenalIcon kind={kind} w={46} h={25} />
+            <ArsenalIcon kind={kind} w={40} h={25} />
           </View>
           <OwnedCount count={count} max={spec.max} />
           <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.name, atCap && styles.nameCapped]}>
@@ -207,6 +227,20 @@ const ShopCard = memo(function ShopCard({
       >
         <Image source={BATTLE_ART.info} style={StyleSheet.absoluteFill} contentFit="contain" />
       </Pressable>
+      {count > 0 ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Put back one ${label} and get ${spec.cost} fuel back`}
+          hitSlop={8}
+          onPress={putBack}
+          style={({ pressed }) => [styles.putBack, { transform: [{ scale: pressed ? 0.85 : 1 }] }]}
+        >
+          <Svg width={17} height={17} viewBox="0 0 17 17" style={StyleSheet.absoluteFill}>
+            <Circle cx={8.5} cy={8.5} r={7.6} fill="#FFFDF7" stroke={artColor.red} strokeWidth={1.6} />
+            <Line x1={4.8} y1={8.5} x2={12.2} y2={8.5} stroke={artColor.red} strokeWidth={2} strokeLinecap="round" />
+          </Svg>
+        </Pressable>
+      ) : null}
     </View>
   );
 });
@@ -252,7 +286,7 @@ export function ShopPanel({ onUnaffordable, onInfo }: ShopPanelProps) {
         {SLOTS.map((slot) =>
           slot.kind === 'note' ? (
             <View key="note" pointerEvents="none" style={[styles.note, { left: slot.x, top: slot.y }]}>
-              <Text style={styles.noteText}>In battle, tap Arsenal, pick one and aim it.</Text>
+              <Text style={styles.noteText}>Changed your mind? Tap − on a card to put one back.</Text>
             </View>
           ) : (
             <ShopCard
@@ -270,9 +304,21 @@ export function ShopPanel({ onUnaffordable, onInfo }: ShopPanelProps) {
         )}
       </View>
       {pendingArsenalId ? (
-        <View pointerEvents="none" style={styles.pending}>
-          <Image source={BATTLE_ART.weaponRow} style={StyleSheet.absoluteFill} contentFit="fill" />
-          <Text style={styles.pendingText}>Now tap an open cell on your board</Text>
+        <View pointerEvents="box-none" style={styles.pendingWrap}>
+          <View pointerEvents="none" style={styles.pending}>
+            <Image source={BATTLE_ART.weaponRow} style={StyleSheet.absoluteFill} contentFit="fill" />
+            <Text style={styles.pendingText}>Now tap an open cell on your board</Text>
+          </View>
+          <ArtPlate
+            family="sketch"
+            tone="cream"
+            w={120}
+            h={30}
+            fontSize={14}
+            label="Put it back"
+            accessibilityLabel="Put this item back and get its fuel back"
+            onPress={() => usePlacement.getState().cancelPendingArsenal()}
+          />
         </View>
       ) : null}
     </View>
@@ -325,7 +371,9 @@ const styles = StyleSheet.create({
   price: { position: 'absolute', right: 7, top: 3, flexDirection: 'row', alignItems: 'center', gap: 2 },
   priceText: { color: artColor.navy, fontFamily: font.display, fontSize: 14, fontVariant: ['tabular-nums'] },
   diamond: { width: 8, height: 12 },
-  icon: { position: 'absolute', left: (CARD_W - 46) / 2, top: 4, width: 46, height: 25 },
+  // Clear of the ⓘ and the − on the left and the price on the right.
+  icon: { position: 'absolute', left: 44, top: 4, width: 40, height: 25 },
+  putBack: { position: 'absolute', left: 25, top: 4, width: 17, height: 17, zIndex: 4 },
   count: { position: 'absolute', left: 8, bottom: 4 },
   countText: { color: artColor.navy, fontFamily: font.label, fontSize: 12, fontVariant: ['tabular-nums'] },
   name: {
@@ -342,11 +390,16 @@ const styles = StyleSheet.create({
   max: { position: 'absolute', right: 3, bottom: 2, width: 31, height: 22 },
   note: { position: 'absolute', width: CARD_W, height: CARD_H, justifyContent: 'center', paddingHorizontal: 8 },
   noteText: { color: artColor.soft, fontFamily: font.body, fontSize: 11, lineHeight: 14, textAlign: 'center' },
-  pending: {
+  pendingWrap: {
     position: 'absolute',
-    left: 50,
-    right: 50,
-    top: ROW_2 + 6,
+    left: 0,
+    right: 0,
+    top: ROW_2 - 8,
+    alignItems: 'center',
+    gap: 6,
+  },
+  pending: {
+    width: SHOP_W - 100,
     height: 38,
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,0 +1,9 @@
+{
+  "tool": "built-in image_gen",
+  "status": "Generation stopped at usage limit. Emerald complete; crimson board and purple set pending.",
+  "firstImage": {
+    "path": "emerald/fleet/battleship.png",
+    "prompt": "Recolor the existing battleship emerald green, preserve cream highlights, drawing details, top-down horizontal orientation, silhouette and proportions. Genuine transparent background."
+  },
+  "images": []
+}

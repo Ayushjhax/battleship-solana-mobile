@@ -40,6 +40,8 @@ export interface DbMockOptions {
    * not been cleaned yet.
    */
   readonly settleDelayMs?: number;
+  /** Holds up the profile lookup a queue join waits on — a slow database. */
+  readonly profileDelayMs?: number;
 }
 
 export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } {
@@ -55,6 +57,7 @@ export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } 
     BOT_PLAYER_ID: 'b0000000-0000-4000-8000-000000000001',
     fetchOpponentSummary: vi.fn(async (userId: string) => {
       record('fetchOpponentSummary')(userId);
+      if (options.profileDelayMs) await new Promise((resolve) => setTimeout(resolve, options.profileDelayMs));
       return {
         id: userId,
         name: userId,

@@ -368,6 +368,10 @@ piece "$TMP/coins.png" "$BT/coins.png" 3
 for n in thumbs-up grin angry-captain wave medal skull question fire; do
   piece "$BC/emotes/$n.png" "$BT/emote-$n.png" 4
 done
+# The battle's gutter buttons: the glossy home and emote app icons, trimmed.
+for n in home emote; do
+  magick "$SRC/app-icons/$n.png" -trim +repage -bordercolor none -border 12 -resize '176x176>' -strip "$BT/icon-$n.png"
+done
 # The effect diagrams' hatched square (the radar diagram's middle cell) and
 # the paper it sits on; the grid lines are drawn live.
 magick "$FP/radar-scan-diagram.png" -crop 34x34+78+78 +repage -strip "$BT/diagram-cell.png"

@@ -9,6 +9,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import type { GameOverReason, MatchEvent, MatchMode } from '@engine/types';
 import type { Database, Json } from '../../src/net/database.types';
+import { envMs } from './env';
 import type { OpponentSummary } from './protocol';
 import type { TrustedPrivyAccount } from './privy';
 
@@ -16,6 +17,30 @@ import type { TrustedPrivyAccount } from './privy';
 export const BOT_PLAYER_ID = 'b0000000-0000-4000-8000-000000000001';
 
 let client: SupabaseClient<Database> | null = null;
+
+/**
+ * Every database request gives up after SEABATTLE_DB_TIMEOUT_MS (10 s).
+ * supabase-js has no timeout of its own, and a request that never answers
+ * holds whatever awaits it forever: a queue join stuck on the profile lookup
+ * keeps that player marked "joining" in the matchmaker until the process
+ * restarts, so every later try is told "already queued" and nobody is ever
+ * matched. Timed out, the request fails like any other database error — and
+ * every caller already has a path for those (a default profile, an `internal`
+ * error to the player, a logged refund retry).
+ */
+function boundedFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error('database request timed out')),
+    envMs('SEABATTLE_DB_TIMEOUT_MS', 10_000),
+  );
+  const outer = init?.signal;
+  if (outer) {
+    if (outer.aborted) controller.abort(outer.reason);
+    else outer.addEventListener('abort', () => controller.abort(outer.reason), { once: true });
+  }
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 export function db(): SupabaseClient<Database> {
   if (client) return client;
@@ -28,6 +53,7 @@ export function db(): SupabaseClient<Database> {
 
   client = createClient<Database>(url, secretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: boundedFetch },
   });
   return client;
 }
@@ -132,10 +158,14 @@ export async function verifyDatabaseConnection(): Promise<void> {
 
 /** For matchmaking's rank window and the `matched` message's player cards. */
 export async function fetchOpponentSummary(userId: string): Promise<OpponentSummary> {
+  // A queue join waits on this, and a miss already degrades to a default
+  // profile below — so one bounded try, not supabase-js's three retries
+  // (1 + 2 + 4 s of backoff on top of a timeout each).
   const { data, error } = await db()
     .from('profiles')
     .select('id,name,avatar_id,avatar_color,country_code,rank_points,is_bot')
     .eq('id', userId)
+    .retry(false)
     .maybeSingle<{
       id: string;
       name: string;

@@ -3,7 +3,8 @@
 # Needs ImageMagick 7. Run by scripts/ink-assets.sh (npm run assets), or on its
 # own. Output: assets/backgrounds/, assets/menu/, assets/login/, assets/name/,
 # assets/keyboard/ and the rest of the screens' folders; placement and the
-# battle (assets/fx, assets/fleet, assets/battle) are scripts/battle-assets.sh.
+# battle (assets/fx, assets/fleet, assets/battle) are scripts/battle-assets.sh,
+# the store and the flags (assets/shop, assets/flags) scripts/store-assets.sh.
 #
 #  - backgrounds/*.jpg: the full-bleed page backdrops. The sources are ~2.5 MB
 #    opaque PNGs; as JPEG they load and decode several times faster, which is
@@ -474,3 +475,6 @@ rm -rf "$TMP"
 
 echo "fleet placement and the battle"
 bash scripts/battle-assets.sh
+
+echo "the store and the flags"
+bash scripts/store-assets.sh

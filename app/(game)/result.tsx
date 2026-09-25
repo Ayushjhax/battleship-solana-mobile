@@ -37,8 +37,10 @@ import Animated, {
 
 import { playSfx } from '@/audio/sfx';
 import { haptic } from '@/audio/haptics';
+import { FlagBadge } from '@/features/flags/FlagBadge';
 import { useMatchClient } from '@/net/match-client';
 import { flushPendingWager } from '@/net/offlineWager';
+import { spendableCoins, useLocker, walletFor } from '@/state/locker';
 import { usePoints, WAGER_STAKE } from '@/state/points';
 import { useProfile } from '@/state/profile';
 import { ArtImageButton } from '@/ui/ArtImageButton';
@@ -137,12 +139,16 @@ function prepare(
   const unapplied =
     !local && matchId.length > 0 && !profile.settledMatchIds.includes(matchId);
   const pointsAfter = unapplied ? profile.rankPoints + reward.points : profile.rankPoints;
-  const coinsAfter = unapplied ? profile.coins + reward.coins : profile.coins;
+  // The balance shown is what can still be spent: the store's purchases off.
+  const coinsAfter = spendableCoins(
+    unapplied ? profile.coins + reward.coins : profile.coins,
+    walletFor(useLocker.getState().wallets, profile.userId),
+  );
 
   return {
     pointsBefore: pointsAfter - reward.points,
     pointsAfter,
-    coinsBefore: coinsAfter - reward.coins,
+    coinsBefore: Math.max(0, coinsAfter - reward.coins),
     coinsAfter,
     reward,
     wager: wagered
@@ -255,10 +261,7 @@ function Card({
         </Text>
       </View>
       <View style={[styles.cardMeta, right ? { flexDirection: 'row-reverse' } : null]}>
-        <View style={styles.badge}>
-          <Image source={RESULT_ART.countryBadge} style={StyleSheet.absoluteFill} contentFit="fill" />
-          <Text style={styles.badgeText}>{flag}</Text>
-        </View>
+        <FlagBadge code={flag} w={30} />
         <Text style={styles.cardPoints}>{points} pts</Text>
       </View>
     </Animated.View>
@@ -415,7 +418,7 @@ export default function ResultScreen() {
       points: Number(params.oppPoints ?? 0) || 0,
       avatarId: Number(params.oppAvatar ?? 2) || 2,
       tint: params.oppTint || '#3A3A3A',
-      flag: params.oppFlag || '??',
+      flag: params.oppFlag ?? '',
     }),
     [params.oppAvatar, params.oppFlag, params.oppName, params.oppPoints, params.oppTint],
   );
@@ -554,7 +557,7 @@ export default function ResultScreen() {
         points={totals.pointsAfter}
         avatarId={myAvatarId}
         tint={myTint}
-        flag={myFlag || '??'}
+        flag={myFlag}
       />
       <Card
         side="right"
@@ -634,8 +637,6 @@ const styles = StyleSheet.create({
   },
   cardName: { color: artColor.ink, fontFamily: font.display, fontSize: 15 },
   cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  badge: { width: 38, height: 38 * (47 / 85), alignItems: 'center', justifyContent: 'center' },
-  badgeText: { color: artColor.red, fontFamily: font.display, fontSize: 12 },
   cardPoints: { color: artColor.ink, fontFamily: font.body, fontSize: 13 },
   coin: { position: 'absolute', top: CARD_Y + PORTRAIT.h / 2 - COIN / 2, left: 0, width: COIN, height: COIN },
   buttons: {

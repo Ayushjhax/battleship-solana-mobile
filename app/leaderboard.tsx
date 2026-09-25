@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 
+import { FlagBadge } from '@/features/flags/FlagBadge';
 import {
   getLeaderboard,
   getMyLeaderboardRow,
@@ -134,7 +135,7 @@ const Row = memo(function Row({
         contentFit="contain"
         cachePolicy="memory-disk"
       />
-      <Text style={[styles.cell, styles.flag, { left: COL.flag }]}>{entry.country_code ?? '??'}</Text>
+      <FlagBadge code={entry.country_code} w={24} style={[styles.flag, { left: COL.flag }]} />
       <Text style={[styles.cell, styles.name, { left: COL.name }, me && styles.meText]} numberOfLines={1}>
         {entry.name}
       </Text>
@@ -260,7 +261,7 @@ const styles = StyleSheet.create({
   cell: { position: 'absolute', top: 3, fontFamily: font.display, fontSize: 16, lineHeight: 20 },
   rank: { width: 40, textAlign: 'center', color: artColor.label },
   avatar: { position: 'absolute', top: 2, width: AVATAR, height: AVATAR },
-  flag: { top: 6, color: artColor.red, fontFamily: font.label, fontSize: 11, lineHeight: 14 },
+  flag: { position: 'absolute', top: 4 },
   name: { width: COL.wins - COL.name - 8, color: artColor.ink },
   num: { textAlign: 'center', color: artColor.ink },
   meText: { color: artColor.red },

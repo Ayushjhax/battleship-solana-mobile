@@ -35,6 +35,7 @@ import Animated, {
 import Svg from 'react-native-svg';
 
 import { haptic } from '@/audio/haptics';
+import { useSpendableCoins } from '@/state/locker';
 import { useProfile } from '@/state/profile';
 import { AssetSlot } from '@/ui/AssetSlot';
 import { AVATARS, UI_ART } from '@/ui/assets';
@@ -289,6 +290,7 @@ export default function CityScreen() {
 function CityCanvas() {
   const router = useRouter();
   const profile = useProfile();
+  const coins = useSpendableCoins();
   const progress = rankProgress(profile.rankPoints);
   const [welcome, setWelcome] = useState(() => !useProfile.getState().hasVisitedCity);
   const name = profile.name || 'Sailor';
@@ -447,7 +449,7 @@ function CityCanvas() {
         />
       </View>
       <View style={styles.topRight} pointerEvents="box-none">
-        <CurrencyChip kind="coins" value={profile.coins} />
+        <CurrencyChip kind="coins" value={coins} />
         <CurrencyChip kind="gems" value={profile.gems} />
       </View>
       <View style={styles.back}>

@@ -34,11 +34,16 @@
  * Liveness. Android will happily keep a dead socket "open" for a minute
  * after the radio drops, and the server's own heartbeat (30 s ping, two
  * misses) takes longer than its 45 s disconnect grace to notice. So while
- * in a match the client sends the protocol's `ping` every LIVENESS_PING_MS
- * and treats LIVENESS_DEAD_MS of silence — no frame of any kind — as a
- * dropped socket: close it and go through the normal reconnect. `nudge()`
- * (the screens call it when the app returns to the foreground) pings at
- * once and cuts any backoff wait short.
+ * the socket is open — in line as much as in a match — the client sends the
+ * protocol's `ping` every LIVENESS_PING_MS and treats LIVENESS_DEAD_MS of
+ * silence — no frame of any kind — as a dropped socket: close it and go
+ * through the normal reconnect. The ping is what makes the silence mean
+ * something: a queued player hears nothing else until `matched`, and the
+ * server's ping frames never reach onmessage. (Pinging only in a match used
+ * to drop every queued socket at ~30 s and put the player back at the end of
+ * the line — nobody ever waited long enough for a bot or a wide rank window.)
+ * `nudge()` (the screens call it when the app returns to the foreground)
+ * pings at once and cuts any backoff wait short.
  */
 import type { Coord, GameOverReason, MatchEvent, MatchMode, PlayerView } from '@engine/types';
 import { create } from 'zustand';
@@ -381,7 +386,7 @@ function startLiveness(): void {
       declareDead('no frame in 20s');
       return;
     }
-    if (useMatchClient.getState().matchId) send(pingMessage());
+    send(pingMessage());
   }, LIVENESS_PING_MS);
 }
 

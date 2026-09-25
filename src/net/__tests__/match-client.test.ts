@@ -442,6 +442,26 @@ describe('match client', () => {
     expect(mc.getState().view?.phase).toBe('playing');
   });
 
+  // A queued player hears nothing until `matched` — the real server only keeps
+  // the socket alive with protocol-level ping frames, which never reach
+  // onmessage. The silence check used to count that quiet line as a dead
+  // socket, drop it every ~30 s and queue again at the back, so the server
+  // never saw anyone wait long enough for a bot (45 s) or a wide rank window.
+  it('stays in line on its first socket while the server says nothing', async () => {
+    const mc = await client();
+    mc.getState().queue('classic');
+    await until(() => mc.getState().status === 'queued', 5000, 'queued');
+    const count = (t: string) => server.received.filter((m) => m.t === t).length;
+    const hellos = count('hello');
+    const queues = count('queue');
+    // Past LIVENESS_DEAD_MS (20 s) plus a full LIVENESS_PING_MS (10 s) tick.
+    await sleep(32_000);
+    expect(mc.getState().status).toBe('queued');
+    expect(count('hello')).toBe(hellos);
+    expect(count('queue')).toBe(queues);
+    expect(count('ping')).toBeGreaterThan(0);
+  }, 45_000);
+
   it('a nudge cuts a scheduled backoff short', async () => {
     const mc = await playUntilPlaying();
     const room = server.room;

@@ -2,8 +2,9 @@
  * The battle's HUD, drawn to its mockup in the fleet art — left to right:
  *   your captain in the portrait frame · the Arsenal button (the chest, with
  *   a red count of what is left) over your plate — star, rank shield, rank,
- *   name, points · the Empire of Bits banner · the opponent's plate — points,
- *   rank, name, shield, port — · their captain.
+ *   name, points · the Empire of Bits banner · the opponent's plate, its
+ *   mirror · their captain. Each captain wears their country's flag badge
+ *   pinned to the frame's inner corner.
  * Plus the pieces that float over it: the emote sticker and picker, and the
  * hotseat fleet cover.
  */
@@ -25,11 +26,13 @@ import Svg, { Circle } from 'react-native-svg';
 
 import { haptic } from '@/audio/haptics';
 import { BOARD_SIZE } from '@/board/layout';
+import { FlagBadge, flagBadgeHeight } from '@/features/flags/FlagBadge';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
+import { EMOTE_RISE_MS } from '@/state/battle';
 import { BATTLE_ART, EMOTES } from '@/ui/assets';
 import { InkPanel } from '@/ui/InkPanel';
 import { portraitFor } from '@/ui/portraits';
-import { artColor, color, font, space, type as typeScale } from '@/ui/tokens';
+import { CANVAS_H, CANVAS_W, artColor, color, font, space, type as typeScale } from '@/ui/tokens';
 
 // ---------------------------------------------------------------------------
 // Portrait — the player's own captain in the frame
@@ -42,10 +45,24 @@ export const PORTRAIT = { w: 52, h: 52 * (183 / 168) } as const;
  * portrait art, cropped to it: that art carries a mat of its own and its
  * picture fills ~78 % of the square, so it is scaled up to meet the hole.
  */
-export function PortraitCard({ avatarId, tint }: { avatarId: number; tint: string }) {
+const FLAG_W = 25;
+
+export function PortraitCard({
+  avatarId,
+  tint,
+  countryCode,
+  flagSide = 'right',
+}: {
+  avatarId: number;
+  tint: string;
+  /** Pinned to the frame's corner on `flagSide` — the side facing the board. */
+  countryCode?: string;
+  flagSide?: 'left' | 'right';
+}) {
   const k = PORTRAIT.w / 168;
   const hole = { x: 18 * k, y: 17 * k, w: 131 * k, h: 146 * k };
   const pic = Math.max(hole.w, hole.h) / 0.78;
+  const flagRight = flagSide === 'right';
   return (
     <View style={{ width: PORTRAIT.w, height: PORTRAIT.h }}>
       <View style={[styles.hole, { left: hole.x, top: hole.y, width: hole.w, height: hole.h }]}>
@@ -57,6 +74,18 @@ export function PortraitCard({ avatarId, tint }: { avatarId: number; tint: strin
         />
       </View>
       <Image source={BATTLE_ART.portraitFrame} style={StyleSheet.absoluteFill} contentFit="fill" />
+      {countryCode !== undefined ? (
+        <FlagBadge
+          code={countryCode}
+          w={FLAG_W}
+          style={{
+            position: 'absolute',
+            left: flagRight ? PORTRAIT.w - FLAG_W + 8 : -8,
+            top: PORTRAIT.h - flagBadgeHeight(FLAG_W) + 4,
+            transform: [{ rotate: flagRight ? '-7deg' : '7deg' }],
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -124,19 +153,10 @@ export const PLATE = { w: 256, h: 40 } as const;
 
 /**
  * Yours reads star · shield · rank over name · points; the opponent's is its
- * mirror — points · rank over name · shield · port — as in the mockup.
+ * mirror — points · rank over name · shield · star. (Their country flies on
+ * their portrait, beside the plate.)
  */
-export function PlayerPlate({
-  side,
-  name,
-  points,
-  countryCode,
-}: {
-  side: 'left' | 'right';
-  name: string;
-  points: number;
-  countryCode?: string;
-}) {
+export function PlayerPlate({ side, name, points }: { side: 'left' | 'right'; name: string; points: number }) {
   const rank = rankFor(points).name;
   const nameSize = name.length <= 9 ? 18 : name.length <= 12 ? 16 : 14;
   const left = side === 'left';
@@ -162,13 +182,7 @@ export function PlayerPlate({
     <View style={{ width: PLATE.w, height: PLATE.h }} accessibilityLabel={`${rank} ${name}, ${points} points`}>
       <Image source={BATTLE_ART.infoFrame} style={StyleSheet.absoluteFill} contentFit="fill" />
       <View style={[styles.plateRow, { flexDirection: left ? 'row' : 'row-reverse' }]}>
-        {left ? (
-          <Image source={BATTLE_ART.starBadge} style={styles.star} contentFit="contain" />
-        ) : (
-          <View style={styles.port}>
-            <Text style={styles.portText}>{(countryCode || '··').slice(0, 2).toUpperCase()}</Text>
-          </View>
-        )}
+        <Image source={BATTLE_ART.starBadge} style={styles.star} contentFit="contain" />
         <Image
           source={left ? BATTLE_ART.rankBadge : BATTLE_ART.rankBadgeAdmiral}
           style={styles.shield}
@@ -185,31 +199,68 @@ export function PlayerPlate({
 // Emotes — the floating sticker and the picker
 // ---------------------------------------------------------------------------
 
-export function EmoteFloat({ id, nonce }: { id: number; nonce: number }) {
-  const y = useSharedValue(0);
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0.4);
+/**
+ * One emote rising from the bottom of the sheet to the top, the way Google
+ * Meet's reactions do: it pops in, sways a little as it climbs, and thins
+ * out near the top. Yours rise over your own board, the opponent's over
+ * theirs, each with a small name tag so it is clear who sent it.
+ */
+const EMOTE_SIZE = 46;
+
+function RisingEmote({ id, from, lane, name }: { id: number; from: 'me' | 'them'; lane: number; name: string }) {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(0);
+  const pop = useSharedValue(0.3);
   useEffect(() => {
-    y.value = 0;
-    opacity.value = 0;
-    scale.value = 0.4;
-    scale.value = withSpring(1, { damping: 8, stiffness: 220 });
-    y.value = withTiming(-34, { duration: 1700, easing: Easing.out(Easing.quad) });
-    opacity.value = withSequence(
-      withTiming(1, { duration: 140 }),
-      withTiming(1, { duration: 1100 }),
-      withTiming(0, { duration: 420 }),
-    );
-  }, [nonce, y, opacity, scale]);
-  const style = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: y.value }, { scale: scale.value }],
-  }));
+    t.value = withTiming(1, { duration: reduceMotion ? 0 : EMOTE_RISE_MS, easing: Easing.out(Easing.quad) });
+    pop.value = withSpring(1, { damping: 7, stiffness: 240 });
+  }, [pop, reduceMotion, t]);
+  // Its lane: somewhere over the sender's own board, spread by its key.
+  const x = (from === 'me' ? 150 : 470) + lane;
+  const style = useAnimatedStyle(() => {
+    const p = t.value;
+    const fadeIn = Math.min(1, p / 0.06);
+    const fadeOut = p > 0.7 ? Math.max(0, 1 - (p - 0.7) / 0.3) : 1;
+    return {
+      opacity: fadeIn * fadeOut,
+      transform: [
+        { translateX: x + Math.sin(p * Math.PI * 2.6) * 10 },
+        { translateY: CANVAS_H - 40 - p * (CANVAS_H - 110) },
+        { scale: pop.value * (1 - 0.15 * p) },
+      ],
+    };
+  });
   const emote = EMOTES.find((e) => e.id === id) ?? EMOTES[0];
   return (
-    <Animated.View pointerEvents="none" style={[styles.float, style]}>
-      {emote?.source ? <Image source={emote.source} style={StyleSheet.absoluteFill} contentFit="contain" /> : null}
+    <Animated.View pointerEvents="none" style={[styles.rising, style]}>
+      {emote?.source ? <Image source={emote.source} style={styles.risingArt} contentFit="contain" /> : null}
+      <Text numberOfLines={1} style={[styles.risingName, from === 'me' ? styles.risingMe : styles.risingThem]}>
+        {name}
+      </Text>
     </Animated.View>
+  );
+}
+
+/** Every emote in flight — sent and received — over the whole battle. */
+export function FloatingEmotes({
+  emotes,
+  opponentName,
+}: {
+  emotes: readonly { key: number; id: number; from: 'me' | 'them' }[];
+  opponentName: string;
+}) {
+  return (
+    <View pointerEvents="none" style={styles.risingLayer}>
+      {emotes.map((e) => (
+        <RisingEmote
+          key={e.key}
+          id={e.id}
+          from={e.from}
+          lane={(e.key * 53) % 150}
+          name={e.from === 'me' ? 'You' : opponentName}
+        />
+      ))}
+    </View>
   );
 }
 
@@ -376,23 +427,27 @@ const styles = StyleSheet.create({
   },
   star: { width: 20, height: 20 },
   shield: { width: 16, height: 21 },
-  port: {
-    width: 24,
-    height: 17,
-    borderWidth: 1.4,
-    borderColor: artColor.red,
-    backgroundColor: '#FFFDF7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  portText: { color: artColor.red, fontFamily: font.display, fontSize: 10, lineHeight: 12 },
   who: { flex: 1, minWidth: 0 },
   rank: { color: artColor.soft, fontFamily: font.label, fontSize: 10, lineHeight: 12, maxWidth: '100%' },
   name: { color: artColor.navy, fontFamily: font.display, lineHeight: 20, maxWidth: '100%' },
   score: { width: 64 },
   pointsLabel: { color: artColor.soft, fontFamily: font.label, fontSize: 10, lineHeight: 12 },
   points: { color: artColor.red, fontFamily: font.display, fontSize: 18, lineHeight: 20, fontVariant: ['tabular-nums'] },
-  float: { position: 'absolute', width: 38, height: 38 },
+  risingLayer: { position: 'absolute', left: 0, top: 0, width: CANVAS_W, height: CANVAS_H, zIndex: 60 },
+  rising: { position: 'absolute', left: 0, top: 0, width: EMOTE_SIZE + 30, alignItems: 'center' },
+  risingArt: { width: EMOTE_SIZE, height: EMOTE_SIZE },
+  risingName: {
+    marginTop: 1,
+    paddingHorizontal: 6,
+    fontFamily: font.display,
+    fontSize: 10,
+    lineHeight: 13,
+    maxWidth: EMOTE_SIZE + 30,
+    backgroundColor: 'rgba(251, 249, 242, 0.92)',
+    borderWidth: 1,
+  },
+  risingMe: { color: artColor.navy, borderColor: artColor.navy },
+  risingThem: { color: artColor.red, borderColor: artColor.red },
   panelWrap: {
     position: 'absolute',
     left: 0,

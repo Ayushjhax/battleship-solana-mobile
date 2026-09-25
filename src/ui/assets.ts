@@ -578,6 +578,9 @@ export const BATTLE_ART = {
   seagull: require('../../assets/battle/seagull.png') as Asset,
   waveMark: require('../../assets/battle/wave-mark.png') as Asset,
   oceanUnites: require('../../assets/battle/ocean-unites-us.png') as Asset,
+  /** The gutter's buttons: glossy app icons (176 x 166 and 176 x 174). */
+  homeButton: require('../../assets/battle/icon-home.png') as Asset,
+  emoteButton: require('../../assets/battle/icon-emote.png') as Asset,
   /** The hatched square of the effect diagrams; the grid is drawn live. */
   diagramCell: require('../../assets/battle/diagram-cell.png') as Asset,
   /** Frames, filled with paper and built at the aspect each is drawn. */
@@ -677,6 +680,95 @@ export const FX_ART = {
   bomb: strip(require('../../assets/fx/bomb.webp'), 75, 160),
 } as const;
 
+/**
+ * The illustrated "How to play" walkthrough (assets/how-to-play-assets), a
+ * five-step explainer read before the interactive tutorial (drawn as-is,
+ * already trimmed — no pipeline pass needed). `ships` are decorative fleet
+ * silhouettes for the diagram boards, largest first, matching FLEET_SPEC's
+ * order (1 battleship, 2 cruisers, 3 destroyers, 2 boats).
+ */
+export const HOW_TO_PLAY_ART = {
+  shared: {
+    logo: require('../../assets/how-to-play-assets/shared/empire-of-bits-logo.png') as Asset,
+    skip: require('../../assets/how-to-play-assets/shared/skip-button.png') as Asset,
+    arsenalButton: require('../../assets/how-to-play-assets/shared/arsenal-button.png') as Asset,
+    captainCardFrame: require('../../assets/how-to-play-assets/shared/captain-card-frame.png') as Asset,
+    captainIllustration: require('../../assets/how-to-play-assets/shared/captain-illustration.png') as Asset,
+    playerAvatar: require('../../assets/how-to-play-assets/shared/player-avatar.png') as Asset,
+    opponentAvatar: require('../../assets/how-to-play-assets/shared/opponent-avatar.png') as Asset,
+    playerRankBadge: require('../../assets/how-to-play-assets/shared/player-rank-badge.png') as Asset,
+    admiralRankBadge: require('../../assets/how-to-play-assets/shared/admiral-rank-badge.png') as Asset,
+    starBadge: require('../../assets/how-to-play-assets/shared/star-badge.png') as Asset,
+    crossedSwords: require('../../assets/how-to-play-assets/shared/crossed-swords.png') as Asset,
+    strategyQuote: require('../../assets/how-to-play-assets/shared/strategy-quote.png') as Asset,
+    smallerBattlesQuote: require('../../assets/how-to-play-assets/shared/smaller-battles-quote.png') as Asset,
+    seagullSmall: require('../../assets/how-to-play-assets/shared/seagull-small.png') as Asset,
+    seagullWide: require('../../assets/how-to-play-assets/shared/seagull-wide.png') as Asset,
+  },
+  welcome: {
+    speech: require('../../assets/how-to-play-assets/01-welcome/welcome-speech.png') as Asset,
+  },
+  fire: {
+    speech: require('../../assets/how-to-play-assets/02-fire/fire-speech.png') as Asset,
+    tapGesture: require('../../assets/how-to-play-assets/02-fire/tap-gesture.png') as Asset,
+  },
+  miss: {
+    speech: require('../../assets/how-to-play-assets/03-miss/miss-speech.png') as Asset,
+    hitCross: require('../../assets/how-to-play-assets/03-miss/hit-cross.png') as Asset,
+    secondHitCross: require('../../assets/how-to-play-assets/03-miss/second-hit-cross.png') as Asset,
+    tapGesture: require('../../assets/how-to-play-assets/03-miss/tap-gesture.png') as Asset,
+  },
+  target: {
+    speech: require('../../assets/how-to-play-assets/04-target/target-speech.png') as Asset,
+    actionLabel: require('../../assets/how-to-play-assets/04-target/bomber-action-label.png') as Asset,
+    crosshair: require('../../assets/how-to-play-assets/04-target/green-crosshair.png') as Asset,
+    highlightCell: require('../../assets/how-to-play-assets/04-target/highlight-cell.png') as Asset,
+    hand: require('../../assets/how-to-play-assets/04-target/target-hand.png') as Asset,
+  },
+  placeFleet: {
+    speech: require('../../assets/how-to-play-assets/05-place-fleet/placement-speech.png') as Asset,
+    boardFrame: require('../../assets/how-to-play-assets/05-place-fleet/board-frame.png') as Asset,
+    dockFrame: require('../../assets/how-to-play-assets/05-place-fleet/dock-frame.png') as Asset,
+    arsenalCardFrame: require('../../assets/how-to-play-assets/05-place-fleet/arsenal-card-frame.png') as Asset,
+    arsenalTitle: require('../../assets/how-to-play-assets/05-place-fleet/arsenal-title.png') as Asset,
+    backButton: require('../../assets/how-to-play-assets/05-place-fleet/back-button.png') as Asset,
+    rotateButton: require('../../assets/how-to-play-assets/05-place-fleet/rotate-button.png') as Asset,
+    shuffleButton: require('../../assets/how-to-play-assets/05-place-fleet/shuffle-button.png') as Asset,
+    skipButton: require('../../assets/how-to-play-assets/05-place-fleet/skip-button.png') as Asset,
+    easyButton: require('../../assets/how-to-play-assets/05-place-fleet/easy-button.png') as Asset,
+    normalButton: require('../../assets/how-to-play-assets/05-place-fleet/normal-button.png') as Asset,
+    hardButton: require('../../assets/how-to-play-assets/05-place-fleet/hard-button.png') as Asset,
+    wagerOffButton: require('../../assets/how-to-play-assets/05-place-fleet/wager-off-button.png') as Asset,
+    fuelMeter: require('../../assets/how-to-play-assets/05-place-fleet/fuel-meter.png') as Asset,
+    fuelFlame: require('../../assets/how-to-play-assets/05-place-fleet/fuel-flame.png') as Asset,
+    fuelLabel: require('../../assets/how-to-play-assets/05-place-fleet/fuel-label.png') as Asset,
+    infoIcon: require('../../assets/how-to-play-assets/05-place-fleet/info-icon.png') as Asset,
+    diamondIcon: require('../../assets/how-to-play-assets/05-place-fleet/diamond-icon.png') as Asset,
+    tapGesture: require('../../assets/how-to-play-assets/05-place-fleet/tap-gesture.png') as Asset,
+    torpedoIcon: require('../../assets/how-to-play-assets/05-place-fleet/torpedo-icon.png') as Asset,
+    torpedoLabel: require('../../assets/how-to-play-assets/05-place-fleet/torpedo-label.png') as Asset,
+    doubleTapIcon: require('../../assets/how-to-play-assets/05-place-fleet/double-tap-icon.png') as Asset,
+    doubleTapLabel: require('../../assets/how-to-play-assets/05-place-fleet/double-tap-label.png') as Asset,
+    bomberIcon: require('../../assets/how-to-play-assets/05-place-fleet/bomber-icon.png') as Asset,
+    bomberLabel: require('../../assets/how-to-play-assets/05-place-fleet/bomber-label.png') as Asset,
+    mineIcon: require('../../assets/how-to-play-assets/05-place-fleet/mine-icon.png') as Asset,
+    mineLabel: require('../../assets/how-to-play-assets/05-place-fleet/mine-label.png') as Asset,
+    submarineIcon: require('../../assets/how-to-play-assets/05-place-fleet/submarine-icon.png') as Asset,
+    submarineLabel: require('../../assets/how-to-play-assets/05-place-fleet/submarine-label.png') as Asset,
+  },
+  /** Largest first: battleship, 2 cruisers, 3 destroyers, 2 boats. */
+  ships: [
+    require('../../assets/how-to-play-assets/ships/ship-01.png') as Asset,
+    require('../../assets/how-to-play-assets/ships/ship-02.png') as Asset,
+    require('../../assets/how-to-play-assets/ships/ship-03.png') as Asset,
+    require('../../assets/how-to-play-assets/ships/ship-04.png') as Asset,
+    require('../../assets/how-to-play-assets/ships/ship-05.png') as Asset,
+    require('../../assets/how-to-play-assets/ships/ship-06.png') as Asset,
+    require('../../assets/how-to-play-assets/ships/ship-07.png') as Asset,
+    require('../../assets/how-to-play-assets/ships/ship-08.png') as Asset,
+  ] as readonly Asset[],
+} as const;
+
 export const BOARD_ART = {
   /** The only photo in the game — not tinted, drawn under the sheet. */
   deskWood: require('../../assets/images/board/desk-wood.jpg') as Asset,
@@ -744,3 +836,116 @@ export const EMOTES: readonly { id: number; label: string; source: Asset }[] = [
   { id: 7, label: 'question', source: require('../../assets/battle/emote-question.png') },
   { id: 8, label: 'fire', source: require('../../assets/battle/emote-fire.png') },
 ];
+
+/**
+ * The store (scripts/store-assets.sh): the masthead (logo with the Store plank),
+ * the colour tabs and their washed-out unselected copies, the section glyphs
+ * (the app draws the header pill round them) and the gear.
+ */
+export const STORE_ART = {
+  masthead: require('../../assets/shop/masthead.png') as Asset,
+  settings: require('../../assets/shop/settings.png') as Asset,
+  tabs: {
+    crimson: require('../../assets/shop/tab-crimson.png') as Asset,
+    emerald: require('../../assets/shop/tab-emerald.png') as Asset,
+    purple: require('../../assets/shop/tab-purple.png') as Asset,
+  },
+  tabsDim: {
+    crimson: require('../../assets/shop/tab-crimson-dim.png') as Asset,
+    emerald: require('../../assets/shop/tab-emerald-dim.png') as Asset,
+    purple: require('../../assets/shop/tab-purple-dim.png') as Asset,
+  },
+  icons: {
+    attack: require('../../assets/shop/icon-attack.png') as Asset,
+    boards: require('../../assets/shop/icon-boards.png') as Asset,
+    defence: require('../../assets/shop/icon-defence.png') as Asset,
+    fleet: require('../../assets/shop/icon-fleet.png') as Asset,
+  },
+} as const;
+
+/** masthead.png is 499 x 268; the tabs are ~301 x 87. */
+export const STORE_MASTHEAD_ASPECT = 499 / 268;
+export const STORE_TAB_ASPECT = 301 / 87;
+
+const storeSet = (items: Record<string, Asset>) => items;
+
+/** Every item in every colour, trimmed to its drawing (320 px WebP). */
+export const STORE_ITEM_ART = {
+  crimson: storeSet({
+    bomber: require('../../assets/shop/crimson/bomber.webp'),
+    'torpedo-bomber': require('../../assets/shop/crimson/torpedo-bomber.webp'),
+    'double-torpedo': require('../../assets/shop/crimson/double-torpedo.webp'),
+    submarine: require('../../assets/shop/crimson/submarine.webp'),
+    'atomic-bomber': require('../../assets/shop/crimson/atomic-bomber.webp'),
+    board: require('../../assets/shop/crimson/board.webp'),
+    'aa-gun': require('../../assets/shop/crimson/aa-gun.webp'),
+    mine: require('../../assets/shop/crimson/mine.webp'),
+    radar: require('../../assets/shop/crimson/radar.webp'),
+    battleship: require('../../assets/shop/crimson/battleship.webp'),
+    boat: require('../../assets/shop/crimson/boat.webp'),
+    cruiser: require('../../assets/shop/crimson/cruiser.webp'),
+    destroyer: require('../../assets/shop/crimson/destroyer.webp'),
+  }),
+  emerald: storeSet({
+    bomber: require('../../assets/shop/emerald/bomber.webp'),
+    'torpedo-bomber': require('../../assets/shop/emerald/torpedo-bomber.webp'),
+    'double-torpedo': require('../../assets/shop/emerald/double-torpedo.webp'),
+    submarine: require('../../assets/shop/emerald/submarine.webp'),
+    'atomic-bomber': require('../../assets/shop/emerald/atomic-bomber.webp'),
+    board: require('../../assets/shop/emerald/board.webp'),
+    'aa-gun': require('../../assets/shop/emerald/aa-gun.webp'),
+    mine: require('../../assets/shop/emerald/mine.webp'),
+    radar: require('../../assets/shop/emerald/radar.webp'),
+    battleship: require('../../assets/shop/emerald/battleship.webp'),
+    boat: require('../../assets/shop/emerald/boat.webp'),
+    cruiser: require('../../assets/shop/emerald/cruiser.webp'),
+    destroyer: require('../../assets/shop/emerald/destroyer.webp'),
+  }),
+  purple: storeSet({
+    bomber: require('../../assets/shop/purple/bomber.webp'),
+    'torpedo-bomber': require('../../assets/shop/purple/torpedo-bomber.webp'),
+    'double-torpedo': require('../../assets/shop/purple/double-torpedo.webp'),
+    submarine: require('../../assets/shop/purple/submarine.webp'),
+    'atomic-bomber': require('../../assets/shop/purple/atomic-bomber.webp'),
+    board: require('../../assets/shop/purple/board.webp'),
+    'aa-gun': require('../../assets/shop/purple/aa-gun.webp'),
+    mine: require('../../assets/shop/purple/mine.webp'),
+    radar: require('../../assets/shop/purple/radar.webp'),
+    battleship: require('../../assets/shop/purple/battleship.webp'),
+    boat: require('../../assets/shop/purple/boat.webp'),
+    cruiser: require('../../assets/shop/purple/cruiser.webp'),
+    destroyer: require('../../assets/shop/purple/destroyer.webp'),
+  }),
+} as const;
+
+/**
+ * The country flags as badges (scripts/store-assets.sh): 188 x 139, the flag
+ * itself at (13, 13) 162 x 108 inside a paper border and a navy rim, on a
+ * navy base that drops 5 px below. `blank` is the badge a code with no flag
+ * gets, with the code written on it.
+ */
+export const FLAG_BADGE = { w: 188, h: 139, inset: 13, flagW: 162, flagH: 108 } as const;
+export const FLAG_ART: Readonly<Record<string, Asset>> = {
+  BR: require('../../assets/flags/BR.png'),
+  CA: require('../../assets/flags/CA.png'),
+  CN: require('../../assets/flags/CN.png'),
+  CO: require('../../assets/flags/CO.png'),
+  DE: require('../../assets/flags/DE.png'),
+  IN: require('../../assets/flags/IN.png'),
+  ID: require('../../assets/flags/ID.png'),
+  IR: require('../../assets/flags/IR.png'),
+  IT: require('../../assets/flags/IT.png'),
+  JP: require('../../assets/flags/JP.png'),
+  MX: require('../../assets/flags/MX.png'),
+  PH: require('../../assets/flags/PH.png'),
+  SA: require('../../assets/flags/SA.png'),
+  KR: require('../../assets/flags/KR.png'),
+  ES: require('../../assets/flags/ES.png'),
+  TH: require('../../assets/flags/TH.png'),
+  TR: require('../../assets/flags/TR.png'),
+  GB: require('../../assets/flags/GB.png'),
+  US: require('../../assets/flags/US.png'),
+  VN: require('../../assets/flags/VN.png'),
+  RU: require('../../assets/flags/RU.png'),
+};
+export const FLAG_BLANK = require('../../assets/flags/blank.png') as Asset;

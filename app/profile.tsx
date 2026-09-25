@@ -1,21 +1,29 @@
 /**
  * Captain's profile — drawn to its mockup on BACKGROUNDS.settings: the captain
- * (the portrait they chose, in their colour, inside the rope ring) with their
- * standing on the left; the verified Privy account on the right. Sign-out asks
- * first, and says so plainly if it cannot finish.
+ * (the portrait they chose, in their colour, inside the rope ring, their flag
+ * pinned to it) with their standing and their store collection on the left;
+ * the verified Privy account on the right. The flag row opens the flag
+ * picker, the collection strip the whole collection. Sign-out asks first, and
+ * says so plainly if it cannot finish.
  */
 import { useEmbeddedSolanaWallet, usePrivy } from '@privy-io/expo';
 import { Image } from 'expo-image';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Modal, StyleSheet, Text, View, type ImageStyle } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 
 import { ArtButton } from '@/features/auth/LoginArt';
 import { privyDisplayName, privyEmail, privyLoginMethods } from '@/features/auth/privyUser';
+import { countryName } from '@/features/flags/countries';
+import { FlagBadge } from '@/features/flags/FlagBadge';
+import { FlagPicker } from '@/features/flags/FlagPicker';
+import { CollectionDialog, CollectionStrip } from '@/features/store/Collection';
 import { signOutGameplaySession } from '@/net/api';
 import { useMatchClient } from '@/net/match-client';
+import { pushProfile } from '@/net/profileSync';
 import { useBattle } from '@/state/battle';
 import { useCloud } from '@/state/cloud';
+import { spendableCoins, useStoreWallet } from '@/state/locker';
 import { useProfile } from '@/state/profile';
 import { usePoints } from '@/state/points';
 import { usePrivySync } from '@/state/privySync';
@@ -51,7 +59,15 @@ function Art({ source, style }: { source: Asset; style: ImageStyle }) {
  * The chosen captain inside the rope ring. The portrait is the square picker
  * art with its own frame and mat cropped off, clipped to the ring's hole.
  */
-function RingPortrait({ avatarId, avatarColor }: { avatarId: number; avatarColor: string }) {
+function RingPortrait({
+  avatarId,
+  avatarColor,
+  countryCode,
+}: {
+  avatarId: number;
+  avatarColor: string;
+  countryCode: string;
+}) {
   const d = HOLE.r * 2 * RING.w;
   // The portrait art's picture starts ~11% in from each edge (its frame + mat).
   const size = d / 0.78;
@@ -77,6 +93,7 @@ function RingPortrait({ avatarId, avatarColor }: { avatarId: number; avatarColor
         />
       </View>
       <Image source={PROFILE_ART.ringFrame} style={StyleSheet.absoluteFill} contentFit="fill" />
+      <FlagBadge code={countryCode} w={34} style={styles.ringFlag} />
     </View>
   );
 }
@@ -192,6 +209,10 @@ export default function ProfileScreen() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [flagsOpen, setFlagsOpen] = useState(false);
+  const [collectionOpen, setCollectionOpen] = useState(false);
+  const wallet = useStoreWallet();
+  const coins = spendableCoins(profile.coins, wallet);
   const email = privyEmail(user) ?? sync.account?.email ?? 'Not available';
   const displayName = privyDisplayName(user) ?? sync.account?.displayName ?? '—';
   const methods = privyLoginMethods(user);
@@ -235,6 +256,13 @@ export default function ProfileScreen() {
     }
   }, [loggingOut, logout, router]);
 
+  const pickFlag = useCallback((countryCode: string) => {
+    const current = useProfile.getState();
+    if (current.countryCode === countryCode) return;
+    current.setIdentity({ countryCode });
+    if (current.userId) void pushProfile(current.userId, { countryCode });
+  }, []);
+
   return (
     <Scale backgroundImage={BACKGROUNDS.settings}>
       <Art source={LOGIN_ART.sailingShip} style={styles.ship} />
@@ -259,26 +287,43 @@ export default function ProfileScreen() {
       />
       <View style={styles.leftBox}>
         <View style={styles.identity}>
-          <RingPortrait avatarId={profile.avatarId} avatarColor={profile.avatarColor} />
+          <RingPortrait
+            avatarId={profile.avatarId}
+            avatarColor={profile.avatarColor}
+            countryCode={profile.countryCode}
+          />
           <View style={styles.identityCopy}>
             <Text style={styles.name} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               {profile.name || 'Sailor'}
             </Text>
             <Image source={PROFILE_ART.nameUnderline} style={styles.nameUnderline} contentFit="fill" />
-            <Text style={styles.country}>Port: {profile.countryCode || 'Unknown'}</Text>
+            <Pressable
+              onPress={() => setFlagsOpen(true)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={`Flag: ${countryName(profile.countryCode)}. Change flag`}
+              style={({ pressed }) => [styles.countryRow, pressed ? styles.pressed : null]}
+            >
+              <Text style={styles.country} numberOfLines={1}>
+                {countryName(profile.countryCode)}
+              </Text>
+              <Text style={styles.countryChange}>Change flag</Text>
+            </Pressable>
           </View>
         </View>
         <View style={styles.stats}>
-          <Detail label="Rank points" value={profile.rankPoints.toLocaleString()} />
-          <Detail label="Main points" value={pointBalance.toLocaleString()} />
-          <Detail label="Battles" value={profile.battlesPlayed.toLocaleString()} />
-          <Detail label="Victories" value={profile.battlesWon.toLocaleString()} />
-          <Detail
-            label="Coins / gems"
-            value={`${profile.coins.toLocaleString()} / ${profile.gems.toLocaleString()}`}
-            last
-          />
+          <View style={styles.statsCol}>
+            <Detail label="Rank points" value={profile.rankPoints.toLocaleString()} />
+            <Detail label="Battles" value={profile.battlesPlayed.toLocaleString()} />
+            <Detail label="Coins" value={coins.toLocaleString()} last />
+          </View>
+          <View style={styles.statsCol}>
+            <Detail label="Main points" value={pointBalance.toLocaleString()} />
+            <Detail label="Victories" value={profile.battlesWon.toLocaleString()} />
+            <Detail label="Gems" value={profile.gems.toLocaleString()} last />
+          </View>
         </View>
+        <CollectionStrip unlocks={wallet.unlocks} onPress={() => setCollectionOpen(true)} />
         <View style={styles.actions}>
           <ArtImageButton
             source={PROFILE_ART.changeName}
@@ -366,6 +411,21 @@ export default function ProfileScreen() {
           />
         </View>
       </View>
+      <FlagPicker
+        visible={flagsOpen}
+        selected={profile.countryCode}
+        onPick={pickFlag}
+        onClose={() => setFlagsOpen(false)}
+      />
+      <CollectionDialog
+        visible={collectionOpen}
+        unlocks={wallet.unlocks}
+        onClose={() => setCollectionOpen(false)}
+        onStore={() => {
+          setCollectionOpen(false);
+          router.push('/store' as Href);
+        }}
+      />
       <SignOutDialog
         visible={signOutOpen}
         busy={loggingOut}
@@ -406,8 +466,24 @@ const styles = StyleSheet.create({
   identityCopy: { flex: 1 },
   name: { color: artColor.ink, fontFamily: font.display, fontSize: 27, lineHeight: 32 },
   nameUnderline: { width: 118, height: 9, marginTop: 1 },
-  country: { color: artColor.label, fontFamily: font.body, fontSize: 15, marginTop: 6 },
-  stats: {},
+  ringFlag: { position: 'absolute', right: -10, bottom: -1, transform: [{ rotate: '-7deg' }] },
+  countryRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginTop: 5,
+    alignSelf: 'flex-start',
+  },
+  pressed: { transform: [{ translateY: 1 }] },
+  country: { flexShrink: 1, color: artColor.label, fontFamily: font.body, fontSize: 15 },
+  countryChange: {
+    color: artColor.soft,
+    fontFamily: font.label,
+    fontSize: 11,
+    textDecorationLine: 'underline',
+  },
+  stats: { flexDirection: 'row', gap: 18 },
+  statsCol: { flex: 1 },
   panelTitle: {
     color: artColor.ink,
     fontFamily: font.display,

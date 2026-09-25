@@ -209,10 +209,13 @@ that looks like a rectangle from a UI kit.
   `matchId`; outside a match it gives up after 4 tries, inside it keeps going until the
   server's 45 s grace is gone. Action `seq` is wall-clock ms so it stays monotonic across an
   app restart (the server dedupes retried actions by seq per seat). A token that can't be
-  refreshed while offline is a retry, not a failure. Liveness: in a match the client sends the
-  protocol `ping` every 10 s and declares 20 s of silence a dead socket (Android keeps a dead
-  socket "open" long past the server's grace); `nudge()` — both screens call it on
-  AppState `active` — pings at once and skips any backoff wait.
+  refreshed while offline is a retry, not a failure. Liveness: whenever the socket is open — in
+  line as well as in a match — the client sends the protocol `ping` every 10 s and declares 20 s
+  of silence a dead socket (Android keeps a dead socket "open" long past the server's grace).
+  Never make that ping conditional on being in a match: a queued player hears nothing else, the
+  server's ws ping frames don't reach `onmessage`, and a silent queue would be dropped and
+  re-queued every ~30 s (no bot at 45 s, no widening rank window). `nudge()` — both screens call
+  it on AppState `active` — pings at once and skips any backoff wait.
 - **Never predict a shot outcome.** Online `act()` enqueues SHOT_FIRED (the 340 ms shell)
   and sends; `pending` locks input until the server's events land; `pendingShotAt` is the
   ink "…" on the cell once the shell has landed with no verdict (`FxLayer`'s
@@ -252,6 +255,20 @@ that looks like a rectangle from a UI kit.
   clamp runs on the UI thread (1x..3x, image edge never inside the canvas), three
   dashed slots with a "Coming soon" ribbon, the Captain's welcome once
   (`profile.hasVisitedCity`). There is no building system — don't start one.
+
+### The store and flags (`app/store.tsx`, `src/features/store`, `src/features/flags`, `src/state/locker.ts`)
+
+- Coins buy an item's Crimson / Emerald / Purple edition for the **collection only** — nothing in
+  the game reads what was bought (the dialog and the profile both say equipping comes later).
+  Items and prices are `src/features/store/catalog.ts` (pure, tested).
+- **Purchases are device-local**, per account: coins are the server's and every sync overwrites
+  `profile.coins`, so `locker.ts` keeps `spent` + `unlocks` and every coin balance on screen is
+  `spendableCoins()` (earned − spent). Moving it server-side needs a table and an atomic RPC.
+- `scripts/store-assets.sh` (chained from color-assets.sh) builds `assets/shop` (item WebPs, tabs,
+  section glyphs, masthead) and `assets/flags` (every flag as one badge, plus RU for the bots and
+  a blank badge that `FlagBadge` letters for any other code). The 20 pickable countries are
+  `countries.ts`; `country_code` syncs like the name. The flag is pinned to the captain on the
+  menu/store card, the profile ring, the battle portraits, the reveal, the result and the ladder.
 
 ### Shipping and the demo (`eas.json`, `src/state/demo.ts`, `src/features/demo/`, `docs/DEMO.md`)
 

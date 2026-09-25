@@ -127,8 +127,11 @@ interface BattleData {
   /** GAME_OVER has played out; the screen may route to the result. */
   finished: boolean;
   difficulty: Difficulty;
-  /** Emote floating over the opponent, if any. */
-  emote: { id: number; nonce: number } | null;
+  /**
+   * Emotes rising up the screen, Google Meet style: yours from your side,
+   * the opponent's from theirs. Each removes itself when its rise is over.
+   */
+  emotes: readonly { key: number; id: number; from: 'me' | 'them' }[];
   /** The last accepted action and the events it produced — the tutorial watches these. */
   lastAction: MatchAction | null;
   lastEvents: readonly MatchEvent[];
@@ -149,7 +152,7 @@ interface BattleActions {
   skip: () => void;
   /** Hotseat: the incoming player has the device — lift the sheet, start the clock. */
   uncoverFleet: () => void;
-  showEmote: (id: number) => void;
+  showEmote: (id: number, from?: 'me' | 'them') => void;
   setArsenalOpen: (open: boolean) => void;
   /** Enter targeting with one of your unused offensive items; null cancels. */
   selectArsenal: (itemId: string | null) => void;
@@ -180,7 +183,7 @@ const EMPTY: BattleData = {
   fleetCovered: false,
   finished: false,
   difficulty: 'normal',
-  emote: null,
+  emotes: [],
   lastAction: null,
   lastEvents: [],
   arsenalOpen: false,
@@ -188,15 +191,19 @@ const EMPTY: BattleData = {
 };
 
 let aimTimer: ReturnType<typeof setTimeout> | null = null;
-let emoteTimer: ReturnType<typeof setTimeout> | null = null;
+/** How long an emote takes to rise and fade; FloatingEmote in Hud.tsx plays it. */
+export const EMOTE_RISE_MS = 2600;
+const emoteTimers = new Set<ReturnType<typeof setTimeout>>();
+let emoteKey = 0;
 let lastWasMine = false;
 let onlineUnsubscribe: (() => void) | null = null;
 let localMatch: LocalMatch | null = null;
 
 function clearTimers(): void {
   if (aimTimer) clearTimeout(aimTimer);
-  if (emoteTimer) clearTimeout(emoteTimer);
-  aimTimer = emoteTimer = null;
+  for (const timer of emoteTimers) clearTimeout(timer);
+  emoteTimers.clear();
+  aimTimer = null;
 }
 
 /** Headless effects: commit only. The screen swaps in the animated ones. */
@@ -610,10 +617,15 @@ export const useBattle = create<BattleState>((set, get) => ({
     set({ targeting: { itemId, kind: item.kind }, arsenalOpen: false });
   },
 
-  showEmote: (id) => {
-    if (emoteTimer) clearTimeout(emoteTimer);
-    set((s) => ({ emote: { id, nonce: (s.emote?.nonce ?? 0) + 1 } }));
-    emoteTimer = setTimeout(() => set({ emote: null }), 1600);
+  showEmote: (id, from = 'me') => {
+    const key = ++emoteKey;
+    // A burst of taps stacks; past six the oldest makes way.
+    set((s) => ({ emotes: [...s.emotes.slice(-5), { key, id, from }] }));
+    const timer = setTimeout(() => {
+      emoteTimers.delete(timer);
+      set((s) => ({ emotes: s.emotes.filter((e) => e.key !== key) }));
+    }, EMOTE_RISE_MS + 100);
+    emoteTimers.add(timer);
   },
 
   reset: () => {

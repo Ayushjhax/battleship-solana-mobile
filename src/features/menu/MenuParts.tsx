@@ -10,6 +10,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { haptic } from '@/audio/haptics';
+import { FlagBadge } from '@/features/flags/FlagBadge';
 import { MENU_ART, type Asset } from '@/ui/assets';
 import { roundedRectPoints } from '@/ui/geometry';
 import { color, menuColor, menuFont, space, type as typeScale } from '@/ui/tokens';
@@ -78,7 +79,7 @@ export function MenuCard({ w, h, fill, seedKey, r = 12, under, children }: CardP
 }
 
 /** Pressable with the house press feel: haptic on press-in, a 1-unit drop. */
-function PressableInk({
+export function PressableInk({
   onPress,
   accessibilityLabel,
   hitSlop,
@@ -290,6 +291,8 @@ export function ProfileCard({
   w,
   h,
   name,
+  portrait,
+  countryCode,
   rank,
   current,
   total,
@@ -298,6 +301,10 @@ export function ProfileCard({
   w: number;
   h: number;
   name: string;
+  /** The captain the player chose, in their colour (portraitFor). */
+  portrait: Asset;
+  /** Pinned to the portrait's lower corner. */
+  countryCode?: string;
   rank: string;
   current: number;
   total: number;
@@ -330,7 +337,16 @@ export function ProfileCard({
   return (
     <PressableInk onPress={onPress} accessibilityLabel={`Profile, ${name}`}>
       <MenuCard w={w} h={h} fill={menuColor.card} seedKey="menu-profile" r={12}>
-        <Image source={MENU_ART.captain} style={styles.profileAvatar} contentFit="contain" />
+        <Image
+          source={portrait ?? MENU_ART.captain}
+          style={styles.profileAvatar}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+          transition={120}
+        />
+        {countryCode !== undefined ? (
+          <FlagBadge code={countryCode} w={24} style={styles.profileFlag} />
+        ) : null}
         <View style={styles.profileText}>
           <Text style={styles.profileName} numberOfLines={1}>
             {name}
@@ -519,6 +535,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   profileAvatar: { position: 'absolute', left: 6, top: 5, width: 50, height: 50 },
+  profileFlag: { position: 'absolute', left: 38, top: 39, transform: [{ rotate: '-7deg' }] },
   profileText: { position: 'absolute', left: 62, right: 8, top: 4 },
   profileName: {
     color: menuColor.navy,

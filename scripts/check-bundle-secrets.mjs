@@ -53,8 +53,11 @@ const secrets = [...env].filter(
 // key is sb_secret_ followed by base64url that never starts with an underscore.
 const shape = /sb_secret_[A-Za-z0-9][A-Za-z0-9_-]{9,}/g;
 // supabase-js legitimately contains the literal prefix while Hermes stores the
-// next string ("computeFrame…") immediately after it with no delimiter.
-const hermesFalsePositive = 'sb_secret_computeFrame';
+// next string immediately after it with no delimiter — which string that is
+// moves as the bundle changes ("computeFrame", "computeEllipsePoints", …). A
+// camelCase identifier of whole words is that neighbour; a real key is random
+// base64url. (Exact values from .env are still checked above regardless.)
+const hermesNeighbour = /^sb_secret_[a-z]+(?:[A-Z][a-z]+)+$/;
 let bad = 0;
 for (const file of files) {
   const buf = readFileSync(file);
@@ -63,7 +66,7 @@ for (const file of files) {
     if (v.length >= 8 && text.includes(v)) { console.error(`FAIL ${k} value found in ${file}`); bad++; }
   }
   for (const m of text.matchAll(shape)) {
-    if (m[0].startsWith(hermesFalsePositive)) continue;
+    if (hermesNeighbour.test(m[0])) continue;
     console.error(`FAIL secret-shaped string ${m[0].slice(0, 14)}… in ${file}`); bad++;
   }
 }

@@ -1,11 +1,11 @@
 /**
  * Main menu — the 800 x 360 composition, drawn to its mockup:
- *   top-left      profile card: captain, name, rank, rank progress (tap: profile)
+ *   top-left      profile card: your chosen captain, name, rank, rank progress (tap: profile)
  *   top-centre    the logo
  *   top-right     coin, gem and point pills, then settings, sound and wallet
  *   centre        the Play online / Play offline cards
  *   bottom        six tiles: two players, how to play, leaderboard, port city,
- *                 store (not built yet — says so), points exchange
+ *                 store, points exchange
  *   bottom-right  the version string (P17 makes it the demo-menu tap target)
  *
  * Menu actions deliberately stay as plain views so native-stack reattachment
@@ -15,7 +15,7 @@ import { rankProgress } from '@engine/ranks';
 import Constants from 'expo-constants';
 import { Image } from 'expo-image';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DemoMenu, useVersionTaps } from '@/features/demo/DemoMenu';
@@ -28,10 +28,12 @@ import {
   ProfileCard,
 } from '@/features/menu/MenuParts';
 import { useOnlineCount } from '@/net/presence';
+import { useSpendableCoins } from '@/state/locker';
 import { usePoints } from '@/state/points';
 import { usePrivySync } from '@/state/privySync';
 import { useProfile } from '@/state/profile';
 import { BACKGROUNDS, BRAND, MENU_ART, type Asset } from '@/ui/assets';
+import { portraitFor } from '@/ui/portraits';
 import { Scale } from '@/ui/Scale';
 import { CANVAS_W, menuColor, menuFont, space, type as typeScale } from '@/ui/tokens';
 
@@ -43,21 +45,20 @@ const CARD = { w: 286, h: 184, gap: 18, y: 84 } as const;
 const TILE = { w: 91, h: 66, gap: 8, y: 274 } as const;
 const CARDS_LEFT = (CANVAS_W - CARD.w * 2 - CARD.gap) / 2;
 const TILES_LEFT = (CANVAS_W - TILE.w * 6 - TILE.gap * 5) / 2;
-const STORE_NOTE_MS = 1800;
 
 interface Tile {
   label: string;
   icon: Asset;
   fill: string;
-  href: Href | null;
+  href: Href;
 }
 
 const TILES: readonly Tile[] = [
   { label: 'TWO PLAYERS', icon: MENU_ART.friends, fill: menuColor.twoPlayers, href: '/hotseat' as Href },
-  { label: 'HOW TO PLAY', icon: MENU_ART.rulebook, fill: menuColor.howToPlay, href: '/tutorial' },
+  { label: 'HOW TO PLAY', icon: MENU_ART.rulebook, fill: menuColor.howToPlay, href: '/how-to-play' as Href },
   { label: 'LEADERBOARD', icon: MENU_ART.trophy, fill: menuColor.leaderboard, href: '/leaderboard' },
   { label: 'PORT CITY', icon: MENU_ART.harbor, fill: menuColor.portCity, href: '/city' },
-  { label: 'STORE', icon: MENU_ART.shop, fill: menuColor.store, href: null },
+  { label: 'STORE', icon: MENU_ART.shop, fill: menuColor.store, href: '/store' as Href },
   {
     label: 'POINTS EXCHANGE',
     icon: MENU_ART.coinStacks,
@@ -76,7 +77,7 @@ export default function MenuScreen() {
   const progress = rankProgress(profile.rankPoints);
   const version = Constants.expoConfig?.version ?? '0.0.0';
   const onVersionTap = useVersionTaps();
-  const [storeNote, setStoreNote] = useState(false);
+  const coins = useSpendableCoins();
 
   // Returning home is a safe retry point for an account sync that failed
   // during boot. PrivyProfileSync remains the single owner of the actual
@@ -88,12 +89,6 @@ export default function MenuScreen() {
     }, []),
   );
 
-  useEffect(() => {
-    if (!storeNote) return;
-    const timer = setTimeout(() => setStoreNote(false), STORE_NOTE_MS);
-    return () => clearTimeout(timer);
-  }, [storeNote]);
-
   return (
     <Scale backgroundImage={BACKGROUNDS.menu}>
       <View style={styles.profile}>
@@ -101,6 +96,8 @@ export default function MenuScreen() {
           w={PROFILE.w}
           h={PROFILE.h}
           name={profile.name || 'Sailor'}
+          portrait={portraitFor(profile.avatarId, profile.avatarColor)}
+          countryCode={profile.countryCode}
           rank={progress.rank.name}
           current={progress.current}
           total={progress.total}
@@ -113,7 +110,7 @@ export default function MenuScreen() {
       </View>
 
       <View style={styles.pills}>
-        <CurrencyPill icon={MENU_ART.coin} value={profile.coins} w={PILL.w} seedKey="pill-coins" />
+        <CurrencyPill icon={MENU_ART.coin} value={coins} w={PILL.w} seedKey="pill-coins" />
         <CurrencyPill icon={MENU_ART.gem} value={profile.gems} w={PILL.w} seedKey="pill-gems" />
         <CurrencyPill icon={MENU_ART.star} value={pointBalance} w={PILL.w} seedKey="pill-points" />
       </View>
@@ -186,11 +183,11 @@ export default function MenuScreen() {
             key={tile.label}
             w={TILE.w}
             h={TILE.h}
-            label={tile.href === null && storeNote ? 'COMING SOON' : tile.label}
+            label={tile.label}
             icon={tile.icon}
             fill={tile.fill}
             seedKey={`tile-${tile.label}`}
-            onPress={() => (tile.href ? router.push(tile.href) : setStoreNote(true))}
+            onPress={() => router.push(tile.href)}
           />
         ))}
       </View>
