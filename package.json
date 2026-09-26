@@ -17,6 +17,7 @@
     "eas:dev": "npx eas-cli build --platform android --profile development",
     "check:bundle": "node scripts/check-bundle-secrets.mjs",
     "assets": "bash scripts/ink-assets.sh",
+    "assets:city": "python3 scripts/city-assets.py",
     "brand": "node scripts/make-brand.mjs",
     "test:coverage": "vitest run --coverage"
   },

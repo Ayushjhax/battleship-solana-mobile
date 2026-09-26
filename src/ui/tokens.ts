@@ -99,6 +99,19 @@ export const artColor = {
 } as const;
 
 /**
+ * The Port City art's own pen and paper (assets/port_city_assets): `ink` is
+ * its lettering, sampled, so the live text on its frames sits beside the baked
+ * words; `dim` is the violet wash laid over the city under the Coming Soon
+ * popup.
+ */
+export const cityColor = {
+  ink: '#0B0491',
+  inkSoft: '#3D34A8',
+  paper: '#FDFAF3',
+  dim: 'rgba(38, 26, 150, 0.34)',
+} as const;
+
+/**
  * 5.2 — modular scale, base 16, ratio 1.25, plus the family names.
  * No second display face. No all-caps labels.
  */

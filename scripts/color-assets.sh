@@ -6,7 +6,8 @@
 # battle (assets/fx, assets/fleet, assets/battle) are scripts/battle-assets.sh,
 # the store and the flags (assets/shop, assets/flags) scripts/store-assets.sh,
 # the Captain's wallet (assets/wallet) scripts/wallet-assets.sh, the battle's
-# Attack deck (assets/deck) scripts/deck-assets.sh.
+# Attack deck (assets/deck) scripts/deck-assets.sh, the port city (assets/city)
+# scripts/city-assets.py.
 #
 #  - backgrounds/*.jpg: the full-bleed page backdrops. The sources are ~2.5 MB
 #    opaque PNGs; as JPEG they load and decode several times faster, which is
@@ -505,3 +506,10 @@ bash scripts/wallet-assets.sh
 
 echo "the battle's Attack deck"
 bash scripts/deck-assets.sh
+
+echo "the port city"
+if python3 -c 'import PIL, numpy' 2>/dev/null; then
+  python3 scripts/city-assets.py
+else
+  echo "  skipped: needs python3 with Pillow and numpy (pip install pillow numpy)"
+fi

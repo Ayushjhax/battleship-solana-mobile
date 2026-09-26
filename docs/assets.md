@@ -31,7 +31,7 @@ assets/
 │   ├── fx/             planes, explosions, splashes
 │   ├── avatars/        4 portraits + the Captain
 │   ├── ui/             a few icons + emotes
-│   └── city/           the port-city map
+│   └── (port city)     see assets/port_city_assets/ — its own pack, below
 └── audio/
     ├── sfx/            22 effects
     ├── voice/          17 Captain lines
@@ -88,7 +88,7 @@ The 4.1 format rules below still apply to what you drop — the script only make
 | `assets/images/board/desk-wood.jpg` | 1024×1024 tileable | P01 Paper |
 | `assets/images/ui/hand-pointer.png` | 128×128 | P09 tutorial cursor |
 | `assets/images/ui/emote-01.png` … `emote-08.png` | 256×256 each | P07 chat |
-| `assets/images/city/city-port.png` | 2048×1024 | P15 |
+| `assets/port_city_assets/` (README.txt, manifest.json) | map, 15 buildings, HUD, popup | Port City — `npm run assets:city` builds `assets/city/` |
 
 ### Audio — 41 files
 
@@ -240,10 +240,11 @@ The ten tint colours, wired into `src/ui/tokens.ts` as `AVATAR_TINTS`:
 
 If the model can't produce a seamless tile, grab a free one from Poly Haven or ambientCG. A flat `#6B4527` is an acceptable fallback — nobody will notice.
 
-**`city-port.png`** — 2048×1024
-> *An isometric bird's-eye map of a large port city in fine ballpoint-pen line art: bridges over a river, a stadium, a cathedral, an airport, shipping cranes at the docks, an industrial zone with cooling towers, a lighthouse on a headland, dense blocks of buildings and trees. Extremely detailed engraving style.*
-
-Generate once and accept it. This is a static backdrop, not an interactive layer.
+**The Port City** — `assets/port_city_assets/` replaced the single `city-port.png` backdrop:
+a terrain map with empty plots, fifteen building cut-outs, the HUD pieces and the Coming Soon
+popup (with its parts). `scripts/city-assets.py` turns it into `assets/city/`; where each
+building stands is data in `src/features/city/cityLayout.ts`, and `scripts/city-preview.py`
+renders that composition outside the app.
 
 **`hand-pointer.png`** — *A cartoon hand with the index finger extended, pointing up and slightly left, outlined*
 
@@ -348,7 +349,7 @@ The 8 arsenal icons · `explosion-sheet.png` · `splash-sheet.png` · `plane-bom
 All 22 SFX · the 17 Captain lines · the 2 music loops
 
 **Batch 4 — polish, cut if short on time.**
-8 emotes · `city-port.png` · `plane-torpedo.png` · `plane-atomic.png` · `smoke-puff.png` · `hand-pointer.png` · both icons
+8 emotes · `plane-torpedo.png` · `plane-atomic.png` · `smoke-puff.png` · `hand-pointer.png` · both icons
 
 Until an asset exists, `AssetSlot` (built in P01) renders a labelled Rough.js placeholder at the exact declared dimensions, so layout is correct from day one:
 
