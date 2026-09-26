@@ -23,6 +23,7 @@ import {
 } from './protocol';
 import { cancelBeforeMatchStart, dequeue, enqueue } from './matchmaker';
 import { findRoomForPlayer, rooms } from './room';
+import { serverTracing, traceAction, traceNow } from './trace';
 
 const MAX_MESSAGE_BYTES = 16 * 1024;
 const RATE_LIMIT_MSGS = 10;
@@ -97,10 +98,23 @@ export function attachWebSocketServer(server: Server, log: (msg: string) => void
       // chain — a ping stuck behind a queue that is waiting on the database
       // would make a healthy socket look dead to the app, which then drops it
       // and queues again at the back of the line.
+      const arrived = serverTracing ? traceNow() : 0;
       const message = admit(conn, raw, log);
       if (!message) return;
       conn.messageChain = conn.messageChain
-        .then(() => handleMessage(conn, message, log))
+        .then(async () => {
+          if (!arrived || message.t !== 'action') return handleMessage(conn, message, log);
+          const started = traceNow();
+          await handleMessage(conn, message, log);
+          traceAction(log, {
+            seq: message.seq,
+            type: message.action.type,
+            matchId: conn.playerId ? findRoomForPlayer(conn.playerId)?.id : undefined,
+            arrived,
+            started,
+            emitted: traceNow(),
+          });
+        })
         .catch((error: unknown) => {
           log(`[ws] player=${conn.playerId ?? 'unauthenticated'} handler failed: ${String(error)}`);
           sendError(conn, 'internal', 'the match server could not process that request');

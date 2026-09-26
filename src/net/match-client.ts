@@ -71,6 +71,15 @@ import {
   type OpponentSummary,
   type ServerMessage,
 } from './protocol';
+import {
+  isTracing,
+  traceClock,
+  tracePingSent,
+  tracePong,
+  traceReceived,
+  traceSent,
+  traceSocketGone,
+} from './trace';
 
 // ---------------------------------------------------------------------------
 // Public shape
@@ -414,7 +423,7 @@ function startLiveness(): void {
       declareDead('no frame in 20s');
       return;
     }
-    send(pingMessage());
+    if (send(pingMessage())) tracePingSent();
   }, LIVENESS_PING_MS);
 }
 
@@ -424,6 +433,7 @@ function declareDead(why: string): void {
   if (!s) return;
   log(`socket declared dead: ${why}`);
   socket = null;
+  traceSocketGone();
   stopLiveness();
   deadTimer = clearTimer(deadTimer);
   s.onopen = null;
@@ -476,6 +486,7 @@ function endDiscovery(): void {
 function dropSocket(): void {
   const s = socket;
   socket = null;
+  traceSocketGone();
   stopLiveness();
   deadTimer = clearTimer(deadTimer);
   if (!s) return;
@@ -556,12 +567,18 @@ async function connect(): Promise<void> {
 
   ws.onmessage = (event) => {
     if (socket !== ws) return;
+    // When this thread got the frame — before decoding, so tracing sees the wait for the thread.
+    const arrivedAt = isTracing() ? traceClock() : 0;
     lastInboundAt = Date.now();
     deadTimer = clearTimer(deadTimer);
     const decoded = decodeServerMessage(event.data);
     if (!decoded.ok) {
       console.warn('[match] dropped an inbound message that failed validation:', decoded.error);
       return;
+    }
+    if (arrivedAt) {
+      if (decoded.message.t === 'pong') tracePong(arrivedAt);
+      else traceReceived(decoded.message.t, arrivedAt);
     }
     try {
       handleMessage(decoded.message);
@@ -578,6 +595,7 @@ async function connect(): Promise<void> {
   ws.onclose = (event) => {
     if (socket !== ws) return;
     socket = null;
+    traceSocketGone();
     openTimer = clearTimer(openTimer);
     stopLiveness();
     deadTimer = clearTimer(deadTimer);
@@ -1103,12 +1121,14 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
 
   fire: (at) => {
     const action: ActionPayload = { type: 'FIRE', at };
-    send(actionMessage(outboundSeq++, action));
+    const seq = outboundSeq++;
+    if (send(actionMessage(seq, action))) traceSent(seq);
   },
 
   useArsenal: (itemId, target) => {
     const action: ActionPayload = { type: 'USE_ARSENAL', itemId, ...target };
-    send(actionMessage(outboundSeq++, action));
+    const seq = outboundSeq++;
+    if (send(actionMessage(seq, action))) traceSent(seq);
   },
 
   resign: () => {
@@ -1136,7 +1156,7 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
       return;
     }
     if (socket && socket.readyState === WebSocket.OPEN && !deadTimer) {
-      send(pingMessage());
+      if (send(pingMessage())) tracePingSent();
       deadTimer = setTimeout(() => {
         deadTimer = null;
         declareDead('no pong after a nudge');

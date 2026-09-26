@@ -41,6 +41,13 @@ import { EventPlayer, type PlayEvent } from '@/fx/EventPlayer';
 import { applyEvent, applyReveal } from '@/fx/applyEvent';
 import { LocalMatch, setLocalAiThinkTime } from '@/features/offline/LocalMatch';
 import { useMatchClient } from '@/net/match-client';
+import {
+  traceApplied,
+  traceHandlerEnd,
+  traceHandlerStart,
+  traceInput,
+  traceSettled,
+} from '@/net/trace';
 import { usePoints } from '@/state/points';
 import { useProfile } from '@/state/profile';
 
@@ -212,6 +219,8 @@ export const battlePlayer = new EventPlayer({
 export function commitEvent(event: PlayEvent): void {
   const { shown } = useBattle.getState();
   if (!shown) return;
+  // Our own shell is local; the first server event committed is the reply landing.
+  if (event.type !== 'SHOT_FIRED') traceApplied();
   const patch: Partial<BattleData> = { shown: applyEvent(shown, event) };
   if (event.type === 'TURN_CHANGED') {
     patch.seconds = TURN_SECONDS;
@@ -311,7 +320,10 @@ function onIdle(): void {
 
 battlePlayer.onBusy((busy) => {
   useBattle.setState({ animating: busy });
-  if (!busy) onIdle();
+  if (!busy) {
+    onIdle();
+    traceSettled();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -467,6 +479,7 @@ export const useBattle = create<BattleState>((set, get) => ({
   },
 
   aim: (at) => {
+    traceInput();
     const s = get();
     if (!s.shown || (s.mode !== 'online' && !s.match)) return;
     if (s.animating || s.aiming || s.fleetCovered || s.finished || s.pending) return;
@@ -520,17 +533,21 @@ export const useBattle = create<BattleState>((set, get) => ({
       if (!s.shown || s.shown.phase !== 'playing' || s.pending) return;
       const client = useMatchClient.getState();
       if (action.type === 'FIRE') {
+        traceHandlerStart('FIRE');
         // Optimistic: the shell flies now. The verdict is the server's alone.
         set({ pending: true, pendingShotAt: action.at, pendingArsenalAt: null, lastAction: action });
         battlePlayer.enqueue([{ type: 'SHOT_FIRED', playerId: s.me, at: action.at }]);
         client.fire(action.at);
+        traceHandlerEnd();
       } else if (action.type === 'USE_ARSENAL') {
+        traceHandlerStart('USE_ARSENAL');
         // Mark the target immediately. This says "sent", never an outcome —
         // the verdict is still the server's alone.
         const mark: Coord | null =
           action.at ?? (action.row === undefined ? null : { r: action.row, c: 0 });
         set({ pending: true, pendingArsenalAt: mark, pendingShotAt: null, lastAction: action });
         client.useArsenal(action.itemId, { at: action.at, row: action.row });
+        traceHandlerEnd();
       } else if (action.type === 'RESIGN') {
         client.resign();
       }

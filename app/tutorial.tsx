@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { returnToMenu } from '@/features/matchmaking/exits';
 import { useBattle } from '@/state/battle';
 import { useProfile } from '@/state/profile';
 import { useTutorialDriver } from '@/tutorial/driver';
@@ -43,7 +44,7 @@ export default function TutorialRoute() {
   const finish = useCallback(() => {
     useProfile.getState().markTutorialComplete();
     useTutorial.getState().finish();
-    router.replace('/menu');
+    returnToMenu(router);
   }, [router]);
 
   useTutorialDriver(finish);

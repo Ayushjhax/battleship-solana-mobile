@@ -37,6 +37,7 @@ import {
 import { AttackDeck } from '@/features/battle/AttackDeck';
 import { ConnectionOverlay, useConnectionKind } from '@/features/battle/ConnectionOverlay';
 import { buildBattleSetup, buildOnlineSetup } from '@/features/battle/setup';
+import { returnToMenu } from '@/features/matchmaking/exits';
 import { ArsenalTargetingOverlay } from '@/features/arsenal/BattleArsenal';
 import { createBattleEffects } from '@/fx/battleEffects';
 import { FxLayer } from '@/fx/FxLayer';
@@ -176,7 +177,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
       const online = buildOnlineSetup(profile);
       if (!online) {
         // No `matched` behind us (a stale route): nothing to play. Back out.
-        router.replace('/menu');
+        returnToMenu(router);
         return;
       }
       // This session now owns the match, so a reconnect from here is the match
@@ -185,7 +186,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
       setup = online;
     } else if (!setup && placement.mode === 'online') {
       // An online route without a live authoritative match is stale.
-      router.replace('/menu');
+      returnToMenu(router);
       return;
     }
     useBattle
@@ -361,14 +362,14 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   const confirmResign = useCallback(() => {
     setResignOpen(false);
     if (tutorial) {
-      router.replace('/menu');
+      returnToMenu(router);
       return;
     }
     const state = useBattle.getState();
     if (state.shown?.phase === 'playing') {
       state.act({ type: 'RESIGN', playerId: state.me });
     } else {
-      router.replace('/menu');
+      returnToMenu(router);
     }
   }, [router, tutorial]);
 
