@@ -279,10 +279,21 @@ that looks like a rectangle from a UI kit.
   returns the caller's 1-based place in the same ordering: `<= 100` brackets that row,
   beyond pins it under the list. 400 ms budget: both calls in parallel, last page cached
   in memory, ledger rules are hairlines (Rough is for the brackets and the frame).
-- The city is one static screen: `UI_ART.cityPort` under a plain RNGH pinch + pan whose
-  clamp runs on the UI thread (1x..3x, image edge never inside the canvas), three
-  dashed slots with a "Coming soon" ribbon, the Captain's welcome once
-  (`profile.hasVisitedCity`). There is no building system — don't start one.
+- **The Port City is a preview** (`src/features/city`, art from `assets/port_city_assets`
+  via `npm run assets:city` → `assets/city/`). One coordinate system: map pixels. The map,
+  all fifteen buildings, their ribbons, the selection marks and the hit boxes live in ONE
+  view under one transform, and where each building stands is data in `cityLayout.ts`
+  (`scripts/city-preview.py` renders it outside the app). The map fills the window, so its
+  gestures sit on an untransformed full-window view (plain window dp, no canvas maths); the
+  HUD and popup are on the canvas. Tap is raced against pan/pinch, so a drag never selects.
+- The visit's timing is `visit.ts` (pure, `tests/city/visit.test.ts`): entering → exploring
+  → comingSoon → exiting. The popup comes once, after 3 distinct finds and 10 s of active
+  exploration or after 25 s, never mid-gesture; its 5 s countdown starts when its entrance
+  ends; background/blur pause every clock. Every way out goes through `visit.exit()`, which
+  navigates once (`router.dismissTo('/menu')`). The popup panel has its baked button and
+  countdown painted out by `city-assets.py`, so there is one live button and one live
+  countdown — keep `POPUP_ART` and the script's offsets in step (the layout test checks).
+  There is no building system, no purchases, no backend writes — don't start one.
 
 ### The store and flags (`app/store.tsx`, `src/features/store`, `src/features/flags`, `src/state/locker.ts`)
 

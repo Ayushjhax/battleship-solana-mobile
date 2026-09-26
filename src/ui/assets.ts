@@ -818,7 +818,54 @@ export const AVATARS = {
 
 export const UI_ART = {
   handPointer: require('../../assets/ink/ui/hand-pointer.png') as Asset,
-  cityPort: require('../../assets/ink/city/city-port.png') as Asset,
+} as const;
+
+/**
+ * The Port City (scripts/city-assets.py, from assets/port_city_assets): the
+ * map, the fifteen buildings, the HUD pieces and the Coming Soon panel with its
+ * baked button and countdown painted out (the screen draws live ones). Every
+ * piece keeps its supplied pixel size; src/features/city/cityLayout.ts has the
+ * numbers.
+ */
+export const CITY_ART = {
+  map: require('../../assets/city/map.jpg') as Asset,
+  buildings: {
+    admiralty: require('../../assets/city/buildings/admiralty.webp') as Asset,
+    armory: require('../../assets/city/buildings/armory.webp') as Asset,
+    bounty_board: require('../../assets/city/buildings/bounty_board.webp') as Asset,
+    captains_log: require('../../assets/city/buildings/captains_log.webp') as Asset,
+    expedition_dock: require('../../assets/city/buildings/expedition_dock.webp') as Asset,
+    fish_market: require('../../assets/city/buildings/fish_market.webp') as Asset,
+    fleet_tavern: require('../../assets/city/buildings/fleet_tavern.webp') as Asset,
+    foundry: require('../../assets/city/buildings/foundry.webp') as Asset,
+    gazette: require('../../assets/city/buildings/gazette.webp') as Asset,
+    harbour_defence: require('../../assets/city/buildings/harbour_defence.webp') as Asset,
+    ink_and_pen_shop: require('../../assets/city/buildings/ink_and_pen_shop.webp') as Asset,
+    lighthouse: require('../../assets/city/buildings/lighthouse.webp') as Asset,
+    naval_academy: require('../../assets/city/buildings/naval_academy.webp') as Asset,
+    scrapyard: require('../../assets/city/buildings/scrapyard.webp') as Asset,
+    shipyard: require('../../assets/city/buildings/shipyard.webp') as Asset,
+  },
+  labels: {
+    admiralty: require('../../assets/city/ui/admiralty_label.webp') as Asset,
+    fish_market: require('../../assets/city/ui/fish_market_label.webp') as Asset,
+    foundry: require('../../assets/city/ui/foundry_label.webp') as Asset,
+    scrapyard: require('../../assets/city/ui/scrapyard_label.webp') as Asset,
+    naval_academy: require('../../assets/city/ui/naval_academy_label.webp') as Asset,
+    shipyard: require('../../assets/city/ui/shipyard_label.webp') as Asset,
+  },
+  harbourRibbon: require('../../assets/city/ui/your_harbour_ribbon.webp') as Asset,
+  title: require('../../assets/city/ui/port_city_title.webp') as Asset,
+  hint: require('../../assets/city/ui/explore_hint.webp') as Asset,
+  home: require('../../assets/city/ui/home.webp') as Asset,
+  compass: require('../../assets/city/ui/compass.webp') as Asset,
+  counterFrame: require('../../assets/city/ui/counter_frame_small.webp') as Asset,
+  coin: require('../../assets/city/ui/coin.webp') as Asset,
+  gem: require('../../assets/city/ui/gem.webp') as Asset,
+  padlock: require('../../assets/city/ui/padlock.webp') as Asset,
+  flag: require('../../assets/city/ui/location_flag.webp') as Asset,
+  popupPanel: require('../../assets/city/popup/panel.webp') as Asset,
+  returnHome: require('../../assets/city/popup/return-home.webp') as Asset,
 } as const;
 
 /**

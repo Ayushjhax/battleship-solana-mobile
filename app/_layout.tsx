@@ -181,14 +181,16 @@ function AuthenticatedApp() {
     setMusic(inBattle ? 'battle' : 'menu');
   }, [pathname]);
 
-  // Explicit fallback for every route. Battle/tutorial and placement own
-  // richer back behavior, so returning false lets their focused handler run.
+  // Explicit fallback for every route. Battle/tutorial, placement and the port
+  // city own richer back behavior, so returning false lets their focused
+  // handler run (the city's plays its exit and returns home exactly once).
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (
         pathname.includes('battle') ||
         pathname === '/tutorial' ||
-        pathname.includes('placement')
+        pathname.includes('placement') ||
+        pathname === '/city'
       ) {
         return false;
       }

@@ -54,13 +54,6 @@ echo "ui"
 mask ui/hand-pointer "" yes 256
 for i in 1 2 3 4 5 6 7 8; do mask "ui/emote-0$i" "" yes 256; done
 
-echo "city map (full frame, lighter level so the water wash stays faint)"
-mkdir -p "$DST/city"
-magick "$SRC/city/city-port.png" -alpha off -colorspace gray -level 10%,92% -negate \
-  \( +clone -fill black -colorize 100 \) +swap -alpha off -compose copy_opacity -composite \
-  -define png:color-type=4 -strip "$DST/city/city-port.png"
-echo "  city/city-port  $(magick "$DST/city/city-port.png" -format '%wx%h' info:)"
-
 echo "brand icons from the battleship (app.json points at these)"
 INK="#3E2FB8"; PAPER="#FBFCFE"
 GRID=""; for i in $(seq 0 32 1024); do GRID="$GRID line $i,0 $i,1024 line 0,$i 1024,$i"; done
