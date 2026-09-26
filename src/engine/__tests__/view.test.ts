@@ -108,12 +108,12 @@ describe('projectView — the masking function', () => {
     expect(revealed).toHaveLength(10);
   });
 
-  it('4. enemy arsenal never leaks: mines, guns and radar stay hidden until the rules reveal them', () => {
+  it('4. enemy arsenal never leaks: mines and guns stay hidden until the rules reveal them', () => {
     const arsenalA: ArsenalItem[] = [
       { id: 'mine-1', kind: 'mine', at: { r: 9, c: 9 } },
       { id: 'mine-2', kind: 'mine', at: { r: 8, c: 8 } },
       { id: 'gun-1', kind: 'aaGun', at: { r: 4, c: 9 } },
-      { id: 'radar-1', kind: 'radar', at: { r: 9, c: 0 } },
+      { id: 'gun-2', kind: 'aaGun', at: { r: 9, c: 0 } },
     ];
     const arsenalB: ArsenalItem[] = [{ id: 'tb', kind: 'torpedoBomber' }];
     let state = startMatch({ mode: 'advanced', arsenalA, arsenalB, first: P1 });

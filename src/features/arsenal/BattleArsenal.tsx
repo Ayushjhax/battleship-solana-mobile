@@ -1,12 +1,12 @@
 /**
- * The battle's arsenal: the "Choose a weapon" panel over your own board, and
- * the targeting overlay on the enemy board once a weapon is picked.
+ * The battle's targeting overlay: the guide and the gesture surface on the
+ * enemy board once a weapon is picked off the Attack deck
+ * (src/features/battle/AttackDeck.tsx), plus the shared helpers both use —
+ * `remainingItems` and `targetFootprint`.
  *
- * The panel lists what can be aimed (catalog.ts WEAPON_ORDER): the four
- * aircraft, the radar and the submarine. The AA gun and the mine are bought
- * and placed at the start and then work on their own, so they are not
- * weapons to choose. A row with none left, or any row off your turn, is
- * drawn faded and does nothing.
+ * What can be aimed is catalog.ts WEAPON_ORDER: the four aircraft, the radar
+ * and the submarine. The AA gun and the mine are bought and placed at the
+ * start and then work on their own, so they are never chosen here.
  */
 import { atomicFootprint, bomberFootprint, doubleTorpedoRows } from '@engine/arsenal';
 import type { ArsenalItem, ArsenalKind, Coord, Marks } from '@engine/types';
@@ -26,7 +26,7 @@ import Animated, {
 import Svg, { G } from 'react-native-svg';
 
 import { haptic } from '@/audio/haptics';
-import { BATTLE_BOARD_TOP, BOARD_SIZE, CELL, boardOrigins } from '@/board/layout';
+import { BATTLE_BOARD_LEFT, BATTLE_BOARD_TOP, BOARD_SIZE, CELL, boardOrigins } from '@/board/layout';
 import { useTutorialTarget } from '@/tutorial/useTutorialTarget';
 import { ArtPlate } from '@/ui/ArtPlate';
 import { BATTLE_ART } from '@/ui/assets';
@@ -45,7 +45,7 @@ const ROW_H = ROW_W * (77 / 315);
 const ROW_X = 14;
 const ROW_Y = 40;
 const ROW_GAP = 6;
-const ORIGINS = boardOrigins(BATTLE_BOARD_TOP);
+const ORIGINS = boardOrigins(BATTLE_BOARD_TOP, BATTLE_BOARD_LEFT);
 const TARGETABLE = new Set<ArsenalKind>(WEAPON_ORDER);
 
 export interface ArsenalTarget {
@@ -58,138 +58,6 @@ export function remainingItems(
   kind: ArsenalKind,
 ): readonly ArsenalItem[] {
   return arsenal.filter((item) => item.kind === kind && !item.used && !item.destroyed);
-}
-
-function WeaponRow({
-  kind,
-  count,
-  enabled,
-  x,
-  y,
-  onPress,
-}: {
-  kind: ArsenalKind;
-  count: number;
-  enabled: boolean;
-  x: number;
-  y: number;
-  onPress: () => void;
-}) {
-  const pressable = enabled && count > 0 && TARGETABLE.has(kind);
-  // The tutorial spotlights and unlocks a row by `card-<kind>` (step 8, the Bomber).
-  const target = useTutorialTarget(`card-${kind.toLowerCase()}`);
-  const press = useSharedValue(1);
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
-  return (
-    <View {...target} style={[styles.row, { left: x, top: y }]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${ARSENAL_NAMES[kind]}, ${count} left`}
-        accessibilityState={{ disabled: !pressable }}
-        disabled={!pressable}
-        onPress={onPress}
-        onPressIn={() => {
-          press.value = withTiming(0.95, { duration: 70 });
-          haptic('buttonPress');
-        }}
-        onPressOut={() => {
-          press.value = withSpring(1, { damping: 11, stiffness: 360 });
-        }}
-        style={StyleSheet.absoluteFill}
-      >
-        <Animated.View style={[styles.rowBody, { opacity: pressable ? 1 : 0.42 }, style]}>
-          <Image source={BATTLE_ART.weaponRow} style={StyleSheet.absoluteFill} contentFit="fill" />
-          <View style={styles.rowIcon}>
-            <ArsenalIcon kind={kind} w={38} h={26} />
-          </View>
-          <Text
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.75}
-            style={[styles.rowName, !pressable && styles.rowNameOff]}
-          >
-            {WEAPON_NAMES[kind]}
-          </Text>
-          <Text style={[styles.rowCount, !pressable && styles.rowNameOff]}>{count}</Text>
-        </Animated.View>
-      </Pressable>
-    </View>
-  );
-}
-
-export function BattleArsenalPopover({
-  arsenal,
-  canUse,
-  onPick,
-  onClose,
-}: {
-  arsenal: readonly ArsenalItem[];
-  canUse: boolean;
-  onPick: (target: ArsenalTarget) => void;
-  onClose: () => void;
-}) {
-  const reduceMotion = useReducedMotion();
-  const enter = useSharedValue(reduceMotion ? 1 : 0);
-  useEffect(() => {
-    enter.value = withTiming(1, {
-      duration: reduceMotion ? 0 : 230,
-      easing: Easing.out(Easing.back(1.3)),
-    });
-  }, [enter, reduceMotion]);
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      onClose();
-      return true;
-    });
-    return () => subscription.remove();
-  }, [onClose]);
-  // Transform only: the panel holds the rows, and nothing pressable animates opacity.
-  const animated = useAnimatedStyle(() => ({
-    transform: [{ translateY: -18 * (1 - enter.value) }, { scale: 0.94 + 0.06 * enter.value }],
-  }));
-  const shade = useAnimatedStyle(() => ({ opacity: enter.value }));
-
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      <Animated.View pointerEvents="none" style={[styles.scrim, shade]} />
-      <Pressable
-        style={styles.popoverDismiss}
-        accessibilityRole="button"
-        accessibilityLabel="Close arsenal"
-        onPress={onClose}
-      />
-      <Animated.View style={[styles.popover, animated]} accessibilityViewIsModal>
-        <Image source={BATTLE_ART.weaponModal} style={StyleSheet.absoluteFill} contentFit="fill" />
-        <Text style={styles.popoverTitle} accessibilityRole="header">
-          Choose a weapon
-        </Text>
-        {WEAPON_ORDER.map((kind, index) => (
-          <WeaponRow
-            key={kind}
-            kind={kind}
-            count={remainingItems(arsenal, kind).length}
-            enabled={canUse}
-            x={ROW_X + (index % 2) * (ROW_W + ROW_GAP)}
-            y={ROW_Y + Math.floor(index / 2) * (ROW_H + ROW_GAP)}
-            onPress={() => {
-              const item = remainingItems(arsenal, kind)[0];
-              if (item) onPick({ itemId: item.id, kind });
-            }}
-          />
-        ))}
-        <Text style={styles.popoverHint}>
-          {canUse ? 'Pick a weapon, then aim it on the enemy grid.' : 'Weapons can be fired on your turn.'}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Close arsenal"
-          hitSlop={10}
-          onPress={onClose}
-          style={styles.popoverClose}
-        />
-      </Animated.View>
-    </View>
-  );
 }
 
 export function targetFootprint(kind: ArsenalKind, at: Coord): readonly Coord[] {

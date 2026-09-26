@@ -50,6 +50,7 @@ import {
   CELL,
   COL_LABELS,
   GRID,
+  LABEL_MARGIN,
   ROW_LABELS,
   pointToCell,
   shipRect,
@@ -57,8 +58,8 @@ import {
 } from './layout';
 import { ArsenalSprite, ShipSprite } from './ShipSprite';
 
-/** Room around the board for labels and the frame's overshoot. */
-export const LABEL_MARGIN = 24;
+export { LABEL_MARGIN } from './layout';
+
 const OUTER = BOARD_SIZE + LABEL_MARGIN * 2;
 const OVERSHOOT = 5;
 const LABEL_SIZE = 16;

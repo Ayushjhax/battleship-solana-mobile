@@ -66,6 +66,18 @@ leaving 100 each side for labels and HUD (`src/board/layout.ts`).
 
 Do not write percentage layouts, `Dimensions` maths, or per-device breakpoints.
 
+Two traps that broke the How-to-play swipe (`src/features/howToPlay/HowToPlayScreen.tsx`):
+
+- **`useScale()` only works INSIDE `<Scale>`.** Called in the same component that renders
+  `<Scale>`, it reads the context default of `scale: 1`, so any gesture maths silently runs at
+  the wrong size on a real screen. Put the gesture-owning body in a child component.
+- **Never read or write a React ref inside a Reanimated worklet.** Passing one to a gesture
+  worklet freezes it (`[Worklets] Tried to modify key 'current' of an object which has been
+  already passed to a worklet`) and every later write is dropped. Use a `SharedValue`. And
+  settle a gesture's result — the target and its `withTiming` — in `onEnd` on the UI thread;
+  handing that to JS via `runOnJS` races the gesture's own writes and can leave the view frozen
+  where the finger stopped.
+
 ## 4. Design tokens
 
 From `src/ui/tokens.ts` — use the token names, never raw hex:
@@ -134,6 +146,18 @@ that looks like a rectangle from a UI kit.
   `src/fx/Sprite.tsx` plays a strip by sliding it under a clip on the UI thread. Arsenal
   copy, groups (attack / defence) and what the weapon list offers live in
   `src/features/arsenal/catalog.ts`; the mine and AA gun are never "chosen" in battle.
+  **Only the AA gun and the mine are planted on your own board** — the radar is carried and
+  aimed at the enemy like the aircraft. `placement` in `src/engine/arsenal.ts` is the one
+  place that decides which, and the SERVER runs that same engine: moving a kind between
+  'own board' and 'offensive' must be deployed with the APK, or the server rejects the
+  layouts an updated phone sends.
+- **The Attack deck is always on the sheet** (`src/features/battle/AttackDeck.tsx`,
+  `scripts/deck-assets.sh`): one card per `WEAPON_ORDER` weapon down the left, a tap arms
+  it and sends its icon arcing to the enemy board. It replaced the Arsenal chest and its
+  pop-over, so there is no "open the arsenal" state — only `targeting`. Its geometry is
+  pure in `deckLayout.ts` and asserted by `tests/battle/deck-layout.test.ts`; the battle's
+  boards start at `BATTLE_BOARD_LEFT` to clear it, which every consumer picks up through
+  `boardOrigins(top, left)` — never hold a second copy of where the boards went.
 - Modes plug in behind the store: `ai` schedules `chooseMove` on a 900-1400 ms delay,
   `hotseat` swaps `me` the moment the turn changes hands and covers only the incoming
   player's own board (`fleetCovered`, the `FleetCover` sheet in `Hud.tsx`, lifted by one
@@ -150,11 +174,11 @@ that looks like a rectangle from a UI kit.
 - `script.ts` is the tutorial as data. Outcomes are rigged by the fixed fleets there, not by
   faking events: the engine stays honest and `forceOutcome` only asserts.
 - Elements the tutorial points at register themselves with `useTutorialTarget('ref')`
-  (`arsenal-tab`, `card-<kind>`, `ship-<id>`, and every `GridBoard` as `board-<seedKey>`).
+  (`arsenal-deck`, `card-<kind>`, `ship-<id>`, and every `GridBoard` as `board-<seedKey>`).
   Never hardcode a coordinate in the overlay.
-- Battle store fields the tutorial and P08 share: `lastAction`/`lastEvents`, `arsenalOpen`
-  + `setArsenalOpen`, `targeting` + `selectArsenal(itemId)`; `aim()` fires the armed
-  weapon. Mode `'tutorial'` has no AI and never auto-fires on timeout.
+- Battle store fields the tutorial and P08 share: `lastAction`/`lastEvents`, `targeting` +
+  `selectArsenal(itemId)`; `aim()` fires the armed weapon. Mode `'tutorial'` has no AI and
+  never auto-fires on timeout.
 
 ### State, audio and boot
 
@@ -192,10 +216,14 @@ that looks like a rectangle from a UI kit.
   and dropped with a warning if it fails. PlayerView is validated deeply; MatchEvent loosely
   (`{type: string}` + passthrough) because the engine's event union keeps growing and
   `applyEvent` already has a default case.
-- **Game state comes from the socket only.** Supabase Realtime `match:{id}` is emotes —
-  `chat.ts` ref-counts the channel with a hand-over grace, so searching.tsx warms it up during
-  the reveal and battle.tsx takes it over; `lobby:{mode}` presence is the online count. Never
-  mix the two.
+- **Game state comes from the socket only.** Emotes ride the match socket too when the
+  server's `hello:ok` carries `emotes: true` (the room relays `emote` to the other seat); a
+  sender then never touches Realtime. Against an older server they fall back to Supabase
+  Realtime `match:{id}` — `chat.ts` listens to both, ref-counts the channel with a hand-over
+  grace, so searching.tsx warms it up during the reveal and battle.tsx takes it over;
+  `lobby:{mode}` presence is the online count. Never send an `emote` to a server that didn't
+  advertise it: an unknown message type counts as a protocol violation. Realtime is the
+  fallback only; a phone whose server answered `emotes: true` never touches it.
 - The flow is place first, then queue: placement → `/searching` (`queue`) → `matched` →
   `ready` with the placement store's fleet, immediately → arena reveal 2 s → `/battle`.
   The server's 90 s layout deadline is the *opponent's* problem; ours is already in.

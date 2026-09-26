@@ -196,7 +196,7 @@ async function handleMessage(conn: Connection, message: ClientMessage, log: (msg
       return;
     }
     conn.playerId = result.token.userId;
-    send(conn, { t: 'hello:ok', v: 1, playerId: conn.playerId });
+    send(conn, { t: 'hello:ok', v: 1, playerId: conn.playerId, emotes: true });
 
     // Reconnect: re-attach to an in-progress match regardless of whether the
     // client remembered its matchId — the player's verified id is authority
@@ -262,6 +262,13 @@ async function handleMessage(conn: Connection, message: ClientMessage, log: (msg
       }
       const result = room.handleAction(playerId, message.seq, toMatchAction(playerId, message.action));
       if (!result.ok) violate(conn, `action rejected: ${result.reason}`, log);
+      return;
+    }
+
+    case 'emote': {
+      // Cosmetic and best effort: outside a room there is no one to show it
+      // to, and that is not a protocol violation.
+      findRoomForPlayer(playerId)?.relayEmote(playerId, message.emoteId);
       return;
     }
 

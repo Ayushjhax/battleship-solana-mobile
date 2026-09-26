@@ -14,7 +14,7 @@ import { rankFor } from '@engine/ranks';
 import { specFor } from '@engine/arsenal';
 import { Image } from 'expo-image';
 import { useRouter, type Href } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -33,12 +33,16 @@ import { haptic } from '@/audio/haptics';
 import { useFrameClock, SpriteStrip } from '@/fx/Sprite';
 import { useProfile } from '@/state/profile';
 import { ArtPlate } from '@/ui/ArtPlate';
-import { BACKGROUNDS, FX_ART, HOW_TO_PLAY_ART, type Asset } from '@/ui/assets';
+import { BACKGROUNDS, FLEET_ART, FX_ART, HOW_TO_PLAY_ART, MENU_ART, type Asset } from '@/ui/assets';
 import { portraitFor } from '@/ui/portraits';
 import { Scale, useScale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, artColor, font } from '@/ui/tokens';
 
 const STEP_COUNT = 5;
+/** A swipe turns the page once the finger has travelled this much of it… */
+const TURN_AT = 0.16;
+/** …or when it leaves faster than this, in canvas units a second. */
+const FLICK_SPEED = 380;
 const HTP = HOW_TO_PLAY_ART;
 /** board-frame.png's own aspect (w / h) — every mini board is drawn at this. */
 const BOARD_ASPECT = 587 / 598;
@@ -159,11 +163,6 @@ function HudChips() {
       <Text numberOfLines={1} style={[styles.hudPoints, { left: CHIP_X + fw + 7, top: CHIP_Y + 32 }]}>
         {`Points: ${profile.rankPoints}`}
       </Text>
-      <Image
-        source={HTP.shared.arsenalButton}
-        style={{ position: 'absolute', left: CHIP_X, top: CHIP_Y + fh + 4, width: 62, height: (62 * 86) / 215 }}
-        contentFit="contain"
-      />
 
       {(() => {
         const ofw = CHIP.w;
@@ -445,8 +444,9 @@ const ARSENAL_CARDS: readonly { key: keyof typeof HTP.placeFleet; icon: Asset; l
   { key: 'torpedoIcon', icon: HTP.placeFleet.torpedoIcon, label: 'Torpedo', kind: 'torpedoBomber' },
   { key: 'doubleTapIcon', icon: HTP.placeFleet.doubleTapIcon, label: 'Double Tap', kind: 'doubleTorpedoBomber' },
   { key: 'bomberIcon', icon: HTP.placeFleet.bomberIcon, label: 'Bomber', kind: 'bomber' },
-  { key: 'mineIcon', icon: HTP.placeFleet.mineIcon, label: 'Mine', kind: 'mine' },
   { key: 'submarineIcon', icon: HTP.placeFleet.submarineIcon, label: 'Submarine', kind: 'submarine' },
+  { key: 'torpedoIcon', icon: FLEET_ART.icons.radar, label: 'Radar', kind: 'radar' },
+  { key: 'mineIcon', icon: HTP.placeFleet.mineIcon, label: 'Mine', kind: 'mine' },
 ];
 
 function PlaceFleetStep() {
@@ -472,9 +472,11 @@ function PlaceFleetStep() {
       <Image source={HTP.placeFleet.hardButton} style={{ position: 'absolute', left: 200, top: 6, width: 54, height: (54 * 80) / 138 }} contentFit="contain" />
       <Image source={HTP.placeFleet.wagerOffButton} style={{ position: 'absolute', left: 262, top: 8, width: 62, height: (62 * 85) / 236 }} contentFit="contain" />
 
-      <Image source={HTP.placeFleet.fuelMeter} style={{ position: 'absolute', left: CANVAS_W - 14 - 90, top: 10, width: 90, height: (90 * 32) / 115 }} contentFit="contain" />
-      <Image source={HTP.placeFleet.fuelFlame} style={{ position: 'absolute', left: CANVAS_W - 14 - 90 - 18, top: 8, width: 14, height: (14 * 50) / 35 }} contentFit="contain" />
-      <Text style={styles.fuelLabel}>Fuel</Text>
+      <Image source={MENU_ART.gem} style={styles.pointsGem} contentFit="contain" />
+      <Text style={styles.fuelLabel}>Points</Text>
+      <Text style={styles.pointsValue}>
+        260<Text style={styles.pointsBudget}> / 260</Text>
+      </Text>
 
       <Image source={HTP.placeFleet.dockFrame} style={{ position: 'absolute', left: dx, top: dy, width: dw, height: dh }} contentFit="fill" />
       <Text style={styles.dockTitle}>Dock</Text>
@@ -521,11 +523,20 @@ const PAGES = [WelcomeStep, FireStep, MissStep, TargetStep, PlaceFleetStep] as c
 // Chrome: logo, Skip, dots — fixed on top of the sliding pages
 // ---------------------------------------------------------------------------
 
-function Dots({ step }: { step: number }) {
+function Dots({ step, onPick }: { step: number; onPick: (index: number) => void }) {
   return (
-    <View pointerEvents="none" style={styles.dots}>
+    <View style={styles.dots}>
       {PAGES.map((_, i) => (
-        <View key={i} style={[styles.dot, i === step && styles.dotActive]} />
+        <Pressable
+          key={i}
+          hitSlop={7}
+          accessibilityRole="button"
+          accessibilityState={{ selected: i === step }}
+          accessibilityLabel={`Page ${i + 1} of ${PAGES.length}`}
+          onPress={() => onPick(i)}
+        >
+          <View style={[styles.dot, i === step && styles.dotActive]} />
+        </Pressable>
       ))}
     </View>
   );
@@ -535,11 +546,32 @@ function Dots({ step }: { step: number }) {
 // The carousel
 // ---------------------------------------------------------------------------
 
+/**
+ * The route: the page backdrop and the canvas. Everything that needs the
+ * canvas scale lives in <Carousel>, INSIDE <Scale> — `useScale()` called up
+ * here read the context's default of 1, so every swipe was measured about a
+ * fifth short on a real screen.
+ */
 export function HowToPlayScreen() {
+  return (
+    <Scale backgroundImage={BACKGROUNDS.settings}>
+      <Carousel />
+    </Scale>
+  );
+}
+
+function Carousel() {
   const router = useRouter();
   const { scale } = useScale();
   const [step, setStep] = useState(0);
-  const stepRef = useRef(0);
+  /**
+   * The page the strip is on. A plain ref cannot do this job: passing one to a
+   * gesture worklet freezes it, and Reanimated then refuses every later write
+   * ("Tried to modify key `current` of an object which has been already passed
+   * to a worklet"). The ref stayed 0, so a swipe always asked for page 0 ± 1
+   * and the walkthrough could never get past page 2.
+   */
+  const pageAt = useSharedValue(0);
   const reduceMotion = useReducedMotion();
   const tx = useSharedValue(0);
   const dragStart = useSharedValue(0);
@@ -549,14 +581,14 @@ export function HowToPlayScreen() {
 
   const goTo = (next: number) => {
     const clamped = Math.max(0, Math.min(STEP_COUNT - 1, next));
-    stepRef.current = clamped;
+    pageAt.value = clamped;
     setStep(clamped);
     tx.value = withTiming(-clamped * CANVAS_W, { duration: reduceMotion ? 0 : 320, easing: Easing.out(Easing.cubic) });
   };
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (stepRef.current > 0) goTo(stepRef.current - 1);
+      if (pageAt.value > 0) goTo(pageAt.value - 1);
       else leave();
       return true;
     });
@@ -577,16 +609,31 @@ export function HowToPlayScreen() {
       tx.value = raw > 0 ? raw * 0.35 : raw < min ? min + (raw - min) * 0.35 : raw;
     })
     .onEnd((e) => {
-      const dragged = (tx.value - dragStart.value) / CANVAS_W;
-      const flick = e.velocityX / scale > 500 ? -1 : e.velocityX / scale < -500 ? 1 : 0;
-      const delta = flick !== 0 ? flick : dragged < -0.28 ? 1 : dragged > 0.28 ? -1 : 0;
-      runOnJS(goTo)(stepRef.current + delta);
+      // Judge the swipe by how far the FINGER went, not by where the strip has
+      // got to: `tx` trails a quick swipe by several frames, so a clear swipe
+      // used to read as a fifth of a page and spring back.
+      const moved = e.translationX / scale / CANVAS_W;
+      const vx = e.velocityX / scale;
+      const flick = vx > FLICK_SPEED ? -1 : vx < -FLICK_SPEED ? 1 : 0;
+      const delta = flick !== 0 ? flick : moved < -TURN_AT ? 1 : moved > TURN_AT ? -1 : 0;
+      // The page and the slide are settled HERE, on the UI thread, in the same
+      // frame the finger lifts. Handing them to the JS thread raced this
+      // gesture's own writes to `tx`: the slide could be dropped and the strip
+      // left frozen wherever the finger stopped, half on one page and half on
+      // the next. React only mirrors the result, for the dots and the buttons.
+      const next = Math.max(0, Math.min(STEP_COUNT - 1, pageAt.value + delta));
+      pageAt.value = next;
+      tx.value = withTiming(-next * CANVAS_W, {
+        duration: reduceMotion ? 0 : 320,
+        easing: Easing.out(Easing.cubic),
+      });
+      runOnJS(setStep)(next);
     });
 
   const stripStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.value }] }));
 
   return (
-    <Scale backgroundImage={BACKGROUNDS.settings}>
+    <>
       <GestureDetector gesture={pan}>
         <View style={styles.viewport}>
           <Animated.View style={[styles.strip, stripStyle]}>
@@ -599,29 +646,38 @@ export function HowToPlayScreen() {
         </View>
       </GestureDetector>
 
-      {/* edge taps: a light nudge back/forward, on top of the swipe */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Previous"
-        onPress={() => {
-          if (step > 0) {
+      {step > 0 ? (
+        <ArtPlate
+          family="sketch"
+          tone="cream"
+          w={74}
+          h={30}
+          fontSize={14}
+          label="« Back"
+          accessibilityLabel="Previous page"
+          onPress={() => {
             haptic('buttonPress');
             goTo(step - 1);
-          }
-        }}
-        style={styles.edgeLeft}
-      />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Next"
-        onPress={() => {
-          if (step < STEP_COUNT - 1) {
+          }}
+          style={styles.navBack}
+        />
+      ) : null}
+      {step < STEP_COUNT - 1 ? (
+        <ArtPlate
+          family="sketch"
+          tone="cream"
+          w={74}
+          h={30}
+          fontSize={14}
+          label="Next »"
+          accessibilityLabel="Next page"
+          onPress={() => {
             haptic('buttonPress');
             goTo(step + 1);
-          }
-        }}
-        style={styles.edgeRight}
-      />
+          }}
+          style={styles.navNext}
+        />
+      ) : null}
 
       <Image source={HTP.shared.logo} style={styles.logo} contentFit="contain" pointerEvents="none" />
       <ArtPlate
@@ -638,14 +694,21 @@ export function HowToPlayScreen() {
         }}
         style={styles.skip}
       />
-      <Dots step={step} />
+      <Dots
+        step={step}
+        onPick={(index) => {
+          if (index === step) return;
+          haptic('buttonPress');
+          goTo(index);
+        }}
+      />
       {step === STEP_COUNT - 1 ? (
         <ArtPlate
           family="sketch"
           tone="green"
-          w={140}
-          h={34}
-          fontSize={16}
+          w={118}
+          h={30}
+          fontSize={15}
           label="Let's play!"
           accessibilityLabel="Start a match"
           onPress={() => {
@@ -655,7 +718,7 @@ export function HowToPlayScreen() {
           style={styles.playCta}
         />
       ) : null}
-    </Scale>
+    </>
   );
 }
 
@@ -664,11 +727,11 @@ const styles = StyleSheet.create({
   strip: { flexDirection: 'row', width: CANVAS_W * STEP_COUNT, height: CANVAS_H },
   page: { width: CANVAS_W, height: CANVAS_H },
   abs: { position: 'absolute', left: 0, top: 0 },
-  edgeLeft: { position: 'absolute', left: 0, top: 100, width: 40, height: 180 },
-  edgeRight: { position: 'absolute', right: 0, top: 100, width: 40, height: 180 },
+  navBack: { position: 'absolute', left: 12, bottom: 12 },
+  navNext: { position: 'absolute', right: 12, bottom: 12 },
   logo: { position: 'absolute', left: (CANVAS_W - 158) / 2, top: 6, width: 158, height: (158 * 146) / 463 },
   skip: { position: 'absolute', right: 10, top: 60 },
-  playCta: { position: 'absolute', left: (CANVAS_W - 140) / 2, bottom: 14 },
+  playCta: { position: 'absolute', right: 12, bottom: 12 },
   dots: {
     position: 'absolute',
     left: 0,
@@ -692,9 +755,12 @@ const styles = StyleSheet.create({
   quoteRight: { position: 'absolute', right: 20, top: 118, width: 34, height: (34 * 152) / 99 },
   gullRight: { position: 'absolute', right: 58, top: 104, width: 28, height: (28 * 29) / 59 },
   aiLabel: { position: 'absolute', left: 60, top: 12, color: artColor.navy, fontFamily: font.display, fontSize: 14 },
-  fuelLabel: { position: 'absolute', right: 148, top: 12, color: artColor.navy, fontFamily: font.display, fontSize: 13 },
+  fuelLabel: { position: 'absolute', right: 96, top: 13, color: artColor.navy, fontFamily: font.display, fontSize: 13 },
+  pointsGem: { position: 'absolute', right: 146, top: 11, width: 18, height: 18 },
+  pointsValue: { position: 'absolute', right: 16, top: 7, color: artColor.navy, fontFamily: font.display, fontSize: 20 },
+  pointsBudget: { color: artColor.muted, fontFamily: font.label, fontSize: 12 },
   dockTitle: { position: 'absolute', left: 8, top: 50, width: 44, textAlign: 'center', color: artColor.navy, fontFamily: font.display, fontSize: 12 },
-  dockCount: { position: 'absolute', left: 4, bottom: 34, width: 52, textAlign: 'center', color: artColor.red, fontFamily: font.label, fontSize: 10 },
+  dockCount: { position: 'absolute', left: 4, top: 196, width: 52, textAlign: 'center', color: artColor.red, fontFamily: font.label, fontSize: 10 },
   arsenalTitle: { position: 'absolute', top: 56, color: artColor.red, fontFamily: font.display, fontSize: 16 },
   cardCount: { position: 'absolute', left: 30, top: 2, width: 26, color: artColor.navy, fontFamily: font.label, fontSize: 10 },
   cardLabel: { position: 'absolute', left: 29, right: 5, bottom: 3, color: artColor.navy, fontFamily: font.display, fontSize: 9.5 },

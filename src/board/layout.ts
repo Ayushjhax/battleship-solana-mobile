@@ -22,6 +22,13 @@ export const BOARD_TOP = 40;
  */
 export const BATTLE_BOARD_TOP = 78;
 
+/**
+ * In battle the boards move right to clear the Attack deck down the left
+ * (src/features/battle/AttackDeck.tsx: 8..96, then the row letters). The
+ * pair still measures 600, so the right margin gives up what the deck took.
+ */
+export const BATTLE_BOARD_LEFT = 130;
+
 export interface Point {
   readonly x: number;
   readonly y: number;
@@ -45,14 +52,25 @@ export const ENEMY_BOARD_ORIGIN: BoardOrigin = { x: SIDE_MARGIN + BOARD_SIZE + G
 /** Centre of the gutter between the boards — where the turn triangle lives. */
 export const GUTTER_CENTRE: Point = { x: SIDE_MARGIN + BOARD_SIZE + GUTTER / 2, y: BOARD_TOP + BOARD_SIZE / 2 };
 
-/** The two origins and the gutter centre for a board top other than the default. */
-export function boardOrigins(top: number): { own: BoardOrigin; enemy: BoardOrigin; gutterCentre: Point } {
+/**
+ * The two origins and the gutter centre for a board top — and left — other
+ * than the default. Every battle consumer (the boards, the fx layer, the
+ * targeting overlay) reads its geometry through here, so the pair can move
+ * without any of them holding a copy of where it went.
+ */
+export function boardOrigins(
+  top: number,
+  left: number = SIDE_MARGIN,
+): { own: BoardOrigin; enemy: BoardOrigin; gutterCentre: Point } {
   return {
-    own: { x: SIDE_MARGIN, y: top },
-    enemy: { x: SIDE_MARGIN + BOARD_SIZE + GUTTER, y: top },
-    gutterCentre: { x: SIDE_MARGIN + BOARD_SIZE + GUTTER / 2, y: top + BOARD_SIZE / 2 },
+    own: { x: left, y: top },
+    enemy: { x: left + BOARD_SIZE + GUTTER, y: top },
+    gutterCentre: { x: left + BOARD_SIZE + GUTTER / 2, y: top + BOARD_SIZE / 2 },
   };
 }
+
+/** Room around a board for its labels and the frame's overshoot. */
+export const LABEL_MARGIN = 24;
 
 export const ROW_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'] as const;
 export const COL_LABELS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'] as const;

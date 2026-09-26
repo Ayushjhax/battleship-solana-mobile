@@ -4,7 +4,9 @@
 # own. Output: assets/backgrounds/, assets/menu/, assets/login/, assets/name/,
 # assets/keyboard/ and the rest of the screens' folders; placement and the
 # battle (assets/fx, assets/fleet, assets/battle) are scripts/battle-assets.sh,
-# the store and the flags (assets/shop, assets/flags) scripts/store-assets.sh.
+# the store and the flags (assets/shop, assets/flags) scripts/store-assets.sh,
+# the Captain's wallet (assets/wallet) scripts/wallet-assets.sh, the battle's
+# Attack deck (assets/deck) scripts/deck-assets.sh.
 #
 #  - backgrounds/*.jpg: the full-bleed page backdrops. The sources are ~2.5 MB
 #    opaque PNGs; as JPEG they load and decode several times faster, which is
@@ -59,6 +61,25 @@ for n in coin gem star rank play friends rulebook trophy harbor shop coin-stacks
     -alpha off -compose copy_opacity -composite \
     -trim +repage -resize '160x160>' -strip "$DST/icons/$n.png"
   echo "  icons/$n  $(magick "$DST/icons/$n.png" -format '%wx%h' info:)"
+done
+
+# The six bottom tiles' glyphs are drawn at different aspects (two people are
+# wide, a trophy is nearly square), so fitting each into one box left the wide
+# ones small and floating and the tall ones filling it — the row read ragged.
+# Scale each by its geometric mean instead, which matches their optical mass,
+# then centre every one on the same square canvas so the tiles line up.
+echo "menu tile glyphs (optically matched, one canvas)"
+TILE_MASS=140
+TILE_CANVAS=176
+for n in friends rulebook trophy harbor shop coin-stacks; do
+  f="$DST/icons/$n.png"
+  read -r W H < <(magick identify -format '%w %h\n' "$f")
+  k=$(echo "scale=6; $TILE_MASS / sqrt($W * $H)" | bc -l)
+  nw=$(printf '%.0f' "$(echo "$W * $k" | bc -l)")
+  nh=$(printf '%.0f' "$(echo "$H * $k" | bc -l)")
+  magick "$f" -resize "${nw}x${nh}!" -background none -gravity center \
+    -extent "${TILE_CANVAS}x${TILE_CANVAS}" -strip "$f"
+  echo "  icons/$n  ink ${nw}x${nh} on ${TILE_CANVAS}"
 done
 
 echo "menu icon glyphs (already bare, just sized)"
@@ -478,3 +499,9 @@ bash scripts/battle-assets.sh
 
 echo "the store and the flags"
 bash scripts/store-assets.sh
+
+echo "the Captain's wallet"
+bash scripts/wallet-assets.sh
+
+echo "the battle's Attack deck"
+bash scripts/deck-assets.sh

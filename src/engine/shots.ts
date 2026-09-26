@@ -9,7 +9,7 @@
  *   otherwise        -> MISS, turn ENDS.
  *
  * Where the brief is silent:
- *   - An own-board item (AA gun, radar) hit by fire is destroyed. The attacker
+ *   - An own-board item (an AA gun) hit by fire is destroyed. The attacker
  *     "hit something", so the turn is kept (ITEM_HIT). Its cell is marked
  *     'revealed' — known to hold no ship — and the item shows in the
  *     attacker's revealedItems as destroyed.
@@ -160,7 +160,7 @@ export function resolveCell(wb: WorkingBoard, attackerId: string, at: Coord): Ce
   }
 
   if (item) {
-    // An AA gun or radar under normal fire: destroyed, and the attacker keeps the turn.
+    // An own-board item under normal fire: destroyed, and the attacker keeps the turn.
     item.destroyed = true;
     item.revealed = true;
     wb.marks[key] = 'revealed';

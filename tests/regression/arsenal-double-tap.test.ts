@@ -7,15 +7,15 @@
  * existed on the board with no `at`, nothing referenced it, and it could never
  * be placed or cancelled. The fuel bar dropped with no item to show for it.
  *
- * Only the three items that need a square behave this way — aaGun, mine and
- * radar. The rest are bought straight into the loadout, so tapping them twice
- * is two ordinary purchases and must keep working.
+ * Only the items that need a square behave this way — the AA gun and the
+ * mine. The rest, the radar among them, are bought straight into the loadout,
+ * so tapping them twice is two ordinary purchases and must keep working.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { usePlacement } from '../../src/state/placement';
 
-const PLACEABLE = ['aaGun', 'mine', 'radar'] as const;
+const PLACEABLE = ['aaGun', 'mine'] as const;
 
 function reset(ruleset: 'classic' | 'advanced' = 'advanced') {
   usePlacement.getState().initialize('ai', 1, ruleset);
@@ -67,8 +67,8 @@ describe('buying a cell-placed item twice', () => {
   });
 
   it('surfaces a reason the placement screen can show', () => {
-    usePlacement.getState().buyArsenal('radar');
-    usePlacement.getState().buyArsenal('radar');
+    usePlacement.getState().buyArsenal('aaGun');
+    usePlacement.getState().buyArsenal('aaGun');
 
     expect(usePlacement.getState().validationReason).toMatch(/place the current item first/i);
   });
@@ -99,7 +99,6 @@ describe('buying a cell-placed item twice', () => {
     usePlacement.getState().buyArsenal('aaGun');
 
     expect(usePlacement.getState().buyArsenal('mine').ok).toBe(false);
-    expect(usePlacement.getState().buyArsenal('radar').ok).toBe(false);
   });
 });
 

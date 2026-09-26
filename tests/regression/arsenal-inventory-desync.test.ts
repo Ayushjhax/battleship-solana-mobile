@@ -24,7 +24,7 @@ import { specFor } from '../../src/engine/arsenal';
 import { usePlacement } from '../../src/state/placement';
 
 /** Items that need a board cell — the ones that can strand. */
-const PLACEABLE = ['aaGun', 'mine', 'radar'] as const;
+const PLACEABLE = ['aaGun', 'mine'] as const;
 
 /**
  * The stuck state, stated once: a placeable item exists that has no cell and

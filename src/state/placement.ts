@@ -2,7 +2,7 @@
  * Placement-session state. The UI may preview freely, but every committed
  * board change is delegated to the pure placement engine in src/engine.
  */
-import { specFor } from '../engine/arsenal';
+import { isOwnBoardKind, specFor } from '../engine/arsenal';
 import { cellsOf, emptyBoard, halo, inBounds, sameCoord } from '../engine/board';
 import { FLEET_SHIP_COUNT, makeFleet } from '../engine/fleet';
 import {
@@ -80,7 +80,7 @@ interface PlacementActions {
   moveArsenal: (itemId: string, at: Coord) => PlacementMutation;
   sellArsenal: (itemId: string) => PlacementMutation;
   /**
-   * Sells every item that sits on the board (AA guns, mines, radar), and one
+   * Sells every item that sits on the board (AA guns, mines), and one
    * still waiting to be placed, at full price — what Shuffle and Reset do
    * before they touch the ships, since a new layout cannot respect them.
    * Bought offensive items are untouched. Returns the fuel given back.
@@ -233,9 +233,7 @@ export const usePlacement = create<PlacementState>((set, get) => ({
       return { ok: false, reason: result.reason };
     }
     const pendingArsenalId =
-      result.item?.at === undefined && (kind === 'aaGun' || kind === 'mine' || kind === 'radar')
-        ? (result.item?.id ?? null)
-        : null;
+      result.item?.at === undefined && isOwnBoardKind(kind) ? (result.item?.id ?? null) : null;
     set({
       arsenal: result.board.arsenal,
       fuelSpent: result.fuelSpent,

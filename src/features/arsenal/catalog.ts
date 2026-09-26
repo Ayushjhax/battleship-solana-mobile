@@ -8,8 +8,7 @@
  *   attack   bought now, waits in the Arsenal and is fired at the enemy
  *            board during the battle (the aircraft and the submarine)
  *   defence  bought now and placed on your own board straight away, where it
- *            works on its own (AA gun, mine) or is switched on from the
- *            Arsenal (radar) — every one of them can be hit
+ *            works on its own (AA gun, mine) — either of them can be hit
  */
 import type { ArsenalKind } from '@engine/types';
 
@@ -57,7 +56,7 @@ export const ARSENAL_GROUP: Record<ArsenalKind, ArsenalGroup> = {
   submarine: 'attack',
   aaGun: 'defence',
   mine: 'defence',
-  radar: 'defence',
+  radar: 'attack',
 };
 
 /** The shop's order: the attack group, then the defence group. */
@@ -67,9 +66,9 @@ export const SHOP_ORDER: readonly ArsenalKind[] = [
   'bomber',
   'atomicBomber',
   'submarine',
+  'radar',
   'aaGun',
   'mine',
-  'radar',
 ];
 
 /** What the battle's "Choose a weapon" list offers: what can be aimed. */

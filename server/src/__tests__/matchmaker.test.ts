@@ -315,3 +315,48 @@ describe('a slow database behind a queue join', () => {
     await server.close();
   }, 15000);
 });
+
+describe('emotes relayed by the room', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installAuthMock();
+    installDbMock();
+  });
+
+  // The app sends emotes over this socket only when `hello:ok` says the
+  // server relays them; the other player must see them and the sender must
+  // not get its own back.
+  it('advertises the relay and hands an emote to the other player only', async () => {
+    const server = await startTestServer();
+    const alice = await connectClient(server.port, 'emote-a');
+    const bob = await connectClient(server.port, 'emote-b');
+    expect(alice.history().find((m) => m.t === 'hello:ok')?.emotes).toBe(true);
+    alice.send({ t: 'queue', v: 1, mode: 'classic' });
+    bob.send({ t: 'queue', v: 1, mode: 'classic' });
+    await alice.waitFor((m) => m.t === 'matched', 5000);
+    await bob.waitFor((m) => m.t === 'matched', 5000);
+
+    alice.send({ t: 'emote', v: 1, emoteId: 3 });
+    const got = await bob.waitFor((m) => m.t === 'emote', 3000);
+    expect(got).toMatchObject({ t: 'emote', from: 'emote-a', emoteId: 3 });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(alice.history().some((m) => m.t === 'emote')).toBe(false);
+    // Not a protocol violation: nothing was logged against either player.
+    expect(server.logs.some((l) => l.includes('violation'))).toBe(false);
+
+    alice.close();
+    bob.close();
+    await server.close();
+  }, 20000);
+
+  it('ignores an emote from a player with no match, without counting it as a violation', async () => {
+    const server = await startTestServer();
+    const loner = await connectClient(server.port, 'emote-loner');
+    loner.send({ t: 'emote', v: 1, emoteId: 2 });
+    loner.send({ t: 'ping', v: 1 });
+    await loner.waitFor((m) => m.t === 'pong', 2000);
+    expect(loner.history().some((m) => m.t === 'error')).toBe(false);
+    loner.close();
+    await server.close();
+  }, 15000);
+});

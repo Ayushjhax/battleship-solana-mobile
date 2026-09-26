@@ -48,6 +48,8 @@ export interface DualBoardsProps {
   animateMarks?: boolean;
   /** Top edge of both boards; BATTLE_BOARD_TOP under the HUD. */
   top?: number;
+  /** Left edge of the pair; BATTLE_BOARD_LEFT clears the battle's Attack deck. */
+  left?: number;
   columnLabels?: boolean;
   /** Animated style for the camera shake — boards only, never the HUD. */
   boardStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
@@ -71,12 +73,13 @@ export function DualBoards({
   onOwnCellPress,
   animateMarks = true,
   top = BOARD_TOP,
+  left,
   columnLabels = true,
   boardStyle,
   children,
   skin = 'ink',
 }: DualBoardsProps) {
-  const origins = boardOrigins(top);
+  const origins = boardOrigins(top, left);
   const triW = TRIANGLE_W;
   return (
     <Animated.View style={[styles.canvas, boardStyle]} pointerEvents="box-none">

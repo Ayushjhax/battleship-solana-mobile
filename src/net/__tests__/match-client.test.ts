@@ -79,6 +79,8 @@ interface FakeServer {
   mute: boolean;
   /** What `queue` is answered with, if not `queued`. */
   queueReply: ServerMessage | null;
+  /** `hello:ok` advertises the emote relay (a current server). */
+  emotes: boolean;
   send(message: ServerMessage): void;
   sendRaw(raw: string): void;
   /** Kill every client socket and stop listening — "the server died". */
@@ -98,6 +100,7 @@ function startFakeServer(port: number, initialRoom = new FakeRoom()): Promise<Fa
     alice: null,
     mute: false,
     queueReply: null,
+    emotes: false,
     send(message) {
       if (!server.mute) server.alice?.send(JSON.stringify(message));
     },
@@ -142,7 +145,9 @@ function startFakeServer(port: number, initialRoom = new FakeRoom()): Promise<Fa
       switch (message.t) {
         case 'hello': {
           server.alice = socket;
-          socket.send(JSON.stringify({ t: 'hello:ok', v: 1, playerId: ALICE }));
+          socket.send(
+            JSON.stringify({ t: 'hello:ok', v: 1, playerId: ALICE, ...(server.emotes ? { emotes: true } : {}) }),
+          );
           // attach(): the room re-attaches by player id whether or not a resume id
           // came along (an app killed mid-match returns with an empty store) —
           // `matched` again, the whole log, a fresh view, turn, state again.
@@ -461,6 +466,32 @@ describe('match client', () => {
     expect(count('queue')).toBe(queues);
     expect(count('ping')).toBeGreaterThan(0);
   }, 45_000);
+
+  it('sends and hears emotes over the socket when the server relays them', async () => {
+    server.emotes = true;
+    const mc = await playUntilPlaying();
+    const { onServerEmote, sendEmoteOverSocket } = await import('../match-client');
+    const heard: { from: string; emoteId: number }[] = [];
+    const off = onServerEmote((e) => heard.push(e));
+
+    expect(sendEmoteOverSocket(4)).toBe(true);
+    await until(() => server.received.some((m) => m.t === 'emote'), 3000, 'emote sent');
+    expect(server.received.find((m) => m.t === 'emote')).toMatchObject({ t: 'emote', emoteId: 4 });
+
+    server.send({ t: 'emote', v: 1, from: BOT, emoteId: 6 });
+    await until(() => heard.length === 1, 3000, 'emote heard');
+    expect(heard[0]).toEqual({ from: BOT, emoteId: 6 });
+    expect(mc.getState().status).toBe('active');
+    off();
+  });
+
+  it('leaves emotes to the Realtime channel against a server that does not relay them', async () => {
+    await playUntilPlaying();
+    const { sendEmoteOverSocket } = await import('../match-client');
+    expect(sendEmoteOverSocket(4)).toBe(false);
+    await sleep(100);
+    expect(server.received.some((m) => m.t === 'emote')).toBe(false);
+  });
 
   it('a nudge cuts a scheduled backoff short', async () => {
     const mc = await playUntilPlaying();

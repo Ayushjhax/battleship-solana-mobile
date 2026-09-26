@@ -98,6 +98,12 @@ export const ClientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('action'), v: z.literal(1), seq: z.number().int().min(0), action: ActionPayloadSchema }),
   z.object({ t: z.literal('resign'), v: z.literal(1) }),
   z.object({ t: z.literal('ping'), v: z.literal(1) }),
+  /**
+   * An emote for the other player in this match, relayed by the room. Only
+   * sent to a server whose `hello:ok` says `emotes: true`; older clients use
+   * the Supabase Realtime match channel instead.
+   */
+  z.object({ t: z.literal('emote'), v: z.literal(1), emoteId: z.number().int().min(1).max(32) }),
 ]);
 
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
@@ -122,7 +128,10 @@ export interface MatchRewards {
 }
 
 export type ServerMessage =
-  | { t: 'hello:ok'; v: 1; playerId: string }
+  /** `emotes`: this server relays `emote` between the two players of a room. */
+  | { t: 'hello:ok'; v: 1; playerId: string; emotes?: boolean }
+  /** The other player's emote. Absent on servers that don't relay emotes. */
+  | { t: 'emote'; v: 1; from: string; emoteId: number }
   | { t: 'queued'; v: 1; position: number; onlineCount: number; pointBalance?: number }
   | {
       t: 'queue:cancelled';

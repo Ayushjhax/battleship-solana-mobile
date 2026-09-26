@@ -60,7 +60,7 @@ export type ArsenalPlacement = 'offensive' | 'own board';
 export interface ArsenalItem {
   readonly id: string;
   readonly kind: ArsenalKind;
-  /** Only for own-board kinds (aaGun, mine, radar). Offensive items have none. */
+  /** Only for own-board kinds (aaGun, mine). Carried items have none. */
   readonly at?: Coord;
   /** Spent: an offensive item fired, a radar scanned, a mine detonated. */
   readonly used?: boolean;

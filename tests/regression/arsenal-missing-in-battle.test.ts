@@ -51,11 +51,12 @@ function placedLoadout(seed: number): { ships: Ship[]; arsenal: ArsenalItem[] } 
   const arsenal: ArsenalItem[] = [
     { id: 'buy-atomic', kind: 'atomicBomber' },
     { id: 'buy-torpedo', kind: 'torpedoBomber' },
+    { id: 'buy-radar', kind: 'radar' },
   ];
   // Placed the way the placement screen places them: on cells the engine
   // accepts for THIS fleet, which is exactly what made them illegal on a
   // fleet the player never arranged.
-  for (const [n, kind] of (['mine', 'mine', 'aaGun', 'radar'] as const).entries()) {
+  for (const [n, kind] of (['mine', 'mine', 'aaGun'] as const).entries()) {
     for (let index = 0; index < 100; index++) {
       const item: ArsenalItem = {
         id: `buy-${kind}-${n}`,

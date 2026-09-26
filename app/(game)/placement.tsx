@@ -54,7 +54,7 @@ import { stakeOfflineWager } from '@/net/offlineWager';
 import { usePoints } from '@/state/points';
 import { ArtImageButton } from '@/ui/ArtImageButton';
 import { ArtPlate } from '@/ui/ArtPlate';
-import { BACKGROUNDS, BATTLE_ART, FLEET_ART } from '@/ui/assets';
+import { BACKGROUNDS, BATTLE_ART, FLEET_ART, MENU_ART } from '@/ui/assets';
 import { Scale, useScale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, artColor, color, font } from '@/ui/tokens';
 import { RoughShape, hashString, useRough } from '@/ui/useRough';
@@ -280,10 +280,10 @@ function FuelGauge({
   return (
     <Animated.View
       style={[styles.fuelGauge, gaugeStyle]}
-      accessibilityLabel={`${remaining} of ${budget} fuel remaining`}
+      accessibilityLabel={`${remaining} of ${budget} points remaining`}
     >
-      <Image source={BATTLE_ART.fuel} style={styles.fuelIcon} contentFit="contain" />
-      <Text style={styles.fuelCaption}>Fuel</Text>
+      <Image source={MENU_ART.gem} style={styles.fuelIcon} contentFit="contain" />
+      <Text style={styles.fuelCaption}>Points</Text>
       <Animated.View style={numberStyle}>
         <Text style={styles.fuelReadout}>
           <Text style={remaining === 0 ? styles.fuelReadoutEmpty : undefined}>{remaining}</Text>
@@ -1502,7 +1502,7 @@ const styles = StyleSheet.create({
     gap: 5,
     zIndex: 50,
   },
-  fuelIcon: { width: 24, height: 26 },
+  fuelIcon: { width: 24, height: 24 },
   fuelCaption: { color: artColor.navy, fontFamily: font.display, fontSize: 15 },
   fuelReadout: { color: artColor.navy, fontFamily: font.display, fontSize: 26, lineHeight: 32 },
   fuelReadoutEmpty: { color: artColor.red },

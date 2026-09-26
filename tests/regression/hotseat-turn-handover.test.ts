@@ -278,14 +278,31 @@ describe('under the sheet the incoming player’s turn has not begun', () => {
     expect(useBattle.getState().aiming).toEqual({ r: 3, c: 4 });
   });
 
-  it('the arsenal stays shut until the lift', async () => {
+  // The Attack deck is always on the sheet, so what the cover has to stop is
+  // the pick itself — otherwise the incoming player could aim the outgoing
+  // one's weapons at a board they are not allowed to see yet.
+  it('the deck cannot be picked from until the lift', async () => {
+    mocks.projectView.mockImplementation((_match: unknown, me: string) => ({
+      phase: 'playing',
+      turn: liveMatch.turn,
+      moves: 0,
+      forPlayer: me,
+      you: {
+        board: {
+          arsenal: [{ id: 'bomb-1', kind: 'bomber', used: false, destroyed: false }],
+          marks: {},
+          ships: [],
+        },
+      },
+      enemy: { marks: {} },
+    }));
     const useBattle = await startHotseat('advanced');
 
-    useBattle.getState().setArsenalOpen(true);
-    expect(useBattle.getState().arsenalOpen).toBe(false);
+    useBattle.getState().selectArsenal('bomb-1');
+    expect(useBattle.getState().targeting).toBeNull();
 
     useBattle.getState().uncoverFleet();
-    useBattle.getState().setArsenalOpen(true);
-    expect(useBattle.getState().arsenalOpen).toBe(true);
+    useBattle.getState().selectArsenal('bomb-1');
+    expect(useBattle.getState().targeting).toEqual({ itemId: 'bomb-1', kind: 'bomber' });
   });
 });

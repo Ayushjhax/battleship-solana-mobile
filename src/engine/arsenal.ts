@@ -18,7 +18,7 @@
  *     toward column 10. It passes over cells already hit and strikes the
  *     first INTACT ship cell, so it is never wasted on a wreck.
  *   - A double torpedo on row J (r = 9) runs rows I and J.
- *   - Torpedoes react to ships only; they pass over mines, guns and radars.
+ *   - Torpedoes react to ships only; they pass over mines and guns.
  *   - Bombs (bomber, atomic) resolve every footprint cell like a normal shot,
  *     skipping cells already marked. A mine in the footprint detonates, and
  *     the mine's "turn ends immediately" wins over any hits in the same drop.
@@ -78,7 +78,7 @@ export const ARSENAL_SPEC: readonly ArsenalSpecEntry[] = [
     target: 'cell',
   },
   { kind: 'aaGun', cost: 10, max: 3, placement: 'own board', isAircraft: false, target: 'none' },
-  { kind: 'radar', cost: 15, max: 1, placement: 'own board', isAircraft: false, target: 'cell' },
+  { kind: 'radar', cost: 15, max: 1, placement: 'offensive', isAircraft: false, target: 'cell' },
   { kind: 'mine', cost: 5, max: 5, placement: 'own board', isAircraft: false, target: 'none' },
   {
     kind: 'submarine',

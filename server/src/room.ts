@@ -68,6 +68,9 @@ const BOT_LAYOUT_DELAY_MS = envMs('SEABATTLE_BOT_LAYOUT_DELAY_MS', 1200);
 const BOT_THINK_MIN_MS = envMs('SEABATTLE_BOT_THINK_MIN_MS', 900);
 const BOT_THINK_SPREAD_MS = envMs('SEABATTLE_BOT_THINK_SPREAD_MS', 600);
 
+/** The shortest gap between two relayed emotes from one player. */
+const EMOTE_MIN_GAP_MS = 250;
+
 interface Seat {
   readonly playerId: string;
   readonly isBot: boolean;
@@ -93,6 +96,7 @@ export class Room {
   readonly id: string;
   readonly mode: MatchMode;
   readonly seats: [Seat, Seat];
+  private readonly lastEmoteAt = new Map<string, number>();
   readonly createdAt: number;
 
   state: MatchState;
@@ -420,6 +424,21 @@ export class Room {
       seat.lastAppliedActionSeq = seq;
     }
     return this.applyAction(action);
+  }
+
+  /**
+   * Hands a player's emote to the other seat. Cosmetic: a bot seat, a closed
+   * socket or a finished room drops it, and one emote per player per
+   * EMOTE_MIN_GAP_MS keeps a stuck finger from flooding the opponent.
+   */
+  relayEmote(from: string, emoteId: number): void {
+    if (this.finished) return;
+    const now = Date.now();
+    if (now - (this.lastEmoteAt.get(from) ?? 0) < EMOTE_MIN_GAP_MS) return;
+    this.lastEmoteAt.set(from, now);
+    const other = this.seats.find((s) => s.playerId !== from);
+    if (!other || other.isBot || !this.seats.some((s) => s.playerId === from)) return;
+    this.send(other.playerId, { t: 'emote', v: 1, from, emoteId });
   }
 
   handleResign(playerId: string): HandleResult {

@@ -193,9 +193,8 @@ export const STEPS: readonly Step[] = [
     id: '7',
     screen: 'battle',
     say: { text: "You're not limited to one square at a time.", side: 'right', voice: 7 },
-    spotlight: { target: 'element', ref: 'arsenal-tab' },
-    require: { kind: 'tap-element', ref: 'arsenal-tab' },
-    nudge: 'Open the Arsenal — the red tab at the top.',
+    spotlight: { target: 'element', ref: 'arsenal-deck' },
+    require: { kind: 'wait', ms: 2200 },
   },
   {
     id: '8',
@@ -203,7 +202,7 @@ export const STEPS: readonly Step[] = [
     say: { text: 'A bomber hits three squares at once.', side: 'right', voice: 8 },
     spotlight: { target: 'element', ref: 'card-bomber' },
     require: { kind: 'tap-element', ref: 'card-bomber' },
-    nudge: 'Pick the Bomber card.',
+    nudge: 'Pick the Bomber from the deck on the left.',
   },
   {
     id: '9',

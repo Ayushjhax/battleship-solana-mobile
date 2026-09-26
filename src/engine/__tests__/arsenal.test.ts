@@ -263,7 +263,7 @@ describe('submarine', () => {
 
 describe('radar', () => {
   it('returns a count of ship cells in the 3x3 and nothing else, and ends the turn', () => {
-    const state = setup([item('r1', 'radar', { r: 9, c: 0 })]);
+    const state = setup([item('r1', 'radar')]);
     const { state: next, events } = use(state, 'r1', { at: { r: 1, c: 1 } });
     expect(types(events)).toEqual(['ARSENAL_USED', 'RADAR_RESULT', 'TURN_CHANGED']);
     expect(events[1]).toEqual({ type: 'RADAR_RESULT', playerId: P1, at: { r: 1, c: 1 }, count: 6 });
@@ -280,7 +280,7 @@ describe('radar', () => {
   });
 
   it('clips at the edge and counts hit cells too', () => {
-    let state = setup([item('r1', 'radar', { r: 9, c: 0 })]);
+    let state = setup([item('r1', 'radar')]);
     state = reduce(state, { type: 'FIRE', playerId: P1, at: { r: 0, c: 0 } }).state; // hit battleship
     const { events } = use(state, 'r1', { at: { r: 0, c: 0 } }); // 2x2: (0,0),(0,1) ships
     expect(events[1]).toMatchObject({ type: 'RADAR_RESULT', count: 2 });

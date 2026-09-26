@@ -122,7 +122,7 @@ describe('validation', () => {
     expect(ok).toEqual({ ok: true, fuel: 240 });
     const over = validateSubmission('advanced', LAYOUT_A, [
       ...expensive,
-      { id: 'r', kind: 'radar', at: { r: 9, c: 9 } },
+      { id: 'r', kind: 'radar' },
       { id: 'm1', kind: 'mine', at: { r: 9, c: 8 } },
       { id: 'm2', kind: 'mine', at: { r: 9, c: 7 } },
     ]);

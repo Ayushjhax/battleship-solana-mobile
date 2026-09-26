@@ -136,7 +136,6 @@ interface BattleData {
   lastAction: MatchAction | null;
   lastEvents: readonly MatchEvent[];
   /** The Arsenal popover (P08) is open. */
-  arsenalOpen: boolean;
   /** A weapon is selected and the next enemy-board tap fires it. */
   targeting: { itemId: string; kind: ArsenalKind } | null;
 }
@@ -153,7 +152,6 @@ interface BattleActions {
   /** Hotseat: the incoming player has the device — lift the sheet, start the clock. */
   uncoverFleet: () => void;
   showEmote: (id: number, from?: 'me' | 'them') => void;
-  setArsenalOpen: (open: boolean) => void;
   /** Enter targeting with one of your unused offensive items; null cancels. */
   selectArsenal: (itemId: string | null) => void;
   reset: () => void;
@@ -186,7 +184,6 @@ const EMPTY: BattleData = {
   emotes: [],
   lastAction: null,
   lastEvents: [],
-  arsenalOpen: false,
   targeting: null,
 };
 
@@ -281,7 +278,7 @@ function onIdle(): void {
   const match = localMatch?.state ?? s.match;
   if (!match) return;
   const shown = projectView(match, s.me);
-  useBattle.setState({ shown, arsenalOpen: false, targeting: null });
+  useBattle.setState({ shown, targeting: null });
   if (match.phase === 'over') {
     // The queue drained after the GAME_OVER hold: the screen may route now.
     finishLocalResult();
@@ -329,7 +326,6 @@ function reconcileOnlineView(): void {
   const acted = !s.shown || s.shown.moves !== view.moves || s.shown.phase !== view.phase;
   const patch: Partial<BattleData> = { shown: view };
   if (acted) {
-    patch.arsenalOpen = false;
     patch.targeting = null;
   }
   if (view.phase === 'over') patch.finished = true;
@@ -573,23 +569,6 @@ export const useBattle = create<BattleState>((set, get) => ({
     if (get().fleetCovered) set({ fleetCovered: false, seconds: TURN_SECONDS });
   },
 
-  setArsenalOpen: (open) => {
-    const state = get();
-    if (
-      open &&
-      (state.ruleset !== 'advanced' ||
-        !state.shown ||
-        state.shown.phase !== 'playing' ||
-        state.shown.turn !== state.me ||
-        state.animating ||
-        state.pending ||
-        state.fleetCovered ||
-        state.finished)
-    )
-      return;
-    set({ arsenalOpen: open, ...(open ? { targeting: null } : {}) });
-  },
-
   selectArsenal: (itemId) => {
     if (itemId === null) {
       set({ targeting: null });
@@ -614,7 +593,7 @@ export const useBattle = create<BattleState>((set, get) => ({
     ) {
       return;
     }
-    set({ targeting: { itemId, kind: item.kind }, arsenalOpen: false });
+    set({ targeting: { itemId, kind: item.kind } });
   },
 
   showEmote: (id, from = 'me') => {

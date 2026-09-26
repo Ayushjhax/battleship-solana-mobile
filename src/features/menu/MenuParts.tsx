@@ -498,13 +498,16 @@ const styles = StyleSheet.create({
   },
   tileInner: {
     flex: 1,
-    paddingTop: 5,
+    paddingTop: 2,
     paddingBottom: BASE_DROP + 3,
     paddingHorizontal: 2,
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  tileIcon: { width: 34, height: 30 },
+  // Square, because scripts/color-assets.sh centres every tile glyph on one
+  // square canvas at a matched optical size — a non-square box here would
+  // letterbox them again and put the row back out of line.
+  tileIcon: { width: 34, height: 34 },
   tileLabel: {
     color: menuColor.navy,
     fontFamily: menuFont.caps,

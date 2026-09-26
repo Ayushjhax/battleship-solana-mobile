@@ -5,9 +5,9 @@
  *
  * All eight fit at once in three rows of three, split the way a player
  * needs to think about them (catalog.ts):
- *   Attack   Torpedo · Double Tap · Bomber / Atomic Bomb · Submarine · a
- *            note on how they are used
- *   Defence  AA Gun · Mine · Radar — each goes on your board as it is bought
+ *   Attack   Torpedo · Double Tap · Bomber / Atomic Bomb · Submarine · Radar
+ *   Defence  AA Gun · Mine — each goes on your board as it is bought — and a
+ *            note on putting a purchase back
  * Each group has its own header line saying exactly that, so a first-time
  * player can tell a purchase for later from one that is placed now.
  *
@@ -61,10 +61,12 @@ const ROW_3 = DEFENCE_HEAD_Y + 14;
 const NOTICE_MS = 2200;
 
 const SLOTS: readonly { kind: ArsenalKind | 'note'; x: number; y: number }[] = [
+  // Two full rows of attack (the radar is carried now, not planted), then the
+  // two items that still take a square on your board, and the note beside them.
   ...SHOP_ORDER.slice(0, 3).map((kind, i) => ({ kind, x: PAD + i * (CARD_W + GAP), y: ROW_1 })),
-  ...SHOP_ORDER.slice(3, 5).map((kind, i) => ({ kind, x: PAD + i * (CARD_W + GAP), y: ROW_2 })),
-  { kind: 'note' as const, x: PAD + 2 * (CARD_W + GAP), y: ROW_2 },
-  ...SHOP_ORDER.slice(5).map((kind, i) => ({ kind, x: PAD + i * (CARD_W + GAP), y: ROW_3 })),
+  ...SHOP_ORDER.slice(3, 6).map((kind, i) => ({ kind, x: PAD + i * (CARD_W + GAP), y: ROW_2 })),
+  ...SHOP_ORDER.slice(6).map((kind, i) => ({ kind, x: PAD + i * (CARD_W + GAP), y: ROW_3 })),
+  { kind: 'note' as const, x: PAD + 2 * (CARD_W + GAP), y: ROW_3 },
 ];
 
 /** A short line the panel shows in place of its title after a press that bought nothing. */
@@ -164,7 +166,7 @@ const ShopCard = memo(function ShopCard({
     }
     if (fuelLeft < spec.cost) {
       onUnaffordable();
-      onNotice({ text: `Not enough fuel — ${label} costs ${spec.cost}, you have ${fuelLeft}`, tone: 'red' });
+      onNotice({ text: `Not enough points — ${label} costs ${spec.cost}, you have ${fuelLeft}`, tone: 'red' });
       return;
     }
     const result = state.buyArsenal(kind);
@@ -181,7 +183,7 @@ const ShopCard = memo(function ShopCard({
     if (!pick) return;
     haptic('buttonPress');
     if (state.sellArsenal(pick.id).ok) {
-      onNotice({ text: `${label} put back · ${spec.cost} fuel returned`, tone: 'green' });
+      onNotice({ text: `${label} put back · ${spec.cost} points returned`, tone: 'green' });
     }
   };
 
@@ -190,7 +192,7 @@ const ShopCard = memo(function ShopCard({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={
-          atCap ? `${label}, you have all ${spec.max}` : `${label}, ${count} of ${spec.max}, costs ${spec.cost} fuel`
+          atCap ? `${label}, you have all ${spec.max}` : `${label}, ${count} of ${spec.max}, costs ${spec.cost} points`
         }
         onPress={buy}
         onPressIn={() => {
@@ -230,7 +232,7 @@ const ShopCard = memo(function ShopCard({
       {count > 0 ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Put back one ${label} and get ${spec.cost} fuel back`}
+          accessibilityLabel={`Put back one ${label} and get ${spec.cost} points back`}
           hitSlop={8}
           onPress={putBack}
           style={({ pressed }) => [styles.putBack, { transform: [{ scale: pressed ? 0.85 : 1 }] }]}
@@ -316,7 +318,7 @@ export function ShopPanel({ onUnaffordable, onInfo }: ShopPanelProps) {
             h={30}
             fontSize={14}
             label="Put it back"
-            accessibilityLabel="Put this item back and get its fuel back"
+            accessibilityLabel="Put this item back and get its points back"
             onPress={() => usePlacement.getState().cancelPendingArsenal()}
           />
         </View>

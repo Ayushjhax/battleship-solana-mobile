@@ -22,11 +22,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { playSfx } from '@/audio/sfx';
+import { setSfxLooping } from '@/audio/sfx';
 import { DualBoards } from '@/board/DualBoards';
-import { BATTLE_BOARD_TOP, BOARD_SIZE, boardOrigins, cellCentre } from '@/board/layout';
+import { BATTLE_BOARD_LEFT, BATTLE_BOARD_TOP, BOARD_SIZE, boardOrigins, cellCentre } from '@/board/layout';
 import {
-  ArsenalButton,
   EmotePanel,
   FloatingEmotes,
   FleetCover,
@@ -35,9 +34,10 @@ import {
   PlayerPlate,
   PortraitCard,
 } from '@/features/battle/Hud';
+import { AttackDeck } from '@/features/battle/AttackDeck';
 import { ConnectionOverlay, useConnectionKind } from '@/features/battle/ConnectionOverlay';
 import { buildBattleSetup, buildOnlineSetup } from '@/features/battle/setup';
-import { ArsenalTargetingOverlay, BattleArsenalPopover } from '@/features/arsenal/BattleArsenal';
+import { ArsenalTargetingOverlay } from '@/features/arsenal/BattleArsenal';
 import { createBattleEffects } from '@/fx/battleEffects';
 import { FxLayer } from '@/fx/FxLayer';
 import { useFx } from '@/fx/fxStore';
@@ -62,10 +62,16 @@ import { InkSpinner } from '@/ui/InkSpinner';
 import { Scale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, artColor, font } from '@/ui/tokens';
 
-const ORIGINS = boardOrigins(BATTLE_BOARD_TOP);
+const ORIGINS = boardOrigins(BATTLE_BOARD_TOP, BATTLE_BOARD_LEFT);
 /** The plates end at 69, clear of the board frames' top line (~71). */
 const PLATE_Y = 29;
-const LOGO_W = 150;
+/**
+ * The banner between the two plates (they end at 318 and start at 482).
+ * empire-logo.png is 575 x 203 with the lockup inked inside a ~4 % margin, so
+ * the box takes the FILE's aspect — sized to the ink's 529 x 157 it was
+ * letterboxed by `contain` and drawn a third smaller than its slot.
+ */
+const LOGO_W = 176;
 
 /** Sunk enemy ships come back as cells; rebuild a Ship for the wreck sprite. */
 function wrecksOf(
@@ -140,7 +146,6 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   const finished = useBattle((s) => s.finished);
   const emotes = useBattle((s) => s.emotes);
   const combatants = useBattle((s) => s.combatants);
-  const arsenalOpen = useBattle((s) => s.arsenalOpen);
   const targeting = useBattle((s) => s.targeting);
   const pending = useBattle((s) => s.pending);
   const pendingShotAt = useBattle((s) => s.pendingShotAt);
@@ -201,6 +206,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
       createBattleEffects({
         me: () => useBattle.getState().me,
         boardTop: BATTLE_BOARD_TOP,
+        boardLeft: BATTLE_BOARD_LEFT,
         commit: commitEvent,
         commitReveal,
         onMatchOver: markFinished,
@@ -233,7 +239,6 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       const state = useBattle.getState();
       if (state.targeting) state.selectArsenal(null);
-      else if (state.arsenalOpen) state.setArsenalOpen(false);
       else if (emotesOpen) setEmotesOpen(false);
       else if (resignOpen) setResignOpen(false);
       else setResignOpen(true);
@@ -247,9 +252,16 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
     const id = setInterval(() => useBattle.getState().tick(), 1000);
     return () => clearInterval(id);
   }, []);
+  const finalCountdownActive =
+    seconds > 0 &&
+    seconds <= 6 &&
+    shown?.phase === 'playing' &&
+    shown.turn === me &&
+    !animating;
   useEffect(() => {
-    if (seconds > 0 && seconds < 5 && shown?.turn === me && !animating) playSfx('turnTick');
-  }, [seconds, shown?.turn, me, animating]);
+    setSfxLooping('finalCountdown', finalCountdownActive);
+    return () => setSfxLooping('finalCountdown', false);
+  }, [finalCountdownActive]);
 
   // ---- crosshair mirrors the store's aim ----
   useEffect(() => {
@@ -396,13 +408,13 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
   const mine = combatants[me];
   const myTurn = shown.phase === 'playing' && shown.turn === me;
   const turn = shown.phase === 'over' ? 'idle' : myTurn ? 'yours' : 'theirs';
-  const arsenalLeft = shown.you.board.arsenal.filter((i) => !i.used && !i.destroyed).length;
 
   return (
     <Scale backgroundImage={BACKGROUNDS.settings}>
       {/* ---- boards, triangle, fx — the only things that shake ---- */}
       <DualBoards
         top={BATTLE_BOARD_TOP}
+        left={BATTLE_BOARD_LEFT}
         columnLabels={false}
         skin="art"
         own={{
@@ -425,7 +437,6 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
           !animating &&
           !pending &&
           !aiming &&
-          !arsenalOpen &&
           !targeting &&
           !resignOpen &&
           !fleetCovered &&
@@ -483,17 +494,6 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
             flagSide="right"
           />
         </View>
-        {shown.mode === 'advanced' ? (
-          <View style={styles.arsenalButton}>
-            <ArsenalButton
-              count={arsenalLeft}
-              onPress={() => {
-                setEmotesOpen(false);
-                useBattle.getState().setArsenalOpen(!arsenalOpen);
-              }}
-            />
-          </View>
-        ) : null}
         <View style={styles.plateOwn}>
           <PlayerPlate side="left" name={mine?.name ?? 'Player'} points={mine?.points ?? 0} />
         </View>
@@ -511,17 +511,22 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         </View>
       </View>
 
+      {/* The Attack deck: always in view down the left, one tap to aim. */}
+      {shown.mode === 'advanced' ? (
+        <AttackDeck
+          arsenal={shown.you.board.arsenal}
+          canUse={myTurn && !animating && !pending && !fleetCovered && connection === 'none'}
+          selectedKind={targeting?.kind ?? null}
+          onPick={(selected) => {
+            setEmotesOpen(false);
+            useBattle.getState().selectArsenal(selected.itemId);
+          }}
+        />
+      ) : null}
+
       {/* Sent and received emotes, rising up the sheet like Meet's reactions. */}
       <FloatingEmotes emotes={emotes} opponentName={opponent?.name ?? 'Opponent'} />
 
-      {arsenalOpen ? (
-        <BattleArsenalPopover
-          arsenal={shown.you.board.arsenal}
-          canUse={myTurn && !animating && !pending}
-          onPick={(selected) => useBattle.getState().selectArsenal(selected.itemId)}
-          onClose={() => useBattle.getState().setArsenalOpen(false)}
-        />
-      ) : null}
       {targeting ? (
         <ArsenalTargetingOverlay
           target={targeting}
@@ -556,7 +561,6 @@ const styles = StyleSheet.create({
   hud: { position: 'absolute', left: 0, top: 0, width: CANVAS_W, height: BATTLE_BOARD_TOP },
   portraitOwn: { position: 'absolute', left: 6, top: 5 },
   portraitThem: { position: 'absolute', left: CANVAS_W - 6 - PORTRAIT.w, top: 5 },
-  arsenalButton: { position: 'absolute', left: 62, top: -3 },
   plateOwn: { position: 'absolute', left: 62, top: PLATE_Y },
   plateThem: { position: 'absolute', left: CANVAS_W - 62 - PLATE.w, top: PLATE_Y },
   logo: {
@@ -564,7 +568,7 @@ const styles = StyleSheet.create({
     left: (CANVAS_W - LOGO_W) / 2,
     top: 1,
     width: LOGO_W,
-    height: LOGO_W * (157 / 529),
+    height: LOGO_W * (203 / 575),
   },
   gutterBadge: {
     position: 'absolute',

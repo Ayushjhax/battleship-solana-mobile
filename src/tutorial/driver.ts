@@ -82,9 +82,7 @@ function watchRequirement(req: Requirement, complete: () => void): () => void {
     }
 
     case 'tap-element': {
-      if (req.ref === 'arsenal-tab') {
-        cleanups.push(useBattle.subscribe((b) => b.arsenalOpen && complete()));
-      } else if (
+      if (
         req.ref.startsWith('card-') &&
         STEPS.some((s) => s.screen === 'battle' && s.require === req)
       ) {

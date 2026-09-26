@@ -568,7 +568,6 @@ export const BATTLE_ART = {
   dockAnchor: require('../../assets/battle/dock-anchor.png') as Asset,
   oceanRibbon: require('../../assets/battle/ocean-warfare-ribbon.png') as Asset,
   coins: require('../../assets/battle/coins.png') as Asset,
-  arsenalButton: require('../../assets/battle/arsenal-button.png') as Asset,
   logo: require('../../assets/battle/empire-logo.png') as Asset,
   crossedWeapons: require('../../assets/battle/crossed-weapons-badge.png') as Asset,
   starBadge: require('../../assets/battle/star-badge.png') as Asset,
@@ -949,3 +948,48 @@ export const FLAG_ART: Readonly<Record<string, Asset>> = {
   RU: require('../../assets/flags/RU.png'),
 };
 export const FLAG_BLANK = require('../../assets/flags/blank.png') as Asset;
+
+/**
+ * The battle's Attack deck (scripts/deck-assets.sh): the dashed parchment
+ * panel and the two card frames, nine-sliced to the size AttackDeck.tsx
+ * draws them (3x canvas units). Labels, icons and counts are drawn live.
+ */
+export const DECK_ART = {
+  panel: require('../../assets/deck/panel.webp') as Asset,
+  card: require('../../assets/deck/card.webp') as Asset,
+  cardOn: require('../../assets/deck/card-on.webp') as Asset,
+  title: require('../../assets/deck/title.png') as Asset,
+} as const;
+
+/**
+ * The Captain's wallet (scripts/wallet-assets.sh): blank frames and plates
+ * built at the size app/wallet.tsx draws them, the icons with their haze
+ * removed, and the pieces whose labels never change used as drawn.
+ */
+export const WALLET_ART = {
+  panelLeft: require('../../assets/wallet/panel-left.webp') as Asset,
+  panelRight: require('../../assets/wallet/panel-right.webp') as Asset,
+  banner: require('../../assets/wallet/banner.webp') as Asset,
+  tab: require('../../assets/wallet/tab.webp') as Asset,
+  tabOn: require('../../assets/wallet/tab-on.webp') as Asset,
+  sendButton: require('../../assets/wallet/send-button.webp') as Asset,
+  fieldRecipient: require('../../assets/wallet/field-recipient.webp') as Asset,
+  fieldAmount: require('../../assets/wallet/field-amount.webp') as Asset,
+  row: require('../../assets/wallet/row.webp') as Asset,
+  btnCopy: require('../../assets/wallet/btn-copy.png') as Asset,
+  btnExplorer: require('../../assets/wallet/btn-explorer.png') as Asset,
+  btnRefresh: require('../../assets/wallet/btn-refresh.png') as Asset,
+  btnSign: require('../../assets/wallet/btn-sign.png') as Asset,
+  btnCopyAddress: require('../../assets/wallet/btn-copy-address.png') as Asset,
+  headingReceive: require('../../assets/wallet/heading-receive.png') as Asset,
+  headingSend: require('../../assets/wallet/heading-send.png') as Asset,
+  headingActivity: require('../../assets/wallet/heading-activity.png') as Asset,
+  footerLeft: require('../../assets/wallet/footer-left.png') as Asset,
+  footerRight: require('../../assets/wallet/footer-right.png') as Asset,
+  iconCopy: require('../../assets/wallet/icon-copy.png') as Asset,
+  iconAddressCopy: require('../../assets/wallet/icon-address-copy.png') as Asset,
+  iconSend: require('../../assets/wallet/icon-send.png') as Asset,
+  iconChevron: require('../../assets/wallet/icon-chevron.png') as Asset,
+  iconConfirmed: require('../../assets/wallet/icon-confirmed.png') as Asset,
+  iconDot: require('../../assets/wallet/icon-dot.png') as Asset,
+} as const;

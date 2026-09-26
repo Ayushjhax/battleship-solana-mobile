@@ -14,8 +14,8 @@
  *   - A real action (FIRE / USE_ARSENAL) resets the actor's timeout streak.
  *   - RESIGN is accepted from either player at any time before 'over'.
  *   - TIMEOUT is only meaningful for the current player.
- *   - Own-board items (AA gun, mine) cannot be "used"; radar can, on the
- *     enemy board.
+ *   - Own-board items (AA gun, mine) cannot be "used". The radar is carried,
+ *     not planted: it is used like a weapon, on the enemy board.
  */
 import { cellsOf, coordKey } from './board';
 import {

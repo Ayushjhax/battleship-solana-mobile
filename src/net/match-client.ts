@@ -56,6 +56,7 @@ import {
   actionMessage,
   cancelQueueMessage,
   decodeServerMessage,
+  emoteMessage,
   encodeClientMessage,
   helloMessage,
   pingMessage,
@@ -308,6 +309,33 @@ let discoverTimer: ReturnType<typeof setTimeout> | null = null;
  */
 let queueSends = 0;
 let queueAcked = false;
+
+/**
+ * Emotes over this socket. A server whose `hello:ok` carries `emotes: true`
+ * relays an `emote` to the other player of the room; that path needs nothing
+ * but the connection both players already have. Against an older server
+ * this stays false and chat.ts falls back to the Realtime match channel.
+ */
+let serverRelaysEmotes = false;
+export interface SocketEmote {
+  readonly from: string;
+  readonly emoteId: number;
+}
+const emoteListeners = new Set<(emote: SocketEmote) => void>();
+
+/** Sends an emote through the match server. False when this server can't relay it (or no socket). */
+export function sendEmoteOverSocket(emoteId: number): boolean {
+  if (!serverRelaysEmotes || !useMatchClient.getState().matchId) return false;
+  return send(emoteMessage(emoteId));
+}
+
+/** The opponent's emotes as the match server relays them. Returns the unsubscribe. */
+export function onServerEmote(listener: (emote: SocketEmote) => void): () => void {
+  emoteListeners.add(listener);
+  return () => {
+    emoteListeners.delete(listener);
+  };
+}
 
 const EMPTY: MatchClientData = {
   status: 'idle',
@@ -651,6 +679,7 @@ function handleMessage(message: ServerMessage): void {
   switch (message.t) {
     case 'hello:ok': {
       authRetried = false;
+      serverRelaysEmotes = message.emotes === true;
       set({ playerId: message.playerId, reconnectAttempt: 0 });
       if (resyncing) {
         // The room replays its log and sends a fresh `state`; that's the resync.
@@ -926,6 +955,10 @@ function handleMessage(message: ServerMessage): void {
       }
       return;
     }
+
+    case 'emote':
+      for (const listener of emoteListeners) listener({ from: message.from, emoteId: message.emoteId });
+      return;
 
     case 'pong':
       return;

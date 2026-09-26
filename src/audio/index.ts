@@ -33,6 +33,7 @@ export const SFX_SOURCES = {
   radarPing: require('../../assets/audio/sfx/radar_ping.mp3') as AudioSource,
   subSurface: require('../../assets/audio/sfx/sub_surface.mp3') as AudioSource,
   turnTick: require('../../assets/audio/sfx/turn_tick.mp3') as AudioSource,
+  finalCountdown: require('../../assets/audio/sfx/gmgmgm.mp3') as AudioSource,
   rankUp: require('../../assets/audio/sfx/rank_up.mp3') as AudioSource,
   coinFlow: require('../../assets/audio/sfx/coin_flow.mp3') as AudioSource,
   victory: require('../../assets/audio/sfx/victory.mp3') as AudioSource,
@@ -90,6 +91,8 @@ const VARIED = new Set<SfxKey>([
 
 const pools = new Map<SfxKey, AudioPlayer[]>();
 const cursors = new Map<SfxKey, number>();
+const loopingSfx = new Set<SfxKey>();
+const loopRevisions = new Map<SfxKey, number>();
 const music = new Map<MusicKey, AudioPlayer>();
 const voices = new Map<number, AudioPlayer>();
 let idleVoices: AudioPlayer[] = [];
@@ -124,6 +127,43 @@ function applyMix(): void {
     player.volume = profile.musicOn ? profile.musicVolume * (ducked ? 0.3 : 1) : 0;
   }
   if (!profile.soundOn) stopVoice();
+  for (const id of loopingSfx) syncLoopingSfx(id);
+}
+
+function syncLoopingSfx(id: SfxKey): void {
+  const player = pools.get(id)?.[0];
+  if (!player) return;
+
+  const revision = (loopRevisions.get(id) ?? 0) + 1;
+  loopRevisions.set(id, revision);
+  const profile = useProfile.getState();
+  const shouldPlay =
+    initialized && active && loopingSfx.has(id) && profile.soundOn && profile.soundVolume > 0;
+
+  if (!shouldPlay) {
+    quiet(() => player.pause());
+    return;
+  }
+
+  player.loop = true;
+  player.volume = profile.soundVolume;
+  if (player.playing) return;
+  void player.seekTo(0).then(
+    () => {
+      const latest = useProfile.getState();
+      if (
+        loopRevisions.get(id) === revision &&
+        initialized &&
+        active &&
+        loopingSfx.has(id) &&
+        latest.soundOn &&
+        latest.soundVolume > 0
+      ) {
+        player.play();
+      }
+    },
+    () => {},
+  );
 }
 
 function createPlayers(): void {
@@ -221,6 +261,25 @@ export function play(id: SfxKey, options: PlayOptions = {}): void {
 
 export const playSfx = play;
 
+/** Starts or stops a preloaded effect as a continuous loop. */
+export function setSfxLooping(id: SfxKey, value: boolean): void {
+  const revision = (loopRevisions.get(id) ?? 0) + 1;
+  loopRevisions.set(id, revision);
+
+  if (value) {
+    loopingSfx.add(id);
+    syncLoopingSfx(id);
+    return;
+  }
+
+  loopingSfx.delete(id);
+  const player = pools.get(id)?.[0];
+  if (!player) return;
+  player.loop = false;
+  quiet(() => player.pause());
+  void player.seekTo(0).catch(() => {});
+}
+
 export function setMusic(next: MusicKey | null): void {
   desiredMusic = next;
   if (!initialized || !active) return;
@@ -268,9 +327,15 @@ export function refreshAudioSettings(): void {
 
 export function setAudioActive(value: boolean): void {
   active = value;
+  if (!value) {
+    for (const id of loopingSfx) syncLoopingSfx(id);
+  }
   void setIsAudioActiveAsync(value).then(
     () => {
-      if (value) setMusic(desiredMusic);
+      if (value) {
+        setMusic(desiredMusic);
+        for (const id of loopingSfx) syncLoopingSfx(id);
+      }
     },
     () => {},
   );

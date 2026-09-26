@@ -229,6 +229,15 @@ const ITEM_ART: Partial<Record<ArsenalItem['kind'], Asset>> = {
   radar: FLEET_ART.radar,
 };
 
+/**
+ * How far each item's art is held back from its box. The default 2 lets a
+ * gun's barrel overhang its cell a little, which reads well; the mine's art
+ * is wider than it is tall (144 x 128), so at that inset its spikes run to
+ * the box edge and the ring looks cut off by the cell. It gets more room.
+ */
+const ITEM_INSET: Partial<Record<ArsenalItem['kind'], number>> = { mine: 5 };
+const ITEM_INSET_DEFAULT = 2;
+
 export interface ArsenalSpriteProps {
   item: ArsenalItem;
 }
@@ -240,6 +249,7 @@ function ArsenalSpriteInner({ item }: ArsenalSpriteProps) {
   const seed = hashString(`arsenal-${item.id}-${item.kind}`);
   const source = ITEM_ART[item.kind] ?? null;
   const size = CELL + SHIP_BLEED * 2;
+  const inset = ITEM_INSET[item.kind] ?? ITEM_INSET_DEFAULT;
 
   return (
     <View
@@ -254,7 +264,12 @@ function ArsenalSpriteInner({ item }: ArsenalSpriteProps) {
       }}
     >
       {source ? (
-        <Image source={source} style={styles.itemArt} contentFit="contain" cachePolicy="memory-disk" />
+        <Image
+          source={source}
+          style={[styles.itemArt, { left: inset, top: inset, right: inset, bottom: inset }]}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+        />
       ) : null}
       {item.destroyed ? (
         <Svg width={size} height={size} viewBox="0 0 32 32" style={StyleSheet.absoluteFill}>

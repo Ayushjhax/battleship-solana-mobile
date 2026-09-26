@@ -76,6 +76,8 @@ export interface BattleEffectDeps {
   /** The viewer's player id at the time of the event. */
   me: () => string;
   boardTop: number;
+  /** Matches the screen's boards; the fx must land on the cells the player sees. */
+  boardLeft?: number;
   commit: (event: PlayEvent) => void;
   commitReveal: (actorId: string, cell: Coord) => void;
   /** Called after the GAME_OVER hold. */
@@ -95,7 +97,7 @@ const IMPACT: Record<'hit' | 'miss' | 'mine' | 'item', { kind: SpriteKind; width
 };
 
 export function createBattleEffects(deps: BattleEffectDeps): EventEffects {
-  const origins = boardOrigins(deps.boardTop);
+  const origins = boardOrigins(deps.boardTop, deps.boardLeft);
   const mine = (actorId: string) => actorId === deps.me();
   /** The board the actor is attacking. */
   const targetBoard = (actorId: string): BoardOrigin => (mine(actorId) ? origins.enemy : origins.own);

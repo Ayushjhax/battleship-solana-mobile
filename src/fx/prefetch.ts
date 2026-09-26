@@ -11,6 +11,7 @@ import { Image as RNImage } from 'react-native';
 
 import {
   BATTLE_ART,
+  DECK_ART,
   EMOTES,
   FLAG_ART,
   FLAG_BLANK,
@@ -37,7 +38,9 @@ function battleArt(): Asset[] {
     BATTLE_ART.boardFrame,
     BATTLE_ART.portraitFrame,
     BATTLE_ART.infoFrame,
-    BATTLE_ART.arsenalButton,
+    DECK_ART.panel,
+    DECK_ART.card,
+    DECK_ART.cardOn,
     BATTLE_ART.logo,
     BATTLE_ART.weaponModal,
     BATTLE_ART.weaponRow,

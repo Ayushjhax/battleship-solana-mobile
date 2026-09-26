@@ -177,7 +177,20 @@ export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 // ---------------------------------------------------------------------------
 
 export const ServerMessageSchema = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('hello:ok'), v: z.literal(1), playerId: z.string().min(1) }),
+  // `emotes`: the server relays `emote` between the players of a room.
+  z.object({
+    t: z.literal('hello:ok'),
+    v: z.literal(1),
+    playerId: z.string().min(1),
+    emotes: z.boolean().optional(),
+  }),
+  /** The other player's emote, relayed by the room (servers with `emotes`). */
+  z.object({
+    t: z.literal('emote'),
+    v: z.literal(1),
+    from: z.string().min(1),
+    emoteId: z.number().int().min(1).max(32),
+  }),
   z.object({
     t: z.literal('queued'),
     v: z.literal(1),
@@ -277,7 +290,8 @@ export type ClientMessage =
   | { t: 'ready'; v: 1; layout: LayoutPayload }
   | { t: 'action'; v: 1; seq: number; action: ActionPayload }
   | { t: 'resign'; v: 1 }
-  | { t: 'ping'; v: 1 };
+  | { t: 'ping'; v: 1 }
+  | { t: 'emote'; v: 1; emoteId: number };
 
 export function encodeClientMessage(message: ClientMessage): string {
   return JSON.stringify(message);
@@ -315,6 +329,9 @@ export function resignMessage(): ClientMessage {
 }
 export function pingMessage(): ClientMessage {
   return { t: 'ping', v: 1 };
+}
+export function emoteMessage(emoteId: number): ClientMessage {
+  return { t: 'emote', v: 1, emoteId };
 }
 
 /** The placement store's fleet, trimmed to exactly the wire shape. */

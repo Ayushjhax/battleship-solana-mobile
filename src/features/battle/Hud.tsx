@@ -1,8 +1,7 @@
 /**
  * The battle's HUD, drawn to its mockup in the fleet art — left to right:
- *   your captain in the portrait frame · the Arsenal button (the chest, with
- *   a red count of what is left) over your plate — star, rank shield, rank,
- *   name, points · the Empire of Bits banner · the opponent's plate, its
+ *   your captain in the portrait frame · your plate — star, rank shield,
+ *   rank, name, points · the Empire of Bits banner · the opponent's plate, its
  *   mirror · their captain. Each captain wears their country's flag badge
  *   pinned to the frame's inner corner.
  * Plus the pieces that float over it: the emote sticker and picker, and the
@@ -87,61 +86,6 @@ export function PortraitCard({
         />
       ) : null}
     </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Arsenal button — the chest, with a red count of what is left
-// ---------------------------------------------------------------------------
-
-export const ARSENAL_BUTTON = { w: 96, h: 96 * (60 / 195) } as const;
-const BADGE = 17;
-
-export function ArsenalButton({ count, onPress }: { count: number; onPress?: () => void }) {
-  const target = useTutorialTarget('arsenal-tab');
-  const reduceMotion = useReducedMotion();
-  const press = useSharedValue(1);
-  const bump = useSharedValue(1);
-  const first = useRef(true);
-  // The count pops each time a weapon is spent, so a used one is noticed.
-  useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
-    if (reduceMotion) return;
-    bump.value = withSequence(withTiming(1.35, { duration: 110 }), withSpring(1, { damping: 9, stiffness: 260 }));
-  }, [bump, count, reduceMotion]);
-  const pressStyle = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
-  const badgeStyle = useAnimatedStyle(() => ({ transform: [{ scale: bump.value }] }));
-  return (
-    <Pressable
-      {...target}
-      onPress={onPress}
-      onPressIn={() => {
-        press.value = withTiming(0.94, { duration: 70 });
-        haptic('buttonPress');
-      }}
-      onPressOut={() => {
-        press.value = withSpring(1, { damping: 11, stiffness: 360 });
-      }}
-      disabled={!onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Arsenal, ${count} left`}
-      style={{ width: ARSENAL_BUTTON.w + BADGE / 2, height: ARSENAL_BUTTON.h + 4 }}
-    >
-      <Animated.View style={[{ width: ARSENAL_BUTTON.w, height: ARSENAL_BUTTON.h, marginTop: 4 }, pressStyle]}>
-        <Image source={BATTLE_ART.arsenalButton} style={StyleSheet.absoluteFill} contentFit="fill" />
-      </Animated.View>
-      {count > 0 ? (
-        <Animated.View pointerEvents="none" style={[styles.badge, badgeStyle]}>
-          <Svg width={BADGE} height={BADGE} viewBox={`0 0 ${BADGE} ${BADGE}`} style={StyleSheet.absoluteFill}>
-            <Circle cx={BADGE / 2} cy={BADGE / 2} r={BADGE / 2 - 1} fill={artColor.red} stroke="#FFF7EE" strokeWidth={1.2} />
-          </Svg>
-          <Text style={styles.badgeText}>{count}</Text>
-        </Animated.View>
-      ) : null}
-    </Pressable>
   );
 }
 
@@ -409,16 +353,6 @@ export function FleetCover({
 
 const styles = StyleSheet.create({
   hole: { position: 'absolute', overflow: 'hidden' },
-  badge: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    width: BADGE,
-    height: BADGE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeText: { color: '#FFF7EE', fontFamily: font.display, fontSize: 11, lineHeight: 13 },
   plateRow: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',

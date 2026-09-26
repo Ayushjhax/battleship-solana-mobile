@@ -51,7 +51,7 @@ function defences(ships: readonly Ship[]): ArsenalItem[] {
   }
   return [
     { id: 'aa-1', kind: 'aaGun', at: free[0] as { r: number; c: number } },
-    { id: 'radar-1', kind: 'radar', at: free[free.length - 1] as { r: number; c: number } },
+    { id: 'radar-1', kind: 'radar' },
     { id: 'torp-1', kind: 'torpedoBomber' },
   ];
 }
