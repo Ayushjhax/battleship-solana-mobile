@@ -1,0 +1,68 @@
+# Builds an installable release APK (signed with the debug key, like the Expo
+# template) with the public env of the `preview` profile in eas.json baked in.
+# The APK is uploaded as a workflow artifact and as a prerelease asset.
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/project-thread-4btda8]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+
+      # The public (EXPO_PUBLIC_*) env of the eas.json `preview` profile, read
+      # from eas.json so the values are kept in one place.
+      - name: Load preview env from eas.json
+        run: jq -r '.build.preview.env | to_entries[] | select(.key | startswith("EXPO_PUBLIC_")) | "\(.key)=\(.value)"' eas.json >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # package-lock.json is out of sync with package.json, so `npm ci` refuses.
+      - run: npm install --no-audit --no-fund --include=dev
+
+      - run: npx expo prebuild --platform android --no-install
+        env:
+          CI: 1
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      - name: Name the APK
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk "out/empire-of-bits-${GITHUB_SHA::7}.apk"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: empire-of-bits-apk
+          path: out/*.apk
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="apk-${GITHUB_SHA::7}"
+          gh release create "$tag" out/*.apk --prerelease --target "$GITHUB_SHA" \
+            --title "Android APK ${GITHUB_SHA::7}" \
+            --notes "Release APK built from ${GITHUB_SHA} (debug-signed, preview env)."
