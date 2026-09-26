@@ -6,7 +6,7 @@ import { validateSubmission } from '@engine/match';
 import { validateArsenalPlacement } from '@engine/placement';
 import type { ArsenalItem, ArsenalKind, Orientation, ShipClass } from '@engine/types';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   forwardRef,
   memo,
@@ -875,11 +875,14 @@ function PulsingBattleButton({
 }) {
   const reduceMotion = useReducedMotion();
   const pulse = useSharedValue(1);
+  // Placement stays mounted under /searching and the battle. An endless pulse
+  // nobody can see still runs on the UI thread every frame of the match.
+  const focused = useIsFocused();
 
   useEffect(() => {
     cancelAnimation(pulse);
     pulse.value = 1;
-    if (!enabled || reduceMotion) return;
+    if (!enabled || !focused || reduceMotion) return;
     pulse.value = withRepeat(
       withSequence(
         withTiming(1.04, { duration: 160, easing: Easing.out(Easing.cubic) }),
@@ -890,7 +893,7 @@ function PulsingBattleButton({
       false,
     );
     return () => cancelAnimation(pulse);
-  }, [enabled, pulse, reduceMotion]);
+  }, [enabled, focused, pulse, reduceMotion]);
 
   const style = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
   return (

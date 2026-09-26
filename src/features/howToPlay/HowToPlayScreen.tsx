@@ -30,6 +30,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { haptic } from '@/audio/haptics';
+import { returnToMenu } from '@/features/matchmaking/exits';
 import { useFrameClock, SpriteStrip } from '@/fx/Sprite';
 import { useProfile } from '@/state/profile';
 import { ArtPlate } from '@/ui/ArtPlate';
@@ -576,7 +577,7 @@ function Carousel() {
   const tx = useSharedValue(0);
   const dragStart = useSharedValue(0);
 
-  const leave = () => router.replace('/menu' as Href);
+  const leave = () => returnToMenu(router);
   const play = () => router.replace('/placement?mode=ai' as Href);
 
   const goTo = (next: number) => {

@@ -259,6 +259,18 @@ that looks like a rectangle from a UI kit.
 - `src/net/__tests__/match-client.test.ts` drives the real client over real sockets against
   a fake server that runs the real engine (kill/restart, resume, dedup, app-restart). Keep
   it green whenever the protocol or the reconnect path changes.
+- **Leave a match through `src/features/matchmaking/exits.ts`, never `router.replace('/menu')`.**
+  Every route is in one native stack and every route in it stays mounted — hidden screens
+  keep their store subscriptions, effects and animations. `replace` only swaps the top, so
+  it stranded a placement (and a menu) per match and the game got slower and hotter each
+  match. `returnToMenu()` is `dismissTo('/menu')`; "Play again" is that plus a `push`.
+  `tests/regression/screens-pile-up-per-match.test.ts` runs the real StackRouter.
+- Tracing a slow tap: `EXPO_PUBLIC_TRACE_ACTIONS=1` (dev builds only, `src/net/trace.ts`)
+  logs each action's stages keyed by its wire `seq`, and the protocol ping's RTT next to
+  the JS thread's timer lag; `SEABATTLE_TRACE=1` makes the server log the same `seq` with
+  its own processing time. Each side uses its own monotonic clock — never subtract one
+  from the other. `tests/perf/repeated-matches.soak.test.ts` (`SOAK_MATCHES=25`) plays
+  many matches in one session and asserts nothing accumulates.
 
 ### Results, the ladder and the city (`app/(game)/result.tsx`, `app/leaderboard.tsx`, `app/city.tsx`)
 

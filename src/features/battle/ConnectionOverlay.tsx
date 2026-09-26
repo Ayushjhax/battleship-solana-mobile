@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
+import { returnToMenu } from '@/features/matchmaking/exits';
 import { DISCONNECT_GRACE_MS, failureCopy, useMatchClient } from '@/net/match-client';
 import { useBattle } from '@/state/battle';
 import { AssetSlot } from '@/ui/AssetSlot';
@@ -165,7 +166,7 @@ export function ConnectionOverlay() {
             seedKey="conn-menu"
             onPress={() => {
               useMatchClient.getState().disconnect();
-              router.replace('/menu');
+              returnToMenu(router);
             }}
           />
         </View>

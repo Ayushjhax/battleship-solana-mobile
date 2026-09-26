@@ -24,6 +24,7 @@ import { BackendWakeGate } from '@/features/auth/BackendWakeGate';
 import { PrivyLoginScreen } from '@/features/auth/PrivyLoginScreen';
 import { PrivyProfileSync } from '@/features/auth/PrivyProfileSync';
 import { ResumeMatchPrompt } from '@/features/battle/ResumeMatchPrompt';
+import { returnToMenu } from '@/features/matchmaking/exits';
 import { WelcomePointsModal } from '@/features/points/WelcomePointsModal';
 import { subscribeConnectivity } from '@/net/connectivity';
 import { flushPendingResults } from '@/net/offlineResults';
@@ -193,7 +194,7 @@ function AuthenticatedApp() {
         return false;
       }
       if (pathname === '/' || pathname === '/menu') return true;
-      if (pathname.includes('result')) router.replace('/menu');
+      if (pathname.includes('result')) returnToMenu(router);
       else if (router.canGoBack()) router.back();
       else router.replace('/menu');
       return true;

@@ -38,6 +38,7 @@ import Animated, {
 import { playSfx } from '@/audio/sfx';
 import { haptic } from '@/audio/haptics';
 import { FlagBadge } from '@/features/flags/FlagBadge';
+import { playAgain as replay, returnToMenu } from '@/features/matchmaking/exits';
 import { useMatchClient } from '@/net/match-client';
 import { flushPendingWager } from '@/net/offlineWager';
 import { spendableCoins, useLocker, walletFor } from '@/state/locker';
@@ -466,14 +467,10 @@ export default function ResultScreen() {
   }, [drop]);
   const ribbonStyle = useAnimatedStyle(() => ({ transform: [{ translateY: drop.value }] }));
 
-  const playAgain = () => {
-    if (mode === 'hotseat') router.replace('/hotseat');
-    else
-      router.replace({
-        pathname: '/placement',
-        params: { mode: mode === 'online' ? 'online' : 'ai', ruleset, wager: wagered ? '1' : '0' },
-      });
-  };
+  // Replacing this screen used to leave the last match's placement mounted
+  // under the new one — one more hidden screen per match. See exits.ts.
+  const playAgain = () =>
+    replay(router, mode === 'hotseat' ? 'hotseat' : mode === 'online' ? 'online' : 'ai', ruleset, wagered);
 
   // Coins fly loser -> winner. Me on the left, them on the right.
   const coinFrom = won ? CARD_CX_RIGHT : CARD_CX_LEFT;
@@ -579,7 +576,7 @@ export default function ResultScreen() {
           w={126}
           h={126 * (100 / 299)}
           label="Menu"
-          onPress={() => router.replace('/menu')}
+          onPress={() => returnToMenu(router)}
         />
       </View>
     </Scale>

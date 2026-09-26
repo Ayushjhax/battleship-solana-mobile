@@ -37,6 +37,7 @@ import Animated, {
 import { haptic } from '@/audio/haptics';
 import { playSfx } from '@/audio/sfx';
 import { FlagBadge } from '@/features/flags/FlagBadge';
+import { returnToMenu } from '@/features/matchmaking/exits';
 import { createMatchHandoff } from '@/features/matchmaking/handoff';
 import { subscribeEmotes } from '@/net/chat';
 import { failureCopy, useMatchClient } from '@/net/match-client';
@@ -403,7 +404,7 @@ export default function SearchingScreen() {
                   label="Back to menu"
                   onPress={() => {
                     useMatchClient.getState().disconnect();
-                    router.replace('/menu');
+                    returnToMenu(router);
                   }}
                 />
               </View>

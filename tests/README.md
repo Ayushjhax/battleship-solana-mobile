@@ -138,9 +138,25 @@ Excluded from the report: `src/**/__tests__/**`, `*.d.ts`, and the generated
 | `tests/regression/arsenal-missing-in-battle` | "i am not able to use my arsenals" — every weapon 0 in battle |
 | `tests/regression/home-and-hud-fixes` | Sound toggle does nothing; tutorial duplicated; arsenal scrolls |
 | `tests/regression/online-input-latency` | "no lag" — a tap must reach the network in the same tick |
+| `tests/regression/screens-pile-up-per-match` | "Progressively slower after many matches", ~2 s arsenal drops, a hot phone |
 
 Each was checked by reverting its fix and confirming the suite goes red — a
 regression test that passes against the broken code is worse than none.
+
+## The soak
+
+`tests/perf/repeated-matches.soak.test.ts` plays many online matches in ONE
+session — two real clients and battle stores against the real server — with a
+duplicate tap every action, a foreground probe every match and a mid-match
+socket drop every fourth. It asserts that every match leaves the client and
+the server at the same resting state (rooms, sockets, timers, subscriptions)
+and that one tap reaches the server as exactly one action. By default it plays
+four matches; for real numbers:
+
+```bash
+NODE_OPTIONS=--expose-gc SOAK_MATCHES=25 SOAK_REPORT=/tmp/soak.txt \
+  npx vitest run tests/perf/repeated-matches.soak.test.ts
+```
 
 ## Adding a test for a new bug
 
