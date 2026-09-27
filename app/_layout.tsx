@@ -196,6 +196,9 @@ function AuthenticatedApp() {
         return false;
       }
       if (pathname === '/' || pathname === '/menu') return true;
+      // The winner's-base reveal leaves by itself in five seconds, to the
+      // defeat screen. Back neither skips it nor returns to the battle.
+      if (pathname === '/reveal') return true;
       if (pathname.includes('result')) returnToMenu(router);
       else if (router.canGoBack()) router.back();
       else router.replace('/menu');
@@ -248,6 +251,8 @@ function AuthenticatedApp() {
         <Stack.Screen name="points" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="(onboarding)/name" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="(onboarding)/progress" options={{ animation: 'slide_from_right' }} />
+        {/* Nothing on the reveal goes back: no swipe either. */}
+        <Stack.Screen name="(game)/reveal" options={{ gestureEnabled: false }} />
       </Stack>
       <WelcomePointsModal />
       {/* Finds the player wherever they are when a match outlived the app. */}

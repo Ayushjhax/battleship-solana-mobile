@@ -34,7 +34,7 @@ import { returnToMenu } from '@/features/matchmaking/exits';
 import { useFrameClock, SpriteStrip } from '@/fx/Sprite';
 import { useProfile } from '@/state/profile';
 import { ArtPlate } from '@/ui/ArtPlate';
-import { BACKGROUNDS, FLEET_ART, FX_ART, HOW_TO_PLAY_ART, MENU_ART, type Asset } from '@/ui/assets';
+import { BACKGROUNDS, BATTLE_ART, FLEET_ART, FX_ART, HOW_TO_PLAY_ART, type Asset } from '@/ui/assets';
 import { portraitFor } from '@/ui/portraits';
 import { Scale, useScale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, artColor, font } from '@/ui/tokens';
@@ -473,7 +473,7 @@ function PlaceFleetStep() {
       <Image source={HTP.placeFleet.hardButton} style={{ position: 'absolute', left: 200, top: 6, width: 54, height: (54 * 80) / 138 }} contentFit="contain" />
       <Image source={HTP.placeFleet.wagerOffButton} style={{ position: 'absolute', left: 262, top: 8, width: 62, height: (62 * 85) / 236 }} contentFit="contain" />
 
-      <Image source={MENU_ART.gem} style={styles.pointsGem} contentFit="contain" />
+      <Image source={BATTLE_ART.points} style={styles.pointsGem} contentFit="contain" />
       <Text style={styles.fuelLabel}>Points</Text>
       <Text style={styles.pointsValue}>
         260<Text style={styles.pointsBudget}> / 260</Text>
@@ -757,7 +757,7 @@ const styles = StyleSheet.create({
   gullRight: { position: 'absolute', right: 58, top: 104, width: 28, height: (28 * 29) / 59 },
   aiLabel: { position: 'absolute', left: 60, top: 12, color: artColor.navy, fontFamily: font.display, fontSize: 14 },
   fuelLabel: { position: 'absolute', right: 96, top: 13, color: artColor.navy, fontFamily: font.display, fontSize: 13 },
-  pointsGem: { position: 'absolute', right: 146, top: 11, width: 18, height: 18 },
+  pointsGem: { position: 'absolute', right: 146, top: 9, width: 16, height: 16 * (176 / 153) },
   pointsValue: { position: 'absolute', right: 16, top: 7, color: artColor.navy, fontFamily: font.display, fontSize: 20 },
   pointsBudget: { color: artColor.muted, fontFamily: font.label, fontSize: 12 },
   dockTitle: { position: 'absolute', left: 8, top: 50, width: 44, textAlign: 'center', color: artColor.navy, fontFamily: font.display, fontSize: 12 },

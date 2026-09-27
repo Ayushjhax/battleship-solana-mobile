@@ -29,6 +29,8 @@ import { createRng } from '@engine/rng';
 import type { Ship } from '@engine/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { parseRevealBoard } from '../../src/features/reveal/snapshot';
+
 const ALICE = 'alice';
 const BOB = 'bob';
 
@@ -358,11 +360,29 @@ describe('a full match between two clients', () => {
     expect([ALICE, BOB]).toContain(alice.getState().over?.winnerId);
     expect(alice.getState().status).toBe('over');
     expect(bob.getState().status).toBe('over');
+
+    // The loser's client now holds the winner's final board — and the winner's
+    // does not. It is the winner's fleet as placed, damaged by exactly the
+    // loser's own shots, and the reveal screen can draw it.
+    const winnerId = alice.getState().over?.winnerId as string;
+    const loserId = winnerId === ALICE ? BOB : ALICE;
+    const winnerClient = winnerId === ALICE ? alice : bob;
+    const loserClient = winnerId === ALICE ? bob : alice;
+    const winnerFleet = winnerId === ALICE ? aliceFleet : bobFleet;
+    expect(winnerClient.getState().over?.reveal).toBeUndefined();
+    const board = parseRevealBoard(loserClient.getState().over?.reveal);
+    expect(board).not.toBeNull();
+    expect(board?.ships.map(({ id, class: k, origin, orientation }) => ({ id, k, origin, orientation }))).toEqual(
+      winnerFleet.ships.map(({ id, class: k, origin, orientation }) => ({ id, k, origin, orientation })),
+    );
+    const firedByLoser = (targets[loserId] ?? []).slice(0, next[loserId] ?? 0).sort();
+    const hitsOnWinner = (board?.ships ?? []).flatMap((ship) => ship.hits.map((h) => `${h.r},${h.c}`)).sort();
+    expect(hitsOnWinner).toEqual(firedByLoser);
     disconnectAll(alice, bob);
   }, 60000);
 
   it('a resignation ends it for both', async () => {
-    const { alice, bob } = await startedMatch();
+    const { alice, bob, bobFleet } = await startedMatch();
     await sleep(1100);
 
     alice.getState().resign();
@@ -373,6 +393,9 @@ describe('a full match between two clients', () => {
     );
     expect(alice.getState().over?.winnerId).toBe(BOB);
     expect(bob.getState().over?.winnerId).toBe(BOB);
+    // The one who resigned is shown the winner's untouched fleet.
+    expect(bob.getState().over?.reveal).toBeUndefined();
+    expect(parseRevealBoard(alice.getState().over?.reveal)?.ships).toEqual(bobFleet.ships);
     disconnectAll(alice, bob);
   });
 });

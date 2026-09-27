@@ -578,8 +578,12 @@ export const BATTLE_ART = {
   waveMark: require('../../assets/battle/wave-mark.png') as Asset,
   oceanUnites: require('../../assets/battle/ocean-unites-us.png') as Asset,
   /** The gutter's buttons: glossy app icons (176 x 166 and 176 x 174). */
+  /** assets/home.png, trimmed: 176 x 163. The house on every home button. */
   homeButton: require('../../assets/battle/icon-home.png') as Asset,
+  /** assets/emoji.png, trimmed: 176 x 158. */
   emoteButton: require('../../assets/battle/icon-emote.png') as Asset,
+  /** assets/points.png, trimmed: 153 x 176. Beside every price in points. */
+  points: require('../../assets/battle/icon-points.png') as Asset,
   /** The hatched square of the effect diagrams; the grid is drawn live. */
   diagramCell: require('../../assets/battle/diagram-cell.png') as Asset,
   /** Frames, filled with paper and built at the aspect each is drawn. */
@@ -857,7 +861,8 @@ export const CITY_ART = {
   harbourRibbon: require('../../assets/city/ui/your_harbour_ribbon.webp') as Asset,
   title: require('../../assets/city/ui/port_city_title.webp') as Asset,
   hint: require('../../assets/city/ui/explore_hint.webp') as Asset,
-  home: require('../../assets/city/ui/home.webp') as Asset,
+  /** The same house as every other home button (BATTLE_ART.homeButton). */
+  home: require('../../assets/battle/icon-home.png') as Asset,
   compass: require('../../assets/city/ui/compass.webp') as Asset,
   counterFrame: require('../../assets/city/ui/counter_frame_small.webp') as Asset,
   coin: require('../../assets/city/ui/coin.webp') as Asset,
@@ -1039,4 +1044,25 @@ export const WALLET_ART = {
   iconChevron: require('../../assets/wallet/icon-chevron.png') as Asset,
   iconConfirmed: require('../../assets/wallet/icon-confirmed.png') as Asset,
   iconDot: require('../../assets/wallet/icon-dot.png') as Asset,
+} as const;
+
+/**
+ * The loser's post-match "Enemy waters revealed" screen (app/(game)/reveal.tsx),
+ * built by scripts/reveal-assets.sh from assets/opponent_reveal_ui_assets. The
+ * page is plain ivory graph paper; the pack's scenery is left out. The badge
+ * comes with its "5" painted out and the bar in two pieces, because the app
+ * draws the seconds and the drain live.
+ */
+export const REVEAL_ART = {
+  paper: require('../../assets/reveal/paper.jpg') as Asset,
+  titleBanner: require('../../assets/reveal/title-banner.png') as Asset,
+  matchComplete: require('../../assets/reveal/match-complete.png') as Asset,
+  portraitFrame: require('../../assets/reveal/portrait-frame.png') as Asset,
+  anchorDivider: require('../../assets/reveal/anchor-divider.png') as Asset,
+  quotePanel: require('../../assets/reveal/quote-panel.png') as Asset,
+  sunkCross: require('../../assets/reveal/sunk-cross.png') as Asset,
+  countdownBadge: require('../../assets/reveal/countdown-badge.png') as Asset,
+  barTrack: require('../../assets/reveal/bar-track.png') as Asset,
+  barFill: require('../../assets/reveal/bar-fill.png') as Asset,
+  barFrame: require('../../assets/reveal/bar-frame.png') as Asset,
 } as const;

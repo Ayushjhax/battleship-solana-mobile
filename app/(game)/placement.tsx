@@ -54,7 +54,7 @@ import { stakeOfflineWager } from '@/net/offlineWager';
 import { usePoints } from '@/state/points';
 import { ArtImageButton } from '@/ui/ArtImageButton';
 import { ArtPlate } from '@/ui/ArtPlate';
-import { BACKGROUNDS, BATTLE_ART, FLEET_ART, MENU_ART } from '@/ui/assets';
+import { BACKGROUNDS, BATTLE_ART, FLEET_ART } from '@/ui/assets';
 import { Scale, useScale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, artColor, color, font } from '@/ui/tokens';
 import { RoughShape, hashString, useRough } from '@/ui/useRough';
@@ -282,7 +282,7 @@ function FuelGauge({
       style={[styles.fuelGauge, gaugeStyle]}
       accessibilityLabel={`${remaining} of ${budget} points remaining`}
     >
-      <Image source={MENU_ART.gem} style={styles.fuelIcon} contentFit="contain" />
+      <Image source={BATTLE_ART.points} style={styles.fuelIcon} contentFit="contain" />
       <Text style={styles.fuelCaption}>Points</Text>
       <Animated.View style={numberStyle}>
         <Text style={styles.fuelReadout}>
@@ -863,7 +863,13 @@ const DraggableArsenal = memo(function DraggableArsenal({
   );
 });
 
-/** The green plate, breathing gently once the fleet is ready to sail. */
+/**
+ * The green plate, breathing gently once the fleet is ready to sail — a few
+ * breaths, then still. An endless pulse keeps the UI thread drawing every
+ * frame for as long as the player lingers here (its 2.4 s rest included).
+ */
+const BATTLE_BREATHS = 3;
+
 function PulsingBattleButton({
   enabled,
   label = 'Battle!',
@@ -889,7 +895,7 @@ function PulsingBattleButton({
         withTiming(1, { duration: 260, easing: Easing.inOut(Easing.cubic) }),
         withDelay(2400, withTiming(1, { duration: 0 })),
       ),
-      -1,
+      BATTLE_BREATHS,
       false,
     );
     return () => cancelAnimation(pulse);
@@ -1505,7 +1511,7 @@ const styles = StyleSheet.create({
     gap: 5,
     zIndex: 50,
   },
-  fuelIcon: { width: 24, height: 24 },
+  fuelIcon: { width: 22, height: 22 * (176 / 153) },
   fuelCaption: { color: artColor.navy, fontFamily: font.display, fontSize: 15 },
   fuelReadout: { color: artColor.navy, fontFamily: font.display, fontSize: 26, lineHeight: 32 },
   fuelReadoutEmpty: { color: artColor.red },

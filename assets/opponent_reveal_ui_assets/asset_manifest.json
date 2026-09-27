@@ -1,0 +1,132 @@
+[
+  {
+    "file": "01_empire_of_bits_logo.png",
+    "width": 310,
+    "height": 129
+  },
+  {
+    "file": "02_enemy_waters_title_banner.png",
+    "width": 771,
+    "height": 127
+  },
+  {
+    "file": "03_match_complete_stamp.png",
+    "width": 291,
+    "height": 118
+  },
+  {
+    "file": "04_empty_portrait_rope_frame.png",
+    "width": 303,
+    "height": 310
+  },
+  {
+    "file": "05_opponent_name_berhan.png",
+    "width": 297,
+    "height": 42
+  },
+  {
+    "file": "06_rank_vice_admiral.png",
+    "width": 154,
+    "height": 29
+  },
+  {
+    "file": "07_anchor_divider.png",
+    "width": 287,
+    "height": 33
+  },
+  {
+    "file": "08_fleet_quote_panel.png",
+    "width": 317,
+    "height": 121
+  },
+  {
+    "file": "09_sunk_cross.png",
+    "width": 55,
+    "height": 56
+  },
+  {
+    "file": "10_sunk_label.png",
+    "width": 62,
+    "height": 29
+  },
+  {
+    "file": "11_defences_label.png",
+    "width": 112,
+    "height": 29
+  },
+  {
+    "file": "12_countdown_5_badge.png",
+    "width": 92,
+    "height": 92
+  },
+  {
+    "file": "13_results_in_5s_label.png",
+    "width": 144,
+    "height": 30
+  },
+  {
+    "file": "14_countdown_progress_bar.png",
+    "width": 320,
+    "height": 42
+  },
+  {
+    "file": "15_compass_rose.png",
+    "width": 253,
+    "height": 265
+  },
+  {
+    "file": "16_binoculars_and_chart.png",
+    "width": 411,
+    "height": 243
+  },
+  {
+    "file": "17_lighthouse_coast.png",
+    "width": 607,
+    "height": 432
+  },
+  {
+    "file": "18_cloud_bank.png",
+    "width": 550,
+    "height": 247
+  },
+  {
+    "file": "19_small_cloud.png",
+    "width": 325,
+    "height": 112
+  },
+  {
+    "file": "20_bird_upper.png",
+    "width": 88,
+    "height": 47
+  },
+  {
+    "file": "21_bird_middle.png",
+    "width": 65,
+    "height": 37
+  },
+  {
+    "file": "22_bird_lower_left.png",
+    "width": 55,
+    "height": 25
+  },
+  {
+    "file": "23_bird_lower_right.png",
+    "width": 49,
+    "height": 23
+  },
+  {
+    "file": "24_islands_upper_left.png",
+    "width": 178,
+    "height": 119
+  },
+  {
+    "file": "25_island_middle_left.png",
+    "width": 138,
+    "height": 118
+  },
+  {
+    "file": "26_island_lower_left.png",
+    "width": 134,
+    "height": 111
+  }
+]

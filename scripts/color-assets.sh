@@ -6,7 +6,8 @@
 # battle (assets/fx, assets/fleet, assets/battle) are scripts/battle-assets.sh,
 # the store and the flags (assets/shop, assets/flags) scripts/store-assets.sh,
 # the Captain's wallet (assets/wallet) scripts/wallet-assets.sh, the battle's
-# Attack deck (assets/deck) scripts/deck-assets.sh, the port city (assets/city)
+# Attack deck (assets/deck) scripts/deck-assets.sh, the winner's-base reveal
+# (assets/reveal) scripts/reveal-assets.sh, the port city (assets/city)
 # scripts/city-assets.py.
 #
 #  - backgrounds/*.jpg: the full-bleed page backdrops. The sources are ~2.5 MB
@@ -506,6 +507,9 @@ bash scripts/wallet-assets.sh
 
 echo "the battle's Attack deck"
 bash scripts/deck-assets.sh
+
+echo "the loser's winner's-base reveal"
+bash scripts/reveal-assets.sh
 
 echo "the port city"
 if python3 -c 'import PIL, numpy' 2>/dev/null; then

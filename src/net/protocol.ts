@@ -249,6 +249,13 @@ export const ServerMessageSchema = z.discriminatedUnion('t', [
         balance: z.number().int().nonnegative(),
       })
       .optional(),
+    /**
+     * The winner's final board, to the LOSER only (server/src/room.ts). Kept
+     * `unknown` here on purpose: a reveal this app cannot read must never cost
+     * it the `over` frame and its rewards. It is validated where it is drawn —
+     * src/features/reveal/snapshot.ts — and a bad one is simply not shown.
+     */
+    reveal: z.unknown().optional(),
   }),
   z.object({
     t: z.literal('error'),

@@ -208,7 +208,7 @@ const ShopCard = memo(function ShopCard({
           <Image source={BATTLE_ART.arsenalCard} style={StyleSheet.absoluteFill} contentFit="fill" />
           <View style={styles.price}>
             <Text style={[styles.priceText, short && styles.red]}>{spec.cost}</Text>
-            <Image source={BATTLE_ART.diamond} style={styles.diamond} contentFit="contain" />
+            <Image source={BATTLE_ART.points} style={styles.diamond} contentFit="contain" />
           </View>
           <View style={styles.icon}>
             <ArsenalIcon kind={kind} w={40} h={25} />
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
   info: { position: 'absolute', left: 5, top: 4, width: 17, height: 17, zIndex: 4 },
   price: { position: 'absolute', right: 7, top: 3, flexDirection: 'row', alignItems: 'center', gap: 2 },
   priceText: { color: artColor.navy, fontFamily: font.display, fontSize: 14, fontVariant: ['tabular-nums'] },
-  diamond: { width: 8, height: 12 },
+  diamond: { width: 11, height: 11 * (176 / 153) },
   // Clear of the ⓘ and the − on the left and the price on the right.
   icon: { position: 'absolute', left: 44, top: 4, width: 40, height: 25 },
   putBack: { position: 'absolute', left: 25, top: 4, width: 17, height: 17, zIndex: 4 },

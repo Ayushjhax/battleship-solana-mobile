@@ -134,6 +134,11 @@ export interface MatchOver {
   readonly reason: GameOverReason;
   readonly rewards: MatchRewards;
   readonly wager?: { stake: number; prize: number; balance: number };
+  /**
+   * The winner's final board, on the loser's `over` only — raw from the wire.
+   * src/features/reveal/snapshot.ts validates it before anything draws it.
+   */
+  readonly reveal?: unknown;
 }
 
 interface MatchClientData {
@@ -912,6 +917,7 @@ function handleMessage(message: ServerMessage): void {
           reason: message.reason,
           rewards: message.rewards,
           ...(message.wager ? { wager: message.wager } : {}),
+          ...(message.reveal !== undefined ? { reveal: message.reveal } : {}),
         },
         turnEndsAt: null,
         opponentDisconnected: false,

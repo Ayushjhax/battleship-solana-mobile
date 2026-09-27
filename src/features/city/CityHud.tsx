@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  homeIcon: { width: 28, height: (28 * 121) / 116 },
+  homeIcon: { width: 28, height: (28 * 163) / 176 },
   title: {
     position: 'absolute',
     left: (CANVAS_W - HUD.title.w) / 2,

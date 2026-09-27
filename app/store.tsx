@@ -153,7 +153,7 @@ export default function StoreScreen() {
       <ArtImageButton
         source={BATTLE_ART.homeButton}
         w={HOME.w}
-        h={HOME.w * (166 / 176)}
+        h={HOME.w * (163 / 176)}
         label="Back to the menu"
         hitSlop={8}
         style={styles.home}

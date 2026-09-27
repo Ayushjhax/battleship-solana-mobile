@@ -22,6 +22,7 @@ import {
   projectView,
   reduce,
   type ArsenalItem,
+  type Board,
   type GameOverReason,
   type MatchAction,
   type MatchEvent,
@@ -531,17 +532,36 @@ export class Room {
     this.clearAllTimers();
 
     const over = events.find((e): e is Extract<MatchEvent, { type: 'GAME_OVER' }> => e.type === 'GAME_OVER');
-    const winnerId = over?.winner ?? this.state.winner ?? this.state.players[0].id;
+    const confirmed = over?.winner ?? this.state.winner;
+    const winnerId = confirmed ?? this.state.players[0].id;
     const reason: GameOverReason = over?.reason ?? 'resign';
+    // The winner's board, copied NOW from the terminal state — before the
+    // settlement's await and before the room is swept — for the loser's reveal.
+    const reveal = confirmed ? this.finalBoardOf(confirmed) : null;
 
     // this.forcedDbReason distinguishes a 45s-disconnect-forced forfeit from a
     // deliberate resign — both are RESIGN at the engine level (reason=
     // 'resign' either way), but the DB record should say which really happened.
     // The row and both profiles are settled in ONE transaction (0008).
-    void this.settleAndNotify(winnerId, reason);
+    void this.settleAndNotify(winnerId, reason, reveal);
   }
 
-  private async settleAndNotify(winnerId: string, reason: GameOverReason): Promise<void> {
+  /**
+   * A detached copy of `playerId`'s board, only from a finished match and only
+   * for one of its two players — the whole of what `over.reveal` may carry.
+   */
+  private finalBoardOf(playerId: string): Board | null {
+    if (this.state.phase !== 'over') return null;
+    const index = playerIndex(this.state, playerId);
+    if (index === -1) return null;
+    return structuredClone(this.state.players[index].board) as Board;
+  }
+
+  private async settleAndNotify(
+    winnerId: string,
+    reason: GameOverReason,
+    reveal: Board | null,
+  ): Promise<void> {
     try {
       await applyMatchResult(
         this.id,
@@ -560,7 +580,7 @@ export class Room {
             message: 'Wager settlement is delayed; the server is retrying safely.',
           });
         }
-        setTimeout(() => void this.settleAndNotify(winnerId, reason), 5_000).unref?.();
+        setTimeout(() => void this.settleAndNotify(winnerId, reason, reveal), 5_000).unref?.();
         return;
       }
     }
@@ -585,6 +605,9 @@ export class Room {
         ...(this.wager.wagered && balance !== null
           ? { wager: { stake: 50, prize: won ? 100 : 0, balance } }
           : {}),
+        // The loser's reveal: the winner's board, now the match is settled.
+        // Never to the winner, never to a bot, never before this frame.
+        ...(!won && !seat.isBot && reveal ? { reveal } : {}),
       });
     }
     this.onFinished(this);

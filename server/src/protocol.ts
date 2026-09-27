@@ -12,7 +12,7 @@
  * apart — see CLAUDE.md > Engine purity.
  */
 import { z } from 'zod';
-import type { GameOverReason, MatchAction, MatchEvent, MatchMode, PlayerView, ShipClass } from '@engine/types';
+import type { Board, GameOverReason, MatchAction, MatchEvent, MatchMode, PlayerView, ShipClass } from '@engine/types';
 import { FUEL_BUDGET, GRID_SIZE } from '@engine/types';
 
 export const PROTOCOL_VERSION = 1 as const;
@@ -169,6 +169,15 @@ export type ServerMessage =
       reason: GameOverReason;
       rewards: MatchRewards;
       wager?: { stake: number; prize: number; balance: number };
+      /**
+       * The WINNER's final board — every ship, their defences as they ended,
+       * and the loser's own shots on it — for the loser's post-match reveal.
+       * Sent only to the losing seat, only in this terminal frame, only once
+       * the match is settled: nothing in it is secret any more. The winner's
+       * frame never carries it. Additive and optional, so an older client
+       * ignores it and a newer one without it goes straight to its result.
+       */
+      reveal?: Board;
     }
   | { t: 'error'; v: 1; code: ErrorCode; message: string }
   | { t: 'pong'; v: 1 };

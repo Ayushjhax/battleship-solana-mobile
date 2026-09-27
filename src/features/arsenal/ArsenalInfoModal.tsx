@@ -95,7 +95,7 @@ export function ArsenalInfoModal({
       <EffectDiagram kind={kind} />
       <Text style={styles.rules}>{ARSENAL_INFO[kind]}</Text>
       <Text style={styles.price}>
-        {`Costs ${spec.cost} fuel · up to ${spec.max}`}
+        {`Costs ${spec.cost} points · up to ${spec.max}`}
       </Text>
       <Image source={BATTLE_ART.compass} style={styles.compass} contentFit="contain" />
       <ArtImageButton source={BATTLE_ART.close} w={84} h={84 * (74 / 180)} label="Close" onPress={onClose} style={styles.closeButton} />

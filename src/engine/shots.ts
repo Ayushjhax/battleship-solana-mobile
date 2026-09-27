@@ -14,8 +14,12 @@
  *     'revealed' — known to hold no ship — and the item shows in the
  *     attacker's revealedItems as destroyed.
  *   - AUTO_REVEAL only lists cells that were still unknown; cells already
- *     marked keep their mark. A revealed cell can never be fired on again, so
- *     a mine or gun sitting in a sunk ship's halo is simply neutralised.
+ *     marked keep their mark. A cell in the halo that holds a live AA gun or
+ *     mine is NOT marked: the item is revealed (the attacker sees it) and its
+ *     cell stays fireable. Marking it used to make the item untouchable — a gun
+ *     beside a sunk ship could never be destroyed, and a mine a bomb reached
+ *     after sinking the ship beside it never went off, so the attacker kept a
+ *     turn the mine should have ended.
  *
  * resolveCell works on a WorkingBoard — a mutable copy that openBoard() makes
  * and sealBoard() freezes back — so callers never mutate MatchState.
@@ -150,6 +154,12 @@ export function resolveCell(wb: WorkingBoard, attackerId: string, at: Coord): Ce
       for (const cell of halo(ship)) {
         const k = coordKey(cell);
         if (wb.marks[k]) continue;
+        const neighbour = liveItemAt(wb, cell);
+        if (neighbour) {
+          // Shown, not spent: it can still be fired on (see the header).
+          neighbour.revealed = true;
+          continue;
+        }
         wb.marks[k] = 'revealed';
         revealed.push(cell);
       }

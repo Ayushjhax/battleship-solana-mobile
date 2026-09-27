@@ -223,7 +223,19 @@ done
 echo "fleet: board pieces and icons"
 piece "$BC/battle/aa-gun.png" "$FL/aa-gun.png" 4
 piece "$BC/battle/radar-target.png" "$FL/radar.png" 4
-piece "$FA/mine.png" "$FL/mine.png" 5 160
+piece "$FA/mine.png" "$TMP/mine.png" 5 160
+# The mine was drawn cut flat along the top of its sheet, taking its top three
+# spikes with it. It is symmetric top to bottom about the row its side spikes
+# sit on (the widest row), so the missing top is the bottom half mirrored —
+# laid UNDER the drawing, so every pixel that was drawn stays as drawn.
+read -r mw mh < <(magick identify -format '%w %h\n' "$TMP/mine.png")
+mcy=$(magick "$TMP/mine.png" -alpha extract -threshold 40% -scale "1x${mh}!" -compress none -depth 16 pgm:- |
+  awk 'NR > 3 { for (i = 1; i <= NF; i++) { r++; if ($i > best) { best = $i; at = r } } } END { print at - 1 }')
+mbh=$((mh - mcy))
+magick "$TMP/mine.png" -crop "${mw}x${mbh}+0+${mcy}" +repage -flip "PNG32:$TMP/mine-top.png"
+magick -size "${mw}x$((mbh * 2))" xc:none "$TMP/mine-top.png" -geometry +0+0 -composite \
+  "$TMP/mine.png" -geometry "+0+$((mbh - mcy))" -composite \
+  -trim +repage -bordercolor none -border 6 -strip "$FL/mine.png"
 for k in torpedo-bomber double-torpedo bomber atomic-bomber aa-gun radar mine submarine; do
   piece "$BC/arsenal-icons/$k.png" "$FL/icon-$k.png" 4
 done
@@ -369,8 +381,15 @@ for n in thumbs-up grin angry-captain wave medal skull question fire; do
   piece "$BC/emotes/$n.png" "$BT/emote-$n.png" 4
 done
 # The battle's gutter buttons: the glossy home and emote app icons, trimmed.
-for n in home emote; do
-  magick "$SRC/app-icons/$n.png" -trim +repage -bordercolor none -border 12 -resize '176x176>' -strip "$BT/icon-$n.png"
+# The home, emote and points icons: the sketch house, smiling bubble and gem
+# (assets/home.png, emoji.png, points.png). Cropped to where the alpha is over
+# 3 % so the faint haze they carry doesn't stop the trim; home and emote are
+# used everywhere a house or an emote button appears (battle, store, city),
+# points wherever a price in points is shown.
+for pair in home:home emote:emoji points:points; do
+  n=${pair%%:*}; f="assets/${pair##*:}.png"
+  magick "$f" -crop "$(magick "$f" -alpha extract -threshold 3% -format '%@' info:)" +repage \
+    -bordercolor none -border 12 -resize '176x176>' -strip "$BT/icon-$n.png"
 done
 # The effect diagrams' hatched square (the radar diagram's middle cell) and
 # the paper it sits on; the grid lines are drawn live.

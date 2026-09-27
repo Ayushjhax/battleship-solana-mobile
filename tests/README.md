@@ -139,11 +139,20 @@ Excluded from the report: `src/**/__tests__/**`, `*.d.ts`, and the generated
 | `tests/regression/home-and-hud-fixes` | Sound toggle does nothing; tutorial duplicated; arsenal scrolls |
 | `tests/regression/online-input-latency` | "no lag" — a tap must reach the network in the same tick |
 | `tests/regression/screens-pile-up-per-match` | "Progressively slower after many matches", ~2 s arsenal drops, a hot phone |
+| `tests/regression/audio-pool` | "After a lot of games it lags and the phone heats" — 56 always-live audio players polling the UI thread |
+| `tests/regression/no-endless-animation` | Same report — endless smoke redrawing the battle every frame from the first sinking on |
 
 Each was checked by reverting its fix and confirming the suite goes red — a
 regression test that passes against the broken code is worse than none.
 
 ## The soak
+
+`tests/perf/offline-matches.soak.test.ts` is its offline twin: many matches
+against the AI through the real battle store, EventPlayer, FX store and the
+loser's reveal hand-off, alternating wins and resignations, snapshotting live
+timers, store subscriptions, EventPlayer listeners, what the FX and reveal
+stores hold, and the heap between matches (`SOAK_MATCHES=30`).
+
 
 `tests/perf/repeated-matches.soak.test.ts` plays many online matches in ONE
 session — two real clients and battle stores against the real server — with a

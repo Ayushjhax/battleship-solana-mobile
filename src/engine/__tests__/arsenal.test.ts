@@ -305,3 +305,62 @@ describe('use validation', () => {
     expect(types(use(classic, 'b1', { at: { r: 0, c: 0 } }).events)).toEqual(['REJECTED']);
   });
 });
+
+// A sunk ship reveals the cells around it. An AA gun or a mine among them used
+// to be marked too, and a marked cell can never be fired on again — so the gun
+// could never be destroyed, and a mine a bomb reached after sinking the ship
+// beside it never went off. Now the item is revealed but its cell stays live.
+describe('items beside a sunk ship stay in play', () => {
+  const fire = (state: MatchState, at: { r: number; c: number }) =>
+    reduce(state, { type: 'FIRE', playerId: P1, at });
+
+  it('reveals an AA gun beside a sunk ship without taking it out of play', () => {
+    // boat-2 sits alone at G3 (6,2); the gun is right beside it at (6,3).
+    const state = setup([], [item('gun', 'aaGun', { r: 6, c: 3 })]);
+    const { state: next, events } = fire(state, { r: 6, c: 2 });
+
+    const reveal = events.find((e) => e.type === 'AUTO_REVEAL');
+    expect(reveal && 'cells' in reveal ? reveal.cells : []).not.toContainEqual({ r: 6, c: 3 });
+    expect(next.players[0].board.marks[coordKey({ r: 6, c: 3 })]).toBeUndefined();
+    // The attacker now sees it, still standing.
+    expect(projectView(next, P1).enemy.revealedItems).toContainEqual({
+      kind: 'aaGun',
+      at: { r: 6, c: 3 },
+      destroyed: false,
+    });
+    expect(next.turn).toBe(P1);
+  });
+
+  it('lets the attacker then destroy that gun, keeping the turn', () => {
+    const state = setup([], [item('gun', 'aaGun', { r: 6, c: 3 })]);
+    const afterSink = fire(state, { r: 6, c: 2 }).state;
+    const { state: next, events } = fire(afterSink, { r: 6, c: 3 });
+
+    expect(types(events)).toContain('ITEM_HIT');
+    expect(types(events)).not.toContain('REJECTED');
+    expect(next.players[0].board.arsenal.find((i) => i.id === 'gun')?.destroyed).toBe(true);
+    expect(next.turn).toBe(P1);
+  });
+
+  it('ends the turn when a bomb sinks a ship and reaches the mine beside it', () => {
+    // boat-1 sits alone at G1 (6,0); a mine lies right below it at (7,0). A
+    // bomber aimed at (6,0) drops on (6,0), (6,1), (7,0) in that order: the
+    // boat sinks first, then the bomb reaches the mine.
+    const state = setup([item('b1', 'bomber')], [item('mine', 'mine', { r: 7, c: 0 })]);
+    const { state: next, events } = use(state, 'b1', { at: { r: 6, c: 0 } });
+
+    expect(types(events)).toContain('SUNK');
+    const triggered = events.find((e) => e.type === 'MINE_TRIGGERED');
+    expect(triggered && 'at' in triggered ? triggered.at : null).toEqual({ r: 7, c: 0 });
+    // Sinking the boat does not buy a second shot when the same drop hit a mine.
+    expect(types(events)).toContain('TURN_CHANGED');
+    expect(next.turn).toBe(P0);
+  });
+
+  it('still marks the empty cells around a sunk ship', () => {
+    const state = setup([], [item('gun', 'aaGun', { r: 6, c: 3 })]);
+    const { state: next } = fire(state, { r: 6, c: 2 });
+    // (7,2) is in boat-2's halo and holds nothing: marked as before.
+    expect(next.players[0].board.marks[coordKey({ r: 7, c: 2 })]).toBe('revealed');
+  });
+});

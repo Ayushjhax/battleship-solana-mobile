@@ -37,7 +37,6 @@ interface Knowledge {
 
 function readView(view: PlayerView, difficulty: Difficulty): Knowledge {
   const marks = view.enemy.marks;
-  const unknown = (cell: Coord): boolean => marks[coordKey(cell)] === undefined;
 
   const hits: Coord[] = [];
   const sunk: Coord[] = [];
@@ -58,9 +57,15 @@ function readView(view: PlayerView, difficulty: Difficulty): Knowledge {
   }
 
   const protectedRows = new Set<number>();
+  // A live mine the AI can see (revealed beside a sunk ship) is never a target:
+  // firing on it ends the turn for nothing.
+  const knownMines = new Set<string>();
   for (const item of view.enemy.revealedItems) {
     if (item.kind === 'aaGun' && !item.destroyed) protectedRows.add(item.at.r);
+    if (item.kind === 'mine' && !item.destroyed) knownMines.add(coordKey(item.at));
   }
+  const unknown = (cell: Coord): boolean =>
+    marks[coordKey(cell)] === undefined && !knownMines.has(coordKey(cell));
 
   return { unknown, hits, excluded, protectedRows };
 }

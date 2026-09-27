@@ -22,7 +22,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { setSfxLooping } from '@/audio/sfx';
+import { watchBattleCountdown } from '@/audio/countdown';
 import { DualBoards } from '@/board/DualBoards';
 import { BATTLE_BOARD_LEFT, BATTLE_BOARD_TOP, BOARD_SIZE, boardOrigins, cellCentre } from '@/board/layout';
 import {
@@ -38,6 +38,8 @@ import { AttackDeck } from '@/features/battle/AttackDeck';
 import { ConnectionOverlay, useConnectionKind } from '@/features/battle/ConnectionOverlay';
 import { buildBattleSetup, buildOnlineSetup } from '@/features/battle/setup';
 import { returnToMenu } from '@/features/matchmaking/exits';
+import { routeAfterMatch } from '@/features/reveal/afterMatch';
+import { revealWinner } from '@/features/reveal/plan';
 import { ArsenalTargetingOverlay } from '@/features/arsenal/BattleArsenal';
 import { createBattleEffects } from '@/fx/battleEffects';
 import { FxLayer } from '@/fx/FxLayer';
@@ -253,16 +255,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
     const id = setInterval(() => useBattle.getState().tick(), 1000);
     return () => clearInterval(id);
   }, []);
-  const finalCountdownActive =
-    seconds > 0 &&
-    seconds <= 6 &&
-    shown?.phase === 'playing' &&
-    shown.turn === me &&
-    !animating;
-  useEffect(() => {
-    setSfxLooping('finalCountdown', finalCountdownActive);
-    return () => setSfxLooping('finalCountdown', false);
-  }, [finalCountdownActive]);
+  useEffect(watchBattleCountdown, []);
 
   // ---- crosshair mirrors the store's aim ----
   useEffect(() => {
@@ -314,9 +307,15 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
     transform: [{ translateX: shakeX.value }, { translateY: shakeY.value }],
   }));
 
-  // ---- leave for the result once GAME_OVER has played out ----
+  // ---- leave once GAME_OVER has played out ----
+  // The winner goes straight to the result. The loser of an online or AI match
+  // sees the winner's base first (src/features/reveal/afterMatch.ts) — which,
+  // online, may wait a moment for the server's settled `over`. Either way this
+  // navigates once: a repeat of `finished` or a re-run of the effect never
+  // opens a second screen, and an unmount cancels a wait in progress.
+  const left = useRef(false);
   useEffect(() => {
-    if (!finished || tutorial) return;
+    if (!finished || tutorial || left.current) return;
     const state = useBattle.getState();
     const won = state.shown?.winner === state.ownerId;
     // The store resets when this screen unmounts, so the result gets what it
@@ -329,20 +328,35 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
     // at start(), so a settlement still queued from an earlier match cannot
     // make this result read as wagered.
     const wagered = matchClient.wagered || state.wagered;
-    router.replace({
-      pathname: '/result',
-      params: {
-        won: won ? '1' : '0',
-        local: serverBacked || state.mode === 'online' ? '0' : '1',
-        mode: serverBot ? 'ai' : state.mode,
-        ruleset: state.ruleset,
-        matchId: state.matchId ?? '',
-        wager: wagered ? '1' : '0',
-        oppName: them?.name ?? '',
-        oppPoints: String(them?.points ?? 0),
-        oppAvatar: String(them?.avatarId ?? 2),
-        oppTint: them?.avatarColor ?? '',
-        oppFlag: them?.countryCode ?? '',
+    const params = {
+      won: won ? '1' : '0',
+      local: serverBacked || state.mode === 'online' ? '0' : '1',
+      mode: serverBot ? 'ai' : state.mode,
+      ruleset: state.ruleset,
+      matchId: state.matchId ?? '',
+      wager: wagered ? '1' : '0',
+      oppName: them?.name ?? '',
+      oppPoints: String(them?.points ?? 0),
+      oppAvatar: String(them?.avatarId ?? 2),
+      oppTint: them?.avatarColor ?? '',
+      oppFlag: them?.countryCode ?? '',
+    };
+    return routeAfterMatch({
+      key: state.mode === 'online' ? state.matchId : state.resultId,
+      facts: {
+        mode: state.mode,
+        tutorial,
+        ownerId: state.ownerId,
+        winnerId: state.shown?.winner,
+        opponentId: them?.id,
+      },
+      winner: them ? revealWinner(them) : null,
+      match: state.match,
+      go: (revealKey) => {
+        if (left.current) return;
+        left.current = true;
+        if (revealKey) router.replace({ pathname: '/reveal', params: { ...params, reveal: revealKey } });
+        else router.replace({ pathname: '/result', params });
       },
     });
   }, [finished, tutorial, router]);
@@ -465,7 +479,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         <ArtImageButton
           source={BATTLE_ART.emoteButton}
           w={34}
-          h={34 * (174 / 176)}
+          h={34 * (158 / 176)}
           label="Emotes"
           hitSlop={8}
           onPress={() => setEmotesOpen((v) => !v)}
@@ -474,7 +488,7 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
         <ArtImageButton
           source={BATTLE_ART.homeButton}
           w={34}
-          h={34 * (166 / 176)}
+          h={34 * (163 / 176)}
           label="Leave the match"
           hitSlop={8}
           onPress={onLeave}

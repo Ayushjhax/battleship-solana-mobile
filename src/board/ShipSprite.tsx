@@ -9,7 +9,7 @@
  *           it is lifted so the HULL, not the image box, sits on the cells'
  *           centreline (HULL below, measured from the art's widest rows).
  *  sunk     your own ship: the same art burnt, one red pen stroke through it,
- *           smoke drifting off the deck.
+ *           a few puffs of smoke off the deck as it goes down.
  *  wreck    an enemy ship found sunk: the pencil sketch of the class, struck
  *           through and smoking the same way — the enemy's fleet is never
  *           drawn, only what is left of it.
@@ -157,13 +157,25 @@ export const ShipSprite = memo(function ShipSprite({
 const PUFF = 22;
 
 /** One puff rising off the deck and thinning out, over and over. */
+/**
+ * A few puffs as the ship goes down, then the air clears. Never endless: one
+ * smoking wreck used to keep the whole battle redrawing every frame from the
+ * first sinking to the last shot — the phone never rested, and over a session
+ * of games it ran hot and throttled. Each cycle ends at t = 1, where the puff
+ * has faded to nothing, so the last one leaves no trace.
+ */
+const PUFF_CYCLES = 3;
+
 function Puff({ x, y, delay }: { x: number; y: number; delay: number }) {
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0.35);
   useEffect(() => {
     if (reduceMotion) return;
     t.value = 0;
-    t.value = withDelay(delay, withRepeat(withTiming(1, { duration: 2600, easing: Easing.out(Easing.quad) }), -1, false));
+    t.value = withDelay(
+      delay,
+      withRepeat(withTiming(1, { duration: 2600, easing: Easing.out(Easing.quad) }), PUFF_CYCLES, false),
+    );
     return () => cancelAnimation(t);
   }, [delay, reduceMotion, t]);
   const style = useAnimatedStyle(() => ({
@@ -231,11 +243,12 @@ const ITEM_ART: Partial<Record<ArsenalItem['kind'], Asset>> = {
 
 /**
  * How far each item's art is held back from its box. The default 2 lets a
- * gun's barrel overhang its cell a little, which reads well; the mine's art
- * is wider than it is tall (144 x 128), so at that inset its spikes run to
- * the box edge and the ring looks cut off by the cell. It gets more room.
+ * gun's barrel overhang its cell a little, which reads well; the mine's eight
+ * spikes read better with a little more air round them. (The mine used to look
+ * cut off here — that was its drawing, cropped flat across the top, which
+ * scripts/battle-assets.sh now rebuilds; see there.)
  */
-const ITEM_INSET: Partial<Record<ArsenalItem['kind'], number>> = { mine: 5 };
+const ITEM_INSET: Partial<Record<ArsenalItem['kind'], number>> = { mine: 3 };
 const ITEM_INSET_DEFAULT = 2;
 
 export interface ArsenalSpriteProps {

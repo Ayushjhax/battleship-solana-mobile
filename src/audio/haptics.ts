@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { useProfile } from '@/state/profile';
 
 export type HapticId =
-  'buttonPress' | 'shipPlaced' | 'miss' | 'hit' | 'sink' | 'mine' | 'rankUp' | 'invalidAction';
+  'buttonPress' | 'shipPlaced' | 'miss' | 'hit' | 'sink' | 'mine' | 'rankUp' | 'invalidAction' | 'countdown';
 
 export function haptic(id: HapticId): void {
   if (!useProfile.getState().hapticsOn) return;
@@ -14,7 +14,7 @@ export function haptic(id: HapticId): void {
       : id === 'invalidAction'
         ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
         : Haptics.impactAsync(
-            id === 'sink' || id === 'mine'
+            id === 'sink' || id === 'mine' || id === 'countdown'
               ? Haptics.ImpactFeedbackStyle.Heavy
               : id === 'hit' || id === 'shipPlaced'
                 ? Haptics.ImpactFeedbackStyle.Medium

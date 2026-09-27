@@ -4,7 +4,7 @@ import { coordKey } from '../board';
 import { createMatch, projectView, reduce } from '../match';
 import { autoPlaceFleet } from '../placement';
 import { createRng } from '../rng';
-import type { ArsenalItem, MatchState } from '../types';
+import type { ArsenalItem, CellState, MatchState, PlayerView } from '../types';
 import { LAYOUT_A, LAYOUT_B, P0, P1 } from './fixtures';
 
 const AI = P1;
@@ -177,6 +177,36 @@ describe('chooseMove', () => {
     for (let i = 0; i < 20; i++) {
       const move = chooseMove(projectView(state, AI), 'normal', createRng(i));
       if (move.type === 'USE_ARSENAL') expect(move.row).not.toBe(5);
+    }
+  });
+});
+
+// A mine beside a sunk ship is revealed but left unmarked, so the attacker CAN
+// fire on it. The AI can see it, and must not: a mine ends the turn for nothing.
+describe('a mine the AI can see', () => {
+  it('is never chosen as a target, at any difficulty', () => {
+    const base = projectView(arena(), AI);
+    const marks: Record<string, CellState> = {};
+    for (let r = 0; r < 10; r++) for (let c = 0; c < 10; c++) marks[coordKey({ r, c })] = 'miss';
+    // Both on the parity lattice, so the hunt would happily pick either.
+    const mine = { r: 7, c: 7 };
+    const open = { r: 2, c: 8 };
+    delete marks[coordKey(mine)];
+    delete marks[coordKey(open)];
+    const view: PlayerView = {
+      ...base,
+      enemy: {
+        ...base.enemy,
+        marks,
+        revealedItems: [{ kind: 'mine', at: mine, destroyed: false }],
+      },
+    };
+    for (const difficulty of ['easy', 'normal', 'hard'] as const) {
+      for (let seed = 1; seed <= 25; seed++) {
+        const move = chooseMove(view, difficulty, createRng(seed));
+        if (move.type !== 'FIRE') throw new Error('expected FIRE');
+        expect(move.at).toEqual(open);
+      }
     }
   });
 });

@@ -26,7 +26,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
-import { BOARD_SIZE, CELL, type Point as BoardPoint } from '@/board/layout';
+import { BATTLE_BOARD_TOP, BOARD_SIZE, CELL, type Point as BoardPoint } from '@/board/layout';
 import { BATTLE_ART, FX_ART, type FxStrip } from '@/ui/assets';
 import { CANVAS_H, CANVAS_W, artColor, color, font } from '@/ui/tokens';
 import { RoughShape, hashString, roughPolygon, roughRect } from '@/ui/useRough';
@@ -678,10 +678,15 @@ const Stamp = memo(function Stamp({ stamp }: { stamp: StampModel }) {
     transform: [{ scale: 1.6 - 0.6 * press.value }, { rotate: '-5deg' }],
   }));
   const tone = stamp.tone === 'red' ? artColor.red : artColor.green;
+  // Above the cell it names — unless that would climb out of the board into
+  // the name plates (a gun on row A put "Shot down!" across the opponent's
+  // points). Then it goes just below the cell instead.
+  const above = stamp.at.y - 44;
+  const top = above < BATTLE_BOARD_TOP + 2 ? stamp.at.y + 16 : above;
   return (
     <Animated.View
       pointerEvents="none"
-      style={[styles.stamp, { left: stamp.at.x - 58, top: stamp.at.y - 44, borderColor: tone }, style]}
+      style={[styles.stamp, { left: stamp.at.x - 58, top, borderColor: tone }, style]}
     >
       <Text style={[styles.stampText, { color: tone }]}>{stamp.text}</Text>
     </Animated.View>

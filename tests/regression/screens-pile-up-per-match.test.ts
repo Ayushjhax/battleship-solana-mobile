@@ -38,6 +38,7 @@ const ROUTE_NAMES = [
   '(game)/placement',
   '(game)/searching',
   '(game)/battle',
+  '(game)/reveal',
   '(game)/result',
   '(game)/hotseat',
   'tutorial',
@@ -172,6 +173,37 @@ describe('offline sessions never accumulate screens either', () => {
       returnToMenu(router); // HowToPlayScreen leave
     }
     expect(routes()).toEqual(['menu']);
+  });
+});
+
+describe('a loss through the winner\'s-base reveal leaves nothing behind', () => {
+  it('online: battle -> reveal -> result, then [menu, placement] after every "Play again"', () => {
+    const { router, routes } = booted();
+    router.push('/placement?mode=online');
+    let deepest = 0;
+    for (let n = 0; n < MATCHES; n += 1) {
+      router.push({ pathname: '/searching', params: { wager: '0', opponent: 'player' } });
+      router.replace('/battle');
+      router.replace({ pathname: '/reveal', params: { won: '0', reveal: `m-${n}` } }); // battle.tsx
+      router.replace({ pathname: '/result', params: { won: '0' } }); // RevealScreen leave()
+      deepest = Math.max(deepest, routes().length);
+      playAgain(router, 'online', 'advanced', false);
+      expect(routes()).toEqual(['menu', '(game)/placement']);
+    }
+    expect(deepest).toBe(3);
+  });
+
+  it('vs the AI: the reveal takes the battle\'s place, and "Menu" is a single menu', () => {
+    const { router, routes } = booted();
+    for (let n = 0; n < MATCHES; n += 1) {
+      router.push('/placement?mode=ai');
+      router.push('/battle');
+      router.replace('/reveal');
+      expect(routes()).toEqual(['menu', '(game)/placement', '(game)/reveal']);
+      router.replace('/result');
+      returnToMenu(router);
+      expect(routes()).toEqual(['menu']);
+    }
   });
 });
 

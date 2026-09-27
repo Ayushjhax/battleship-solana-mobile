@@ -96,6 +96,8 @@ export const artColor = {
   label: '#172191',
   /** The profile's "verified" line, sampled. */
   green: '#25803B',
+  /** The winner's-base reveal pack's lettering (its name, rank and label art), sampled. */
+  revealInk: '#03068A',
 } as const;
 
 /**

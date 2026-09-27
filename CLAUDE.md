@@ -201,6 +201,19 @@ that looks like a rectangle from a UI kit.
   keyboard never appears.
 - Sound effects go through `playSfx('key')` in `src/audio/sfx.ts`; sources are `null` until
   the files land, and a missing effect is a silent no-op.
+- **Keep the audio pool small and quiet** (`src/audio/index.ts`). Every expo-audio player is a
+  native media player with its own thread and decoder for the whole session, and it wakes the UI
+  thread on its `updateInterval`. Players are made with `STATUS_INTERVAL_MS` (a minute — nothing
+  reads position; a finished line is reported on the state change), effects get only the
+  `POLYPHONY` a match can use, and the Captain's lines share ONE lazily made player
+  (`replace()`). 56 players at the 500 ms default were one reason long sessions ran hot;
+  `tests/regression/audio-pool.test.ts` pins it.
+- **No endless animation on a screen a match lives on** — the battle, boards, HUD, placement,
+  menu, reveal, result (docs/brief.md: "no ambient idle animation"). An endless loop redraws the
+  whole screen every frame for as long as it is mounted; the sunk-ship smoke did that from the
+  first sinking to the last shot. Loop a few times (`PUFF_CYCLES`, `BATTLE_BREATHS`) and stop;
+  only transient pieces (a plane in flight, a pending "…", spinners) may loop.
+  `tests/regression/no-endless-animation.test.ts` enforces it.
 - The boot (`app/index.tsx` + `src/features/boot/BootSequence.tsx`) is the only
   non-interactive motion in the game. It never waits on the network: the route is decided
   from the local profile and the anonymous sign-in runs fire-and-forget under a 2.5 s cap.
@@ -285,6 +298,15 @@ that looks like a rectangle from a UI kit.
   in `settledMatchIds`) so the menu reads right at once; "before" is always "after minus
   the reward". Rank-up = `rankFor(before) !== rankFor(after)`; `ranks.test.ts` pins the
   engine ladder to `0003_ranks.sql` so the two can't drift.
+- **The loser sees the winner's base first** (`src/features/reveal`, `app/(game)/reveal.tsx`, art by
+  `scripts/reveal-assets.sh`): 5 s of the winner's final board, then the untouched result. The battle's
+  finish effect goes through `routeAfterMatch()` — the winner, hot-seat, the tutorial and any ending
+  without a confirmed winner go straight to `/result`. Offline, the board is the local match's; online
+  (server bots too) it is `over.reveal`, which `room.ts` sends ONLY to the losing seat, after settlement,
+  and the client keeps as `unknown` on the wire and validates in `snapshot.ts` (a bad one is skipped,
+  never drawn). The deadline lives in `revealStore` (set once, survives a re-mount); the wait for a late
+  `over` is bounded (`REVEAL_WAIT_MS`). Never start the page at opacity 0: a stalled animation would be
+  a blank page — the route's fade is the entrance.
 - **The leaderboard finds "you" by position, never by id.** The view (0004/0006) exposes
   no id and is never altered — `create or replace view` can only append and would break
   re-running older migrations, which `verify-offline.mjs` checks. `my_leaderboard_row()`
