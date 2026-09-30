@@ -89,7 +89,7 @@ export const Fleet: React.FC = () => {
           const leadIdx = isLead ? [0, 1, -1, 2, -1, -1, 3, -1][n] : -1;
           const target = formation[n];
           if (isLead) {
-            const inP = enter(frame, f(B.ships[leadIdx]) - 4, 24);
+            const inP = enter(frame, f(B.ships[leadIdx]) - (leadIdx === 0 ? 12 : 4), 24);
             const x0 = xs[leadIdx] + mix(700, 0, inP);
             const w = mix(widths[leadIdx], fleetW[n], pull);
             return (

@@ -20,3 +20,17 @@ Method each round: render the whole film at half resolution, export a still ever
 | 8 | Whole film | Checked, no change: every cut lands on a beat (scene starts are whole beats; gameplay events are anchored to beats by measurement), the battle hits on the flash frame (b104 = the game's own white flash), the four biggest hits carry the shake (title, Hit, the last ship, Victory), there is no slow-mo, the wallet data stays blurred in every frame it appears (hero, bento tile), and the runtime is 1:54.0. | — |
 
 4K benchmark (BRIEF §6): 150 frames of the battle at 3840×2160 in 200 s (1.33 s/frame while the upscaler shares the CPU) → about 76 min for the film at 30 fps. 60 fps would double it and the footage isn't 60, so the film stays at 30 fps.
+
+---
+
+## Round 2: a still every 0.5 s from the half-res draft (`out/draft_1080p.mp4` → `build/q2_*.jpg`)
+
+The draft includes every round-1 fix and the game-music soundtrack; it was also mastered and delivered as the 1080p preview.
+
+| # | Where | Finding | Fix |
+|---|---|---|---|
+| 1 | 0:12.0 | "Empire of Bits" was still fading out (blurred, ghosted) while "Command" rose through it: two lines on screen at once. | The title is gone the frame before the tagline starts (exit at tagline − 13 frames, 12-frame exit). Verified at f355/f360/f362. |
+| 2 | 0:30.0 | The fleet cut still opened on a near-black frame (the Battleship's entrance began on the cut). | The Battleship is already arriving on the cut (entrance −12 frames). Verified at f900. |
+| 3 | Whole film | Re-checked, no change: no black frames on any cut; the whip-pans read as motion (1:00.0, 1:02.0); Aim/Fire/Hit lands on the flash; the heartbeat thins; half a beat of black before Victory (1:13.75); the leaderboard punch lands on the #1 row; the bento fly-through lands in the battle tile; hard cut to silence at 1:44.0; "One more thing." after 0.9 s of black; the lockup holds 2.1 s, pings, fades to black by 1:53.6 and holds black to 1:54.0. Every line meets ≥ 0.4 s/word + 0.6 s. Runtime 1:54.0. | — |
+
+Loudness of the delivered preview: −13.8 LUFS integrated, −0.9 dBTP, AAC 320 kb/s 48 kHz (two-pass loudnorm on the rendered audio).

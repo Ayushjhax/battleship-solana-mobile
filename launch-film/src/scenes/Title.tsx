@@ -21,7 +21,8 @@ export const Title: React.FC = () => {
   const frame = useCurrentFrame();
   const push = cam(frame, 0, f(12));
   const dim = interpolate(frame, [f(B.dim), f(B.dim) + 24], [0, 1], {...CLAMP});
-  const titleOut = exit(frame, f(B.taglineIn) - 8, 14);
+  // the title is fully gone the frame before the tagline starts (no ghosted overlap)
+  const titleOut = exit(frame, f(B.taglineIn) - 13, 12);
   const titleTextStyle: React.CSSProperties = {
     fontFamily: FONT.game,
     fontWeight: 800,
