@@ -65,13 +65,24 @@ const Strike: React.FC = () => {
     <AbsoluteFill>
       <ZoomPunch hits={[{at: hit, amount: 0.09, flash: true, shake: true}]}>
         <Framed source={SOURCE.battle} u={u} v={v} zoom={zoom} cover={zoom >= 3.75}>
-          {frame < fire ? <Freeze clip="arsenal" at={0} fit="fill" /> : null}
+          {frame < fire ? <Freeze clip="arsenal" at={0} fit="fill" style={{filter: dof > 0.01 ? `blur(${14 * dof}px) brightness(${1 - 0.28 * dof})` : undefined}} /> : null}
           <Sequence from={fire} layout="none">
             <Footage shot={{...B.strike, at: 0}} fit="fill" />
           </Sequence>
         </Framed>
-        {/* depth of field while aiming: the board falls away around the target */}
-        <AbsoluteFill style={{opacity: dof, background: 'radial-gradient(circle 700px at 50% 50%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.7) 100%)'}} />
+        {/* depth of field while aiming: the target stays sharp, the board around it falls away */}
+        {frame < fire && dof > 0.01 ? (
+          <AbsoluteFill
+            style={{
+              WebkitMaskImage: 'radial-gradient(circle 560px at 50% 50%, #000 55%, transparent 100%)',
+              maskImage: 'radial-gradient(circle 560px at 50% 50%, #000 55%, transparent 100%)',
+            }}
+          >
+            <Framed source={SOURCE.battle} u={u} v={v} zoom={zoom} cover={zoom >= 3.75}>
+              <Freeze clip="arsenal" at={0} fit="fill" />
+            </Framed>
+          </AbsoluteFill>
+        ) : null}
       </ZoomPunch>
       <BottomShade opacity={1 - exit(frame, words, 12)} height={820} />
       <div style={{position: 'absolute', left: SAFE.x + 20, bottom: SAFE.y + 70, display: 'flex', gap: 70}}>
@@ -164,7 +175,7 @@ const Inserts: React.FC = () => {
               justifyContent: 'center',
             }}
           >
-            <FxSprite fx={ins.fx as FxName} at={i * per + 4} size={1100} hold={3} loop />
+            <FxSprite fx={ins.fx as FxName} at={i === 0 ? -2 : i * per - 2} size={1100} hold={3} loop />
           </div>
         ))}
       </AbsoluteFill>

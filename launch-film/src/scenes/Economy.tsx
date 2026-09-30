@@ -30,6 +30,7 @@ const Block: React.FC<{i: number}> = ({i}) => {
     <AbsoluteFill>
       <div style={{position: 'absolute', inset: 0, translate: `${(right ? 1 : -1) * mix(160, 0, slide) + (right ? -40 : 40) * drift}px 0`}}>
         <PhoneFrame
+          at={-10}
           screenWidth={SW}
           x={phoneX - rowX * (s - 1)}
           y={1130 - rowY * (s - 1)}

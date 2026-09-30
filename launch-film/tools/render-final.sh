@@ -44,7 +44,7 @@ ffmpeg -v error -y -i build/film_audio.wav -af "loudnorm=I=-14:TP=-1:LRA=11:meas
 ffmpeg -v error -y -i "$RAW" -i build/film_audio_master.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 320k -ar 48000 -ac 2 -movflags +faststart -shortest out/EmpireOfBits_LaunchFilm_4K.mp4
 ffmpeg -v error -y -i out/EmpireOfBits_LaunchFilm_4K.mp4 -map 0:v -map 0:a -vf "scale=1920:1080:flags=lanczos" -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -color_primaries bt709 -color_trc bt709 -colorspace bt709 -c:a copy -movflags +faststart out/EmpireOfBits_LaunchFilm_1080p.mp4
 
-POSTER=${POSTER_FRAME:-3330}
+POSTER=${POSTER_FRAME:-340}  # the title over the Atomic Bomber's strike, mid light-sweep
 npx remotion still src/index.ts LaunchFilm out/poster.jpg --frame=$POSTER --jpeg-quality=95 --props='{"audio":false}'
 ffmpeg -v error -y -i out/poster.jpg -vf "scale=1280:720:flags=lanczos" -q:v 2 out/thumbnail_1280x720.jpg
 

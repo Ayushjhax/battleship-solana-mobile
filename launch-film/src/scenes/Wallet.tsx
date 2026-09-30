@@ -24,7 +24,7 @@ export const Wallet: React.FC = () => {
   const ty = PY - sh / 2 + 290 * k;
   return (
     <AbsoluteFill style={{background: '#000'}}>
-      <PhoneFrame screenWidth={SW} x={PX - 60 * drift} y={PY} at={0} rotateY={-7 + 4 * drift} scale={1 + 0.03 * drift}>
+      <PhoneFrame screenWidth={SW} x={PX - 60 * drift} y={PY} at={-10} rotateY={-7 + 4 * drift} scale={1 + 0.03 * drift}>
         <Footage shot={B.screen} fit="cover" />
       </PhoneFrame>
       <Callout x={tx - 60 * drift} y={ty} dx={0} dy={-560} label={COPY.wallet.callout} at={f(B.callout)} />

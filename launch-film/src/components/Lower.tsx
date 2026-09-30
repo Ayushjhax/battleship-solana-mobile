@@ -29,16 +29,22 @@ export const WeaponLabel: React.FC<{name: string; at: number; out?: number}> = (
 };
 
 /** A bottom gradient that dims the plate under type. */
-export const BottomShade: React.FC<{opacity?: number; height?: number}> = ({opacity = 1, height = 900}) => (
-  <div
-    style={{
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      bottom: 0,
-      height,
-      opacity,
-      background: 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.55) 40%, rgba(0,0,0,0) 100%)',
-    }}
-  />
-);
+export const BottomShade: React.FC<{opacity?: number; height?: number}> = ({opacity = 1, height = 900}) => {
+  const mask = 'linear-gradient(to top, #000 0%, #000 35%, transparent 100%)';
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height,
+        opacity,
+        background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.72) 38%, rgba(0,0,0,0) 100%)',
+        backdropFilter: 'blur(18px)',
+        WebkitMaskImage: mask,
+        maskImage: mask,
+      }}
+    />
+  );
+};

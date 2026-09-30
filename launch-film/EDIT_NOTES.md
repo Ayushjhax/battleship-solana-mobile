@@ -7,7 +7,7 @@ Remotion 4.0.530 · React 19 · TypeScript. One composition, **`LaunchFilm`**: 3
 ```bash
 npm install
 npm run assets     # stage game art + fonts into public/, prepare media (CFR 30, H.264, blurs)
-npm run audio      # timeline → score (Python) → beat detection → sound design + mix
+npm run audio      # timeline → the game-music score → beat detection → sound design + mix
 npm run final      # 4K render → two-pass loudnorm → 4K + 1080p MP4s, poster, thumbnail, report
 ```
 
@@ -41,7 +41,11 @@ After a timing change: `npm run mix` (re-places the SFX on the new beats), then 
 3. Set `BPM` and `BEAT_OFFSET` in `timeline.ts`. Every cut, word and cue moves with them.
 4. `npm run mix` lays the sound design over the new track and ducks it 3–6 dB under the key SFX. Skip `audio/score.py`, which composes the original score.
 
-The original score (`audio/score.py`) is built to the scene grid: D minor, 120 BPM, sections keyed to the scene starts. The game's `mine`, `explosion` and `splash` sounds are layered into the kick, snare and hats. If you move scenes, `npm run audio` re-composes it to the new grid.
+**The music is the game's own** (`audio/score_game.py`, the default): `assets/audio/music/music_menu.mp3` (106.6 BPM, time-stretched to 120 with pitch kept) for the journey, victory and economy, and `music_battle.mp3` (already 119.99 BPM) for the drop, the heartbeat and the supercut. It's laid bar by bar onto the scene grid: a 12-bar loop of the theme (bar 12 ≈ bar 0 harmonically) and a 14-bar loop of the battle track. The game's SFX play the kit (mine = kick, explosion = snare, splash = hats), the hits (nuke, ship_sink), the risers (reversed nuke) and the heartbeat (mine, low-passed); a reverb-frozen chord from the theme is the finale's soft tone. If you move scenes, `npm run audio` re-arranges it to the new grid.
+
+`audio/score.py` is the alternative: an original synth score (D minor, 120 BPM) built to the same grid. To use it, set `MUSIC_FILE = 'audio/score.wav'` and run `python3 audio/score.py && npm run mix`.
+
+Every sound-design cue in `audio/mix.py` is a processed game sound too (`assets/audio/sfx`): ui_tap ticks, torpedo whooshes, coin_flow sweeps, rank_up shimmer, ship_place carousel clicks, radar_ping sonar.
 
 ## Where things live
 | Path | What |
@@ -51,7 +55,7 @@ The original score (`audio/score.py`) is built to the scene grid: D minor, 120 B
 | `src/components/` | `KineticText`, `MaskReveal` + `LightSweep` (Reveal.tsx), `FloatingScreen`, `PhoneFrame`, `Callout`, `ZoomPunch` (Impact.tsx), `SpeedRamp` + `Footage` + `Freeze`, `SonarPing`, `GridField`, `Bit`, `Framed`, `ArtCard`, `FxSprite`, `Grain` + `Vignette` (Finish.tsx), `Drift` + `Plate` (Camera.tsx), `WeaponLabel` |
 | `src/scenes/Fleet.tsx` / `Bento.tsx` | the lineup and the bento grid (`Lineup` / `BentoGrid` in the brief) |
 | `src/theme.ts` | colour, type scale, easing, radius, shadow: the one system |
-| `audio/` | `score.py` (music), `mix.py` (sound design + ducking), `master.py` (pre-master limiter), `synth.py` |
+| `audio/` | `score_game.py` (the music, from the game's audio), `score.py` (synth alternative), `mix.py` (sound design + ducking), `master.py` (pre-master limiter), `synth.py` |
 | `tools/` | media prep, ESRGAN upscales, event measurement, stills, contact sheets, final render, report |
 | `public/media/` | prepared clips (gitignored, rebuilt by `npm run assets`) |
 

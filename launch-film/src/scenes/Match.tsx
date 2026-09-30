@@ -32,7 +32,7 @@ export const Match: React.FC = () => {
   return (
     <AbsoluteFill style={{background: '#000'}}>
       <ZoomPunch hits={[{at: f(B.lockOn), amount: 0.05}]}>
-        <FloatingScreen width={SW} height={SH} x={cx} y={cy} at={0} scale={s} reflection={lock < 0.5}>
+        <FloatingScreen width={SW} height={SH} x={cx} y={cy} at={-10} scale={s} reflection={lock < 0.5}>
           <Footage shot={B.screen} fit="cover" />
         </FloatingScreen>
         {/* the film's radar sweep, centred on the game's dial */}

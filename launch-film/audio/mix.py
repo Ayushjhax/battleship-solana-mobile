@@ -42,46 +42,52 @@ def trim_onset(x, pre_ms=0):
     return x[:, max(0, i - int(pre_ms / 1000 * SR)):]
 
 
+# Every sound below is the game's own (assets/audio/sfx), processed: filtered, layered, reverbed.
+def resample(x, ratio):
+    """play faster (ratio > 1: higher, shorter) by plain resampling"""
+    n = int(x.shape[1] / ratio)
+    idx = np.linspace(0, x.shape[1] - 1, n)
+    return np.stack([np.interp(idx, np.arange(x.shape[1]), ch) for ch in x])
+
+
 def tick():
-    n = int(0.08 * SR)
-    y = sine(2600, n) * exp_decay(n, 0.006) * 0.5 + sine(5200, n) * exp_decay(n, 0.003) * 0.2
-    return fx(stereo(y), pb.Reverb(room_size=0.2, wet_level=0.15))
+    """text tick: the game's UI tap, thinned"""
+    x = trim_onset(load('ui_tap.mp3')) * db(8)
+    x = static_filter(x, 1800, 'highpass')[:, : int(0.12 * SR)]
+    return fx(x, pb.Reverb(room_size=0.2, wet_level=0.15))
 
 
 def whoosh(length=0.7, seed=0, up=True):
-    n = int(length * SR)
-    rng = np.random.default_rng(seed)
-    x = np.vstack([rng.standard_normal(n), rng.standard_normal(n)])
-    r = np.linspace(0, 1, n)
-    fc = 300 * (4500 / 300) ** (r if up else 1 - r)
-    env = np.sin(np.pi * r ** 0.8) ** 2
-    y = sweep_filter(x, fc, 'bandpass', q=1.2) * env * 2.5
-    return fx(y, pb.Reverb(room_size=0.5, wet_level=0.25))
+    """airy move: the game's torpedo run, band-limited and smeared"""
+    x = trim_onset(load('torpedo.mp3')) * db(12)
+    x = static_filter(x, [400, 6000], 'bandpass')
+    n = x.shape[1]
+    x *= np.sin(np.linspace(0, np.pi, n)) ** 1.5
+    return fx(x, pb.Reverb(room_size=0.6, wet_level=0.35))
 
 
 def sweep():
-    n = int(1.4 * SR)
-    r = np.linspace(0, 1, n)
-    rng = np.random.default_rng(4)
-    x = np.vstack([rng.standard_normal(n), rng.standard_normal(n)])
-    y = sweep_filter(x, 3000 * (12000 / 3000) ** r, 'bandpass', q=4) * np.sin(np.pi * r) ** 2 * 1.5
-    y += stereo(sum(sine(midi_hz(m), n) for m in (86, 93, 98)) * 0.05 * np.sin(np.pi * r) ** 2)
-    return fx(y, pb.Reverb(room_size=0.8, wet_level=0.5))
+    """light sweep: the game's coin sparkle, lifted and spread"""
+    x = trim_onset(load('coin_flow.mp3'))
+    x = static_filter(x, 3000, 'highpass')
+    return fx(x, pb.Chorus(rate_hz=0.8, depth=0.3, mix=0.4), pb.Reverb(room_size=0.85, wet_level=0.55))
 
 
 def shimmer():
-    n = int(2.0 * SR)
-    y = sum(sine(midi_hz(m), n) * (0.6 ** i) for i, m in enumerate((86, 93, 98, 105)))
-    y *= adsr(n, a=0.25, d=0.4, s=0.4, r=1.0)
-    return fx(stereo(y * 0.3), pb.Chorus(rate_hz=1.2, depth=0.3, mix=0.5), pb.Reverb(room_size=0.9, wet_level=0.6))
+    """the bit / a settle: the game's rank-up chime, far away"""
+    x = trim_onset(load('rank_up.mp3'))
+    x = static_filter(x, 900, 'highpass')
+    return fx(x, pb.Reverb(room_size=0.95, wet_level=0.7, dry_level=0.4))
 
 
 def reveal():
-    """sub drop for reveals"""
-    n = int(1.6 * SR)
-    t = np.arange(n) / SR
-    y = sine(38 + 60 * np.exp(-t / 0.2), n) * exp_decay(n, 0.45)
-    return fx(stereo(np.tanh(1.5 * y)), pb.Reverb(room_size=0.6, wet_level=0.25))
+    """sub drop: the game's mine, low-passed, under the nuke's body"""
+    m = static_filter(trim_onset(load('mine.mp3')), 160, 'lowpass', order=2) * db(10)
+    n = static_filter(trim_onset(load('nuke.mp3')), 120, 'lowpass', order=2)
+    y = np.zeros((2, max(m.shape[1], n.shape[1])))
+    place(y, m, 0)
+    place(y, n, 0, -6)
+    return fx(y, pb.Reverb(room_size=0.6, wet_level=0.25))
 
 
 def thud():
@@ -91,41 +97,32 @@ def thud():
 
 
 def slam():
-    n = int(0.9 * SR)
-    t = np.arange(n) / SR
-    y = sine(45 + 90 * np.exp(-t / 0.05), n) * exp_decay(n, 0.25)
-    y = stereo(np.tanh(2 * y))
-    m = load('mine.mp3')
-    y[:, : m.shape[1]] += 0.5 * m[:, :n]
+    y = trim_onset(load('mine.mp3')) * db(4)
+    s = static_filter(trim_onset(load('shot_fire.mp3')) * db(12), 1200)
+    place(y, s, 0, -4)
     return fx(y, pb.Reverb(room_size=0.5, wet_level=0.2))
 
 
 def metal(seed):
-    n = int(0.5 * SR)
-    rng = np.random.default_rng(seed)
-    base = 2000 + rng.random() * 800
-    y = sum(sine(base * r, n) * exp_decay(n, 0.05 + 0.1 / r) for r in (1, 2.76, 5.4, 8.9)) * 0.15
-    y += static_filter(rng.standard_normal(n), 6000, 'highpass') * exp_decay(n, 0.003) * 0.3
-    return fx(stereo(y, rng.uniform(-0.4, 0.4)), pb.Reverb(room_size=0.4, wet_level=0.2))
+    """carousel tick: the game's ship-place click, pitched per step"""
+    x = trim_onset(load('ship_place.mp3')) * db(6)
+    x = resample(x, [1.0, 1.12, 1.26, 1.33, 1.5, 1.68][seed % 6])
+    return fx(static_filter(x, 1500, 'highpass'), pb.Reverb(room_size=0.4, wet_level=0.25))
 
 
 def lock():
-    """sonar lock-on: two quick pings a fifth apart + click"""
-    y = np.zeros((2, int(0.9 * SR)))
-    for k, m in enumerate((81, 88)):
-        n = int(0.6 * SR)
-        s = sine(midi_hz(m), n) * exp_decay(n, 0.08)
-        place(y, stereo(s * 0.4), k * 0.09)
-    return fx(y, pb.Delay(delay_seconds=0.12, feedback=0.25, mix=0.2), pb.Reverb(room_size=0.5, wet_level=0.3))
+    """lock-on: two of the game's radar pings, the second a fifth up"""
+    p = trim_onset(load('radar_ping.mp3')) * db(10)
+    y = np.zeros((2, int(1.2 * SR)))
+    place(y, p, 0)
+    place(y, resample(p, 1.5), 0.09, -2)
+    return fx(y, pb.Reverb(room_size=0.5, wet_level=0.3))
 
 
 def sonar():
     p = trim_onset(load('radar_ping.mp3')) * db(10)
-    n = int(1.8 * SR)
-    s = sine(midi_hz(86), n) * exp_decay(n, 0.35) * 0.25  # D6 ping, in key
-    y = np.zeros((2, n))
+    y = np.zeros((2, int(1.8 * SR)))
     place(y, p, 0)
-    place(y, stereo(s), 0)
     return fx(y, pb.Delay(delay_seconds=0.25, feedback=0.3, mix=0.25), pb.Reverb(room_size=0.9, wet_level=0.45))
 
 
@@ -140,7 +137,7 @@ def game(name, boost=0, pre=0.0, lp=None):
 BANK = {
     'tick': (tick(), 0),
     'tap': game('ui_tap.mp3', 8),
-    'whoosh': (whoosh(0.7, 1), 0.35),
+    'whoosh': (whoosh(0.7, 1), 0.3),
     'sweep': (sweep(), 0.2),
     'shimmer': (shimmer(), 0.1),
     'reveal': (reveal(), 0),
@@ -246,7 +243,10 @@ gate(fin, T['totalBeats'] + 8)
 music_ducked[:, int(film_t(fin) * SR):] = music[:, int(film_t(fin) * SR):]
 for i, c in enumerate(T['cues']):
     if c['beat'] >= fin:
-        x, pre = BANK[c['sfx']]
+        if c['sfx'] == 'metal':
+            x, pre = metal(i), 0
+        else:
+            x, pre = BANK[c['sfx']]
         place(sfx, normalised(c['sfx'], x), film_t(c['beat']) - pre, c.get('gain', 0))
 
 mix = music_ducked + sfx

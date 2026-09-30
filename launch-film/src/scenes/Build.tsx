@@ -33,8 +33,8 @@ export const Build: React.FC = () => {
   // camera: settle → macro on the board (left) → pull back and dim for the cards
   const lean = cam(frame, f(B.macroIn), f(B.macroIn) + 40);
   const back = cam(frame, f(B.cards) - 10, f(B.cards) + 24);
-  const s = mix(1, 1.42, lean) * mix(1, 0.8, back);
-  const cx = mix(1920, 2580, lean) + mix(0, -600, back);
+  const s = mix(1, 1.24, lean) * mix(1, 0.86, back);
+  const cx = mix(1920, 2270, lean) + mix(0, -350, back);
   const cy = mix(1230, 1140, lean) + mix(0, 110, back);
   const dim = back * 0.86;
   const blur = back * 16;
@@ -44,19 +44,19 @@ export const Build: React.FC = () => {
 
   return (
     <AbsoluteFill style={{background: '#000'}}>
-      <FloatingScreen width={SW} height={SH} x={cx} y={cy} at={0} scale={s} reflection={back < 0.5 && lean < 0.5}>
+      <FloatingScreen width={SW} height={SH} x={cx} y={cy} at={-10} scale={s} reflection={back < 0.5 && lean < 0.5}>
         <div style={{width: '100%', height: '100%', filter: `brightness(${1 - dim}) blur(${blur}px)`}}>
           <Footage shot={B.screen} fit="cover" />
         </div>
       </FloatingScreen>
 
-      <Callout x={aa.x} y={aa.y} dx={-40} dy={380} label={COPY.build.calloutAa} at={at(EVENTS.build.aaPlaced) + 2} out={f(B.cards) - 14} />
-      <Callout x={mine.x} y={mine.y} dx={260} dy={-240} label={COPY.build.calloutMine} at={at(EVENTS.build.minePlaced) + 2} out={f(B.cards) - 14} />
+      <Callout x={aa.x} y={aa.y} dx={-40} dy={380} label={COPY.build.calloutAa} at={at(EVENTS.build.aaPlaced) + 2} out={f(B.cards) - 4} />
+      <Callout x={mine.x} y={mine.y} dx={260} dy={-240} label={COPY.build.calloutMine} at={at(EVENTS.build.minePlaced) + 2} out={f(B.cards) - 4} />
       {/* depth of field: the room around the board falls away while the camera leans in */}
       <AbsoluteFill
         style={{
           opacity: lean * (1 - back),
-          background: `radial-gradient(ellipse 1500px 1150px at ${pt(860, 651, cx, cy, s).x}px ${pt(860, 651, cx, cy, s).y}px, rgba(0,0,0,0) 55%, rgba(0,0,0,0.62) 100%)`,
+          background: `radial-gradient(ellipse 1500px 1150px at ${pt(860, 651, cx, cy, s).x}px ${pt(860, 651, cx, cy, s).y}px, rgba(0,0,0,0) 62%, rgba(0,0,0,0.42) 100%)`,
         }}
       />
 

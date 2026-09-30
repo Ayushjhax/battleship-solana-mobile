@@ -20,11 +20,13 @@ export const WIDTH = 3840;
 export const HEIGHT = 2160;
 
 /** Detected with librosa on the rendered score by tools/beats.py → build/beats.json:
- *  120.01 BPM, first beat at 0.017 s (onset-detector latency, under one frame → 0). */
+ *  120.00 BPM, first beat at −0.007 s (under one frame → 0). The game's battle theme is itself
+ *  119.99 BPM; the menu theme (106.61 BPM) is time-stretched onto the grid. */
 export const BPM = 120;
 /** Seconds into the music file where beat 0 falls. */
 export const BEAT_OFFSET = 0;
-export const MUSIC_FILE = 'audio/score.wav';
+/** The game's own music, arranged to this grid by audio/score_game.py (audio/score.py is the synth alternative). */
+export const MUSIC_FILE = 'audio/score_game.wav';
 
 export const FRAMES_PER_BEAT = (FPS * 60) / BPM;
 /** Absolute (or relative) beats → frames. Rounds to the nearest frame. */
@@ -138,12 +140,12 @@ export const COLD_OPEN = {
 export const TITLE = {
   // Hard cut on the hit: the atomic strike, full-bleed.
   hit: anchored('arsenal', EVENTS.arsenal.flash, 0, 0, 12),
-  dim: 3, // plate dims and blurs
-  titleIn: 3.5, // "Empire of Bits" mask reveal
-  sweep: 5.5, // light sweep across the title
-  subIn: 5, // "Ocean Warfare"
-  taglineIn: 7.5, // "Command the sea."
-  out: 11.25,
+  dim: 2.75, // plate dims and blurs
+  titleIn: 3.25, // "Empire of Bits" mask reveal
+  sweep: 5.25, // light sweep across the title
+  subIn: 4.75, // "Ocean Warfare"
+  taglineIn: 7.75, // "Command the sea."
+  out: 11.4,
 } as const;
 
 export const WALLET = {
@@ -165,8 +167,8 @@ export const BUILD = {
 } as const;
 
 export const FLEET = {
-  headline: 0.5, // "Meet the fleet."
-  ships: [1, 2, 3, 4], // one hull per beat
+  headline: 0.25, // "Meet the fleet."
+  ships: [0.25, 1, 2, 3], // one hull per beat (the first lands with the cut)
   stat: 8, // "8 ships." (the rest of the fleet joins)
 } as const;
 
@@ -232,7 +234,7 @@ export const ECONOMY = {
 } as const;
 
 export const BENTO = {
-  tiles: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5], // staggered in, half a beat apart
+  tiles: [-0.4, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5], // staggered in, half a beat apart (the hero tile is already arriving on the cut)
   flyIn: 8, // camera flies into the battle tile
 } as const;
 
@@ -241,15 +243,15 @@ export const SUPERCUT = {
 } as const;
 
 export const FINALE = {
-  oneMore: 2, // "One more thing."
+  oneMore: 1.75, // "One more thing." (after ~0.9 s of black and silence)
   oneMoreOut: 5.5,
   badge: 6, // the dApp Store badge + line
   sweep: 7.5,
-  badgeOut: 11.5,
-  lockup: 12, // title + "Your move."
-  period: 13, // the pixel lands as the period
-  ping: 17.5, // it pings once
-  black: 19, // fade to black by here
+  badgeOut: 12,
+  lockup: 12.5, // title + "Your move."
+  period: 13.5, // the pixel lands as the period
+  ping: 17.75, // it pings once (the lockup has held clean for > 2 s)
+  black: 19.25, // fade to black by here
 } as const;
 
 // ─── Sound design cues ───────────────────────────────────────────────────────

@@ -9,7 +9,7 @@
     "lint": "eslint src && tsc",
     "assets": "tools/stage-art.sh && tools/prep-media.sh",
     "timeline": "node --experimental-strip-types --no-warnings tools/export-timeline.mjs",
-    "audio": "npm run timeline && python3 audio/score.py && python3 tools/beats.py && python3 audio/mix.py",
+    "audio": "npm run timeline && python3 audio/score_game.py && python3 tools/beats.py public/audio/score_game.wav && python3 audio/mix.py",
     "mix": "npm run timeline && python3 audio/mix.py",
     "stills": "node tools/stills.mjs",
     "animatic": "remotion render src/index.ts LaunchFilm review/animatic_960x540.mp4 --scale=0.25 --codec=h264 --crf=22 --audio-bitrate=192k",

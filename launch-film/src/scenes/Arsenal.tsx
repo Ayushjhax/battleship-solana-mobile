@@ -33,7 +33,7 @@ export const Arsenal: React.FC = () => {
   });
   const front = rot - 1; // item index currently in front (starts at -1: the ring comes in turning)
   const settle = enter(frame, f(B.settle), 26);
-  const intro = enter(frame, 0, 26);
+  const intro = enter(frame, -12, 26);
 
   const items = ITEMS.map((it, i) => {
     const theta = ((i - front) / N) * Math.PI * 2;

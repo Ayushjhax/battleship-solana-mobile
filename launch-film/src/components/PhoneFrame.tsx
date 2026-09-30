@@ -28,12 +28,12 @@ export const PhoneFrame: React.FC<{
   const H = sh + bezel * 2;
   const R = H * 0.13;
   return (
-    <div style={{position: 'absolute', left: x - W / 2, top: y - H / 2, width: W, height: H, perspective: 6000, opacity: p * opacity}}>
+    <div style={{position: 'absolute', left: x - W / 2, top: y - H / 2, width: W, height: H, perspective: 6000, opacity: p * opacity, scale}}>
       <div
         style={{
           width: '100%',
           height: '100%',
-          transform: `translateY(${mix(H * 0.2, 0, p)}px) rotateX(${mix(tilt, 0, p)}deg) rotateY(${rotateY}deg) scale(${mix(0.92, 1, p) * scale})`,
+          transform: `translateY(${mix(H * 0.2, 0, p)}px) rotateX(${mix(tilt, 0, p)}deg) rotateY(${rotateY}deg) scale(${mix(0.92, 1, p)})`,
           transformOrigin: '50% 100%',
           borderRadius: R,
           WebkitBoxReflect: `below ${Math.round(H * 0.03)}px linear-gradient(to bottom, rgba(0,0,0,0) 74%, rgba(0,0,0,0.14) 100%)`,
