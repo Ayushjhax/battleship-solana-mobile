@@ -49,3 +49,5 @@ card complete from 42.2 s, held 2.8 s to the last frame, 45.0 s). No further fix
 - Sting line "AN EMPIRE OF BITS ORIGINAL" → "EMPIRE OF BITS".
 - 0:27–0:28 broke the flow (dim + one-beat silence, then a jump to the track's second drop). Now drop 1 runs unbroken
   from beat 46 through the battle, VICTORY and the economy; the dim is gone. Re-rendered: −13.8 LUFS, −1.2 dBTP, 45.0 s.
+- 0:35 broke the flow (black breath beat + silence, then a jump to the track's last build). Now the wall of players
+  appears on beat 82 as the letterbox opens and drop 1 runs unbroken into the swarm until the landing on 91.

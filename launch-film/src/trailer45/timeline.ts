@@ -46,7 +46,7 @@ export const SECTIONS = {
   drop: [46, 66], //     the battle, straight into VICTORY
   victory: [66, 74], //  biggest hit of the film (music continues)
   economy: [74, 82], //  four cards, two beats each
-  breath: [82, 83], //   black, silence, letterbox out
+  breath: [82, 83], //   the wall of players appears, letterbox out (no black, no silence)
   swarm: [83, 91], //    players build the logo; lands on 91
   live: [91, 96], //     logo up, dApp Store badge in
   yourMove: [96, 105], // "Your move." — held to the last frame
@@ -63,8 +63,7 @@ export const DURATION = f(TOTAL_BEATS);
  */
 export const MUSIC_EDIT = [
   { from: 0, to: 43, track: -46, note: 'intro pad; drums enter on 14; kick roll 38–42' },
-  { from: 46, to: 82, track: 0, note: 'drop 1 runs unbroken through the battle, VICTORY and the economy' },
-  { from: 83, to: 91, track: 284, note: 'last build: kick roll, one-beat gap on 90' },
+  { from: 46, to: 91, track: 0, note: 'drop 1 runs unbroken through the battle, VICTORY, the economy and the swarm' },
   { from: 91, to: 105, track: 356, note: 'final chord rings out under the end card' },
 ] as const;
 

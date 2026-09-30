@@ -24,7 +24,7 @@ const Placeholder: React.FC<{ id: string }> = ({ id }) => (
 );
 
 /** these three are one continuous piece (the logo carries through) */
-const FINALE: SectionId[] = ['swarm', 'live', 'yourMove'];
+const FINALE: SectionId[] = ['breath', 'swarm', 'live', 'yourMove'];
 
 export type Trailer45Props = { audio: boolean };
 
@@ -54,7 +54,7 @@ export const Trailer45: React.FC<Trailer45Props> = ({ audio }) => {
               {scenes[id] ?? <Placeholder id={id} />}
             </Sequence>
           ))}
-        <Sequence name="finale: swarm → live → your move" from={f(SECTIONS.swarm[0])}>
+        <Sequence name="finale: swarm → live → your move" from={f(SECTIONS.breath[0])}>
           <Finale />
         </Sequence>
       </Shake>
