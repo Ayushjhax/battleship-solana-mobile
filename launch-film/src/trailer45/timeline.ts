@@ -82,21 +82,28 @@ export type Shot = {
   readonly in: number; // seconds into src at `from`
   readonly rate?: number;
   readonly freezeAt?: number; // film beat after which the picture holds
+  /** speed ramps: from film beat `beat`, play from `in` seconds at `rate` */
+  readonly ramps?: readonly (readonly [beat: number, inSec: number, rate: number])[];
   readonly cam: readonly CamKey[];
 };
 
 export const SHOTS = {
   // HOOK — the Atomic Bomb's fireball, already mid-blast on frame 0
-  hook: { src: 'atomic', from: 0, to: 1, in: 1.3, cam: [[0, 930, 300, 2.3], [1, 930, 302, 2.36]] },
+  hook: { src: 'atomic', from: 0, to: 1, in: 1.3, cam: [[0, 925, 296, 2.05], [1, 925, 298, 2.12]] },
   // THE DROP — flash (1.00 s) → fireball → mushroom cloud
   strike: { src: 'atomic', from: 46, to: 49, in: 1.0, cam: [[46, 928, 300, 1.75], [49, 930, 296, 1.9]] },
   // hit marks bloom inside the 3x3 (2.8–3.3 s)
   marks: { src: 'atomic', from: 49, to: 51, in: 2.47, cam: [[49, 930, 318, 1.9], [51, 930, 318, 2.0]] },
   // enemy bomber over your board → AA gun fires (0.71) → downed → "Shot down!" (1.50)
-  defense: { src: 'defense', from: 51, to: 55, in: 0.35, cam: [[51, 420, 380, 1.45], [53, 380, 400, 1.6], [55, 372, 402, 1.66]] },
+  // speed ramp: the approach at 1.8x, then real time from the moment the gun fires
+  defense: {
+    src: 'defense', from: 51, to: 55, in: 0.35, rate: 1.8, ramps: [[51.4667, 0.71, 1]],
+    cam: [[51, 420, 380, 1.45], [53, 380, 400, 1.6], [55, 372, 402, 1.66]],
+  },
   // Bomber armed → released → whip along row A → the bomb lands on beat 59 (2.833 s)
+  // speed ramp: armed and released at 1.5x, then real time along row A into the hit
   raid: {
-    src: 'raid', from: 55, to: 59, in: 1.12,
+    src: 'raid', from: 55, to: 59, in: 0.8, rate: 1.5, ramps: [[56.5, 1.75, 1]],
     cam: [[55, 330, 300, 1.35], [56.5, 380, 300, 1.4], [57.1, 860, 230, 1.55], [59, 950, 205, 1.7]],
   },
   // split screen, left half: the hit and the sinking (2.97–3.13 s)
@@ -105,6 +112,8 @@ export const SHOTS = {
   sunk: { src: 'raid', from: 61, to: 66, in: 3.1, freezeAt: 62, cam: [[61, 955, 215, 1.7], [66, 960, 212, 2.05]] },
   // VICTORY — the game's own result screen: coins count up, rank bar fills (4.95 → 6.55 s)
   victory: { src: 'raid', from: 68, to: 74, in: 4.95, freezeAt: 71.7, cam: [[68, 640, 288, 1.0], [74, 640, 288, 1.0]] },
+  // CLIMB. — the rank bar on the same result screen, filling 125 → 145 / 2000
+  climb: { src: 'raid', from: 80, to: 82, in: 5.55, cam: [[80, 655, 338, 2.3], [82, 655, 338, 2.5]] },
 } as const satisfies Record<string, Shot>;
 
 /** UI clips shown in glass screens: seconds into public/media/<src>.mp4 */
