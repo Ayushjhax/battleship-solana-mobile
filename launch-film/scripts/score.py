@@ -1036,7 +1036,7 @@ def render_cues():
 
 
 def master_chain(mix: np.ndarray, gain_db: float) -> np.ndarray:
-    x = hp(mix * db(gain_db), 25, 2)   # infrasonic energy only eats limiter headroom
+    x = mix * db(gain_db)
     # gentle glue: ~1.5 dB on the track, 2-3 dB on the big hits (the limiter takes 2-3 dB more there)
     x = pedal(x, pb.Compressor(threshold_db=-10.0, ratio=1.6, attack_ms=30.0, release_ms=200.0))
     x = pedal(x, pb.BrickwallLimiter(ceiling_db=LIMIT_CEILING_DB, release_ms=90.0, lookahead_ms=5.0, true_peak=True))
@@ -1055,7 +1055,9 @@ def main():
     music *= db(MUSIC_GAIN_DB) * duck_env()[None, :]
     gated, ungated, cue_rows, stems = render_cues()
     gate = gate_env()
-    pre = (music + gated) * gate[None, :] + ungated
+    # 25 Hz high-pass BEFORE the gate (infrasonic energy only eats limiter headroom; an IIR after the
+    # gate would ring into the silences). Compressor and limiter keep a digital zero a zero.
+    pre = hp(music + gated, 25, 2) * gate[None, :] + ungated
     print(f'score: pre-master peak {20 * math.log10(peak(pre)):+.1f} dBFS (float, headroom is restored below)')
 
     gain = TARGET_LUFS - integrated_lufs(pre)
@@ -1065,6 +1067,15 @@ def main():
         if abs(lufs - TARGET_LUFS) < 0.05:
             break
         gain += TARGET_LUFS - lufs
+    # belt and braces: inside every gap, nothing but the sounds cued there
+    keep = np.zeros(N, dtype=bool)
+    for r in cue_rows:
+        if r['in_gap']:
+            keep[max(0, ns(r['start_sec'])):ns(r['start_sec'] + r['len_sec'])] = True
+    for g0, g1 in gaps():
+        a, b = fsamp(g0), fsamp(g1) - ns(0.004)
+        out[:, a:b] *= keep[a:b]
+    lufs = integrated_lufs(out)
     tp = true_peak_db(out)
     print(f'score: master gain {gain:+.2f} dB -> {lufs:.2f} LUFS integrated, true peak {tp:.2f} dBTP')
 
