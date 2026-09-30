@@ -1,0 +1,45 @@
+{
+  "name": "empire-of-bits-launch-film",
+  "version": "1.0.0",
+  "description": "Empire of Bits: Ocean Warfare launch film (Remotion 4)",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "studio": "remotion studio",
+    "lint": "eslint src && tsc",
+    "assets": "tools/stage-art.sh && tools/prep-media.sh",
+    "timeline": "node --experimental-strip-types --no-warnings tools/export-timeline.mjs",
+    "audio": "npm run timeline && python3 audio/score_game.py && python3 tools/beats.py public/audio/score_game.wav && python3 audio/mix.py",
+    "mix": "npm run timeline && python3 audio/mix.py",
+    "stills": "node tools/stills.mjs",
+    "animatic": "remotion render src/index.ts LaunchFilm review/animatic_960x540.mp4 --scale=0.25 --codec=h264 --crf=22 --audio-bitrate=192k",
+    "draft": "remotion render src/index.ts LaunchFilm out/draft_1080p.mp4 --scale=0.5 --codec=h264 --crf=20",
+    "final": "tools/render-final.sh"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/inter-tight": "^5.3.0",
+    "@remotion/bundler": "4.0.530",
+    "@remotion/cli": "4.0.530",
+    "@remotion/fonts": "4.0.530",
+    "@remotion/layout-utils": "4.0.530",
+    "@remotion/media": "4.0.530",
+    "@remotion/motion-blur": "4.0.530",
+    "@remotion/renderer": "4.0.530",
+    "@remotion/transitions": "4.0.530",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.530"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.530",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.39.5",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}

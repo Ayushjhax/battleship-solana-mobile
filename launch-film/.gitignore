@@ -1,0 +1,19 @@
+node_modules
+dist
+.DS_Store
+.env
+# GitHub rejects files over 100 MB: prepared media and renders stay local.
+public/media/
+out/
+# large intermediates
+phase1/frames/*.png
+# staged / generated (rebuild: npm run assets)
+public/art/
+public/audio/
+public/grain/
+build/
+# raw wallet/profile frames show a wallet address, a QR code, tx signatures, an email and a Privy ID:
+# kept local for review only, never committed (the film uses the blurred prep, see tools/prep-media.sh)
+phase1/contact/wallet_profile_*
+phase1/frames/wallet_profile_*
+phase1/scenes/wallet_profile*
