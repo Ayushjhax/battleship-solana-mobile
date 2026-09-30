@@ -88,7 +88,7 @@ const Split: React.FC = () => {
   const frame = useCurrentFrame();
   const shot = SHOTS.hit;
   const cam = cameraAt(shot, f(shot.from) + frame, 960, 1080);
-  const e = toScreen(cam, 900, 212);
+  const e = toScreen(cam, 900, 120);
   const hunter = PHOTOS.find((p) => p.id === 'hunter')!;
   const push = interpolate(frame, [0, 26], [1.02, 1.08], clamp);
   const heat = interpolate(frame, [0, 3, 26], [1.3, 1, 0.4], clamp);
@@ -125,7 +125,7 @@ const Sunk: React.FC = () => {
 
 const SunkOverlay: React.FC = () => (
   <AbsoluteFill>
-    <InkCard text={CARDS.sunk} at={0} x={150} y={TOP + 150} />
+    <InkCard text={CARDS.sunk} at={0} x={150} y={BOTTOM - 330} />
     <Facecam src="cast/face/fc-captain.jpg" box={{ x: 1490, y: BOTTOM - 380, w: 340, h: 340 }} at={lf(61, 63)} />
   </AbsoluteFill>
 );

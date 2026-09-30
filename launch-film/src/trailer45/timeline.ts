@@ -107,9 +107,9 @@ export const SHOTS = {
     cam: [[55, 330, 300, 1.35], [56.5, 380, 300, 1.4], [57.1, 860, 230, 1.55], [59, 950, 205, 1.7]],
   },
   // split screen, left half: the hit and the sinking (2.97–3.13 s)
-  hit: { src: 'raid', from: 59, to: 61, in: 2.833, cam: [[59, 960, 205, 2.1], [61, 962, 208, 2.25]] },
+  hit: { src: 'raid', from: 59, to: 61, in: 2.833, cam: [[59, 905, 120, 2.0], [61, 905, 124, 2.15]] },
   // SUNK — the wreck, then freeze and push in through the one-beat stop
-  sunk: { src: 'raid', from: 61, to: 66, in: 3.1, freezeAt: 62, cam: [[61, 955, 215, 1.7], [66, 960, 212, 2.05]] },
+  sunk: { src: 'raid', from: 61, to: 66, in: 3.1, freezeAt: 62, cam: [[61, 930, 150, 1.7], [66, 930, 145, 2.05]] },
   // VICTORY — the game's own result screen: coins count up, rank bar fills (4.95 → 6.55 s)
   victory: { src: 'raid', from: 68, to: 74, in: 4.95, freezeAt: 71.7, cam: [[68, 640, 288, 1.0], [74, 640, 288, 1.0]] },
   // CLIMB. — the rank bar on the same result screen, filling 125 → 145 / 2000
@@ -176,9 +176,9 @@ export const CUES: readonly Cue[] = [
   { beat: 49.5, sfx: 'pop', db: -8, note: 'facecam' },
   { beat: 50, sfx: 'explosion', db: -3, note: 'HIT.' },
   { beat: 51, sfx: 'wipe', db: -8, note: 'grid wipe: cells land like shots' },
-  { beat: 51.85, sfx: 'shot_fire', db: -4, note: 'AA gun fires' },
-  { beat: 52.3, sfx: 'plane_down', db: 2 },
-  { beat: 53.75, sfx: 'stamp', db: -5, note: '"Shot down!"' },
+  { beat: 51.47, sfx: 'shot_fire', db: -4, note: 'AA gun fires' },
+  { beat: 51.95, sfx: 'plane_down', db: 2 },
+  { beat: 53.3, sfx: 'stamp', db: -5, note: '"Shot down!"' },
   { beat: 55, sfx: 'ui_tap', db: -6, note: 'Bomber armed' },
   { beat: 56.5, sfx: 'whoosh', db: -5, note: 'whip-pan' },
   { beat: 57.4, sfx: 'bomb_drop', db: -4 },
