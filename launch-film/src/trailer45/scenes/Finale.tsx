@@ -227,7 +227,7 @@ export const Finale: React.FC = () => {
             textAlign: 'center',
             fontFamily: FONT.apple,
             fontWeight: 500,
-            fontSize: 80,
+            fontSize: 92,
             letterSpacing: '-0.015em',
             color: C.offWhite,
             opacity: line,

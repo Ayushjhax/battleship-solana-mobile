@@ -58,38 +58,54 @@ END_FADE_SEC = 0.4
 # Mixer's balance on top of each cue's db (dB). Measured against the music with the balance
 # table in cues.txt (loudness of the cue vs the music under it), not guessed.
 TRIM_DB: dict[str, float] = {
-    'nuke': 0.0,
-    'explosion': 0.0,
-    'boom': 0.0,
-    'stab': 0.0,
-    'slam': 0.0,
-    'riser4': 0.0,
-    'riser8': 0.0,
-    'sonic': 0.0,
-    'ping': 0.0,
-    'stamp': 0.0,
-    'tick': 0.0,
-    'whoosh': 0.0,
-    'metal': 0.0,
-    'lock': 0.0,
-    'click': 0.0,
-    'pop': 0.0,
-    'wipe': 0.0,
-    'shot_fire': 0.0,
-    'plane_down': 0.0,
-    'ui_tap': 0.0,
-    'bomb_drop': 0.0,
-    'ship_sink': 0.0,
-    'victory': 0.0,
-    'coin_flow': 0.0,
-    'rank_up': 0.0,
-    'sweep': 0.0,
-    'landing': 0.0,
-    'pad': 0.0,
-    'soft': 0.0,
+    'stab': +3.0,        # the cast cards need a clear hit over the intro pad
+    'slam': +4.0,        # every text card lands above the track's drums (K-weighting hides its sub)
+    'riser4': +1.0,
+    'stamp': +2.0,
+    'tick': +4.0,
+    'whoosh': +1.0,
+    'metal': +3.0,
+    'pop': +2.0,
+    'click': -5.0,       # alone in digital silence: crisp, not a gunshot
+    'shot_fire': +3.0,
+    'ui_tap': +10.0,     # a 10 ms tap: inaudible at the cue gain
+    'plane_down': -6.0,  # a 1.5 s sustained noise block — peak-normalised it swamps the track
+    'bomb_drop': -9.0,   # a pure 2-3.5 kHz whistle: peak-normalised it was the loudest thing in the film
+    'ship_sink': -2.0,
+    'sweep': -1.0,
+    'pad': -2.0,
+}
+# Stem density (dB of peak limiting on the normalised sound, then re-normalised): the peaky hits
+# carry more weight per dB of bus headroom, so the master limiter isn't the one flattening them.
+DENSITY_DB: dict[str, float] = {
+    'victory': 4.0,
+    'explosion': 4.0,
+    'boom': 3.0,
+    'slam': 3.0,
+    'landing': 3.0,
 }
 # Per-cue balance, keyed (sfx, beat), for the few places one instance needs its own level.
-CUE_TRIM_DB: dict[tuple[str, float], float] = {}
+CUE_TRIM_DB: dict[tuple[str, float], float] = {
+    ('nuke', 0): -2.5,       # the hook is massive, the drop is bigger
+    ('explosion', 0): -3.0,
+    ('nuke', 46): +2.0,      # the drop is the biggest moment of the first half
+    ('boom', 46): +1.0,
+    ('stamp', 41.5): +2.0,   # VS punch
+    ('sonic', 97): -3.0,     # the ending is calm: the signature, not a second landing
+    ('explosion', 50): +2.0,  # HIT. reads
+    ('explosion', 59): -1.0,
+    ('victory', 66): +5.0,   # VICTORY is the biggest hit of the film: the fanfare carries it...
+    ('boom', 66): -3.0,      # ...and a smaller boom makes it BIGGER: its sub was pumping the limiter
+    ('slam', 66): -4.0,      # its sub lands on the boom's (coherent): keep the thud, lose the stack
+}
+
+
+# Per-cue tail, keyed (sfx, beat): (fade start, fade length) in seconds after the cue frame.
+# The hook's blast must not rumble under the four cast stabs (they start one beat later).
+CUE_TAIL: dict[tuple[str, float], tuple[float, float]] = {
+    ('nuke', 0): (0.40, 0.55),
+    ('explosion', 0): (0.40, 0.45),
+}
 
 
 # ────────────────────────────────────────────────────────────────── the timeline ──
@@ -492,7 +508,7 @@ def sonic_logo(boom_at: float, seed: int, length: float | None = None) -> np.nda
     total = ns(boom_at) + boom.shape[1] if length is None else ns(length)
     out = np.zeros((2, total))
     k = min(ping.shape[1], total)
-    out[:, :k] += 0.62 * ping[:, :k]
+    out[:, :k] += 1.25 * ping[:, :k]   # the ping ~3 LU under the BOOM
     b0 = ns(boom_at)
     k = min(boom.shape[1], total - b0)
     out[:, b0:b0 + k] += boom[:, :k]
@@ -787,20 +803,30 @@ def place_game(name: str, beat: float, cues: list[dict]) -> tuple[np.ndarray, in
 # ───────────────────────────────────────────────────────────────── the music ──
 
 def onset_near(src: np.ndarray, t_nominal: float, window: float = 0.03) -> float | None:
-    """The attack nearest `t_nominal` (+-window): spectral-flux onset, backtracked to the
-    preceding energy minimum, on a 1.3 ms hop."""
-    import librosa
-    a = max(0, ns(t_nominal - 0.25))
-    b = ns(t_nominal + 0.25)
-    y = src[:, a:b].mean(axis=0).astype(np.float32)
-    hop = 64
-    env = librosa.onset.onset_strength(y=y, sr=SR, hop_length=hop, n_fft=512)
-    on = librosa.onset.onset_detect(onset_envelope=env, sr=SR, hop_length=hop, backtrack=True, units='samples')
-    if not len(on):
-        return None
-    times = (a + on) / SR
-    best = times[np.argmin(np.abs(times - t_nominal))]
-    return float(best) if abs(best - t_nominal) <= window else None
+    """The attack of the hit nearest `t_nominal` (+-window), or None when there is no clean one.
+    Detected on the low band (< 200 Hz, zero-phase, 1 ms envelope) because a drop is a kick/bass
+    attack; 'clean' = the 20 ms before it sit >= 20 dB under the hit, so a busy bar is never
+    mistaken for an attack (build_music then uses the median shift of the clean ones)."""
+    a = max(0, ns(t_nominal - 0.12))
+    b = min(src.shape[1], ns(t_nominal + 0.15))
+    low = ss.sosfiltfilt(_sos('lowpass', 200, 4), src[:, a:b].mean(axis=0))
+    hop = ns(0.001)
+    m = np.abs(low[: len(low) // hop * hop]).reshape(-1, hop).max(axis=1)
+    e = 20 * np.log10(m + 1e-12)
+    t = (a + np.arange(len(e)) * hop) / SR
+    near = (t >= t_nominal - window) & (t <= t_nominal + window + 0.06)
+    ref = e[near].max()
+    for i in np.flatnonzero((t >= t_nominal - window) & (t <= t_nominal + window)):
+        if e[i] < ref - 12:
+            continue
+        before = e[max(0, i - 28):max(0, i - 8)]
+        if not len(before) or before.max() > ref - 20:
+            return None
+        j = i
+        while j > 0 and i - j < 8 and e[j - 1] > ref - 40:
+            j -= 1
+        return float(t[j])
+    return None
 
 
 def build_music() -> tuple[np.ndarray, list[dict]]:
@@ -809,17 +835,21 @@ def build_music() -> tuple[np.ndarray, list[dict]]:
     out = np.zeros((2, N))
     rows = []
     PRE, XF, OUT_FADE, GUARD = ns(0.004), ns(0.010), ns(0.012), ns(0.005)
+    nominals = [MUSIC['anchor'] + e['track'] * BEAT for e in edit]
+    found = [onset_near(src, t) if fsamp(e['from']) > 0 else None for e, t in zip(edit, nominals)]
+    shifts = [f - t for f, t in zip(found, nominals) if f is not None]
+    typical = float(np.median(shifts)) if shifts else 0.0
     for i, e in enumerate(edit):
         prev = edit[i - 1] if i else None
         nxt = edit[i + 1] if i + 1 < len(edit) else None
         n0, n1 = fsamp(e['from']), min(N, fsamp(e['to']))
-        nominal = MUSIC['anchor'] + e['track'] * BEAT
-        s0 = nominal
-        found = None
-        if n0 > 0:
-            found = onset_near(src, nominal)
-            if found is not None:
-                s0 = found
+        nominal = nominals[i]
+        if n0 == 0:
+            s0, how = nominal, 'film start: nominal'
+        elif found[i] is not None:
+            s0, how = found[i], 'clean attack'
+        else:
+            s0, how = nominal + typical, 'no clean attack: median shift'
         joined_before = prev is not None and prev['to'] == e['from']
         lead = 0 if n0 == 0 else (XF if joined_before else PRE)
         joined_after = nxt is not None and nxt['from'] == e['to']
@@ -843,7 +873,7 @@ def build_music() -> tuple[np.ndarray, list[dict]]:
         out[:, a:b] += seg * g
         rows.append(dict(e, frame_from=frame(e['from']), frame_to=frame(e['to']), sec_from=n0 / SR, sec_to=n1 / SR,
                          src_nominal=nominal, src_start=s0, src_end=s0 + (n1 - n0) / SR,
-                         onset_shift_ms=None if found is None else (found - nominal) * 1000, lead_ms=lead / SR * 1000))
+                         onset_shift_ms=(s0 - nominal) * 1000, onset_how=how, lead_ms=lead / SR * 1000))
     return out, rows
 
 
@@ -965,24 +995,50 @@ def render_cues():
         else:
             sys.exit(f"score: cue at beat {beat} names '{name}', which is neither a designed sound "
                      f"(scripts/score.py DESIGNED / riserN) nor a file in {SFX_DIR}")
+        if DENSITY_DB.get(name):
+            buf = normalise(pedal(buf, pb.BrickwallLimiter(ceiling_db=NORM_DB - DENSITY_DB[name], release_ms=60.0,
+                                                           lookahead_ms=3.0)))
+            how += f', density {DENSITY_DB[name]:g} dB'
         gain = cue_db + trim
         buf = buf * db(gain)
+        if (name, beat) in CUE_TAIL:
+            f0, fl = CUE_TAIL[(name, beat)]
+            k0, kl = anchor + ns(f0), ns(fl)
+            if k0 < buf.shape[1]:
+                env = np.ones(buf.shape[1])
+                seg = min(kl, buf.shape[1] - k0)
+                env[k0:k0 + seg] = 0.5 + 0.5 * np.cos(np.pi * np.arange(seg) / kl)
+                env[k0 + seg:] = 0.0
+                buf = buf * env
+                how += f', tail faded {f0:.2f}+{fl:.2f}s'
         start = at - anchor
         a, b = max(0, start), min(N, start + buf.shape[1])
         in_gap = any(fsamp(g0) <= at < fsamp(g1) for g0, g1 in gap_list)
         target = ungated if in_gap else gated
+        # where the ear-proxy balance is measured (400 ms windows): the body of the sound
+        if re.fullmatch(r'riser\d+(?:\.\d+)?', name):
+            measure = [('peak', (start + buf.shape[1]) / SR - 0.45)]
+        elif name == 'whoosh' or name in IMPACT_LEADS:
+            measure = [('', start / SR)]
+        elif name == 'pad':
+            measure = [('', at / SR + BEAT)]
+        elif name == 'sonic':
+            measure = [('ping', at / SR), ('BOOM', fsec(beat + 2))]
+        else:
+            measure = [('', at / SR)]
         if b > a:
             target[:, a:b] += buf[:, a - start:b - start]
             stems[i] = (a, buf[:, a - start:b - start])
         rows.append(dict(beat=beat, frame=frame(beat), sec=at / SR, sfx=name, kind=kind, cue_db=cue_db, trim=trim,
                          gain=gain, how=how, note=q.get('note', ''), in_gap=in_gap, start_sec=start / SR,
-                         len_sec=buf.shape[1] / SR))
+                         len_sec=buf.shape[1] / SR, measure=measure))
     return gated, ungated, rows, stems
 
 
 def master_chain(mix: np.ndarray, gain_db: float) -> np.ndarray:
-    x = mix * db(gain_db)
-    x = pedal(x, pb.Compressor(threshold_db=-16.0, ratio=1.8, attack_ms=25.0, release_ms=220.0))
+    x = hp(mix * db(gain_db), 25, 2)   # infrasonic energy only eats limiter headroom
+    # gentle glue: ~1.5 dB on the track, 2-3 dB on the big hits (the limiter takes 2-3 dB more there)
+    x = pedal(x, pb.Compressor(threshold_db=-10.0, ratio=1.6, attack_ms=30.0, release_ms=200.0))
     x = pedal(x, pb.BrickwallLimiter(ceiling_db=LIMIT_CEILING_DB, release_ms=90.0, lookahead_ms=5.0, true_peak=True))
     tp = true_peak_db(x)
     if tp > TP_MAX_DB - 0.05:
@@ -1041,34 +1097,40 @@ def main():
           f'true peak {true_peak_db(logo):.2f} dBTP')
 
     balance = balance_table(music * gate[None, :], cue_rows, stems, out)
-    write_cues(edit_rows, cue_rows, balance, gain, lufs, tp, silent)
+    big = {(name, b): momentary(out, fsec(b), fsec(b) + 1.5 * BEAT - 0.4) for name, b in BIG_MOMENTS}
+    for (name, b), v in big.items():
+        print(f'score: {name:<12} beat {b:>3}: {v:6.1f} LUFS momentary')
+    write_cues(edit_rows, cue_rows, balance, gain, lufs, tp, silent, big)
     spectrogram(out, cue_rows)
     print(f'score: wrote {wav.relative_to(ROOT)}, out/sonic-logo.wav, build/audio/cues.txt, '
           f'build/audio/soundtrack_spectrogram.png')
 
 
 def balance_table(music, cue_rows, stems, out):
-    """Ear-proxy: loudness of each cue alone vs the (ducked) music under it, 400 ms from the cue."""
+    """Ear-proxy: max momentary loudness (400 ms) of each cue alone vs the (ducked, gated) music
+    under it and the final mix, over windows starting in the first 50 ms of the cue's body."""
     res = {}
     for i, r in enumerate(cue_rows):
         if i not in stems:
             continue
-        t0 = r['sec'] - (0.15 if r['sfx'] == 'whoosh' else 0.0)
-        t1 = t0 + 0.05
         a, seg = stems[i]
-        lo, hi = max(0, ns(t0) - 1), min(N, ns(t1) + ns(0.5))
-        local = np.zeros((2, hi - lo))
-        s0, s1 = max(a, lo), min(a + seg.shape[1], hi)
-        if s1 > s0:
-            local[:, s0 - lo:s1 - lo] = seg[:, s0 - a:s1 - a]
-        s = momentary(local, t0 - lo / SR, t1 - lo / SR)
-        m = momentary(music, t0, t1)
-        o = momentary(out, t0, t1)
-        res[i] = (s, m, o)
+        res[i] = []
+        for label, t0 in r['measure']:
+            t1 = t0 + 0.05
+            lo, hi = max(0, ns(t0) - 1), min(N, ns(t1) + ns(0.5))
+            local = np.zeros((2, hi - lo))
+            s0, s1 = max(a, lo), min(a + seg.shape[1], hi)
+            if s1 > s0:
+                local[:, s0 - lo:s1 - lo] = seg[:, s0 - a:s1 - a]
+            res[i].append((label, momentary(local, t0 - lo / SR, t1 - lo / SR), momentary(music, t0, t1),
+                           momentary(out, t0, t1)))
     return res
 
 
-def write_cues(edit_rows, cue_rows, balance, gain, lufs, tp, silent):
+BIG_MOMENTS = [('hook', 0), ('drop', 46), ('HIT (split)', 59), ('VICTORY', 66), ('landing', 91), ('end BOOM', 99)]
+
+
+def write_cues(edit_rows, cue_rows, balance, gain, lufs, tp, silent, big):
     L = []
     L.append(f'Trailer45 score — {MUSIC["file"]}, {MUSIC["bpm"]} BPM, anchor {MUSIC["anchor"]} s, key {MUSIC["key"]}')
     L.append(f'{DURATION_FR} frames @ {FPS} fps = {N / SR:.3f} s = {N} samples @ {SR} Hz. Cue time = f(beat)/{FPS}.')
@@ -1078,9 +1140,10 @@ def write_cues(edit_rows, cue_rows, balance, gain, lufs, tp, silent):
     L.append('MUSIC EDIT  (film beats [from,to) -> source seconds; onset = measured attack put on the frame)')
     L.append(f'{"beats":>9} {"frames":>11} {"film s":>17} {"track":>6} {"src nominal":>11} {"src start":>10} {"src end":>9} {"onset":>8}  note')
     for r in edit_rows:
-        sh = '   —' if r['onset_shift_ms'] is None else f'{r["onset_shift_ms"]:+5.1f}ms'
+        sh = f'{r["onset_shift_ms"]:+5.1f}ms'
         L.append(f'{r["from"]:>4}-{r["to"]:<4} {r["frame_from"]:>5}-{r["frame_to"]:<5} {r["sec_from"]:8.4f}-{r["sec_to"]:<8.4f} '
-                 f'{r["track"]:>6} {r["src_nominal"]:11.4f} {r["src_start"]:10.4f} {r["src_end"]:9.4f} {sh:>8}  {r.get("note", "")}')
+                 f'{r["track"]:>6} {r["src_nominal"]:11.4f} {r["src_start"]:10.4f} {r["src_end"]:9.4f} {sh:>8}  '
+                 f'[{r["onset_how"]}] {r.get("note", "")}')
     L.append('')
     L.append('GAPS (digital silence; everything gated except sounds cued inside)')
     for g0, g1, r, p in silent:
@@ -1096,12 +1159,20 @@ def write_cues(edit_rows, cue_rows, balance, gain, lufs, tp, silent):
     L.append(f'{"beat":>6} {"frame":>5} {"seconds":>8}  {"sound":<11} {"cue":>5} {"trim":>5} {"gain":>5}  '
              f'{"cue LU":>6} {"music":>6} {"mix":>6}  placement / note')
     order = sorted(range(len(cue_rows)), key=lambda i: (cue_rows[i]['sec'], cue_rows[i]['sfx']))
+    nan = float('nan')
     for i in order:
         r = cue_rows[i]
-        s, m, o = balance.get(i, (float('nan'),) * 3)
+        ms = balance.get(i) or [('', nan, nan, nan)]
+        label, s, m, o = ms[0]
         L.append(f'{r["beat"]:>6g} {r["frame"]:>5} {r["sec"]:8.4f}  {r["sfx"]:<11} {r["cue_db"]:+5.1f} {r["trim"]:+5.1f} {r["gain"]:+5.1f}  '
                  f'{s:6.1f} {m:6.1f} {o:6.1f}  {r["how"]}{" (in gap, not gated)" if r["in_gap"] else ""}'
-                 f'{" — " + r["note"] if r["note"] else ""}')
+                 f'{" — " + r["note"] if r["note"] else ""}{f" [LU at {label}]" if label else ""}')
+        for label, s, m, o in ms[1:]:
+            L.append(f'{"":>6} {"":>5} {"":>8}  {"  ↳ " + label:<11} {"":>5} {"":>5} {"":>5}  {s:6.1f} {m:6.1f} {o:6.1f}')
+    L.append('')
+    L.append('BIG MOMENTS  (final mix, max momentary loudness in the 1.5 beats from the hit)')
+    for name, b in big:
+        L.append(f'  {name:<12} beat {b:>3}  {big[(name, b)]:6.1f} LUFS')
     (ROOT / 'build' / 'audio' / 'cues.txt').write_text('\n'.join(L) + '\n')
 
 
@@ -1110,9 +1181,13 @@ def spectrogram(out, cue_rows):
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     import librosa
-    import librosa.display
     y = out.mean(axis=0).astype(np.float32)
-    D = librosa.amplitude_to_db(np.abs(librosa.stft(y, n_fft=4096, hop_length=256)), ref=np.max)
+    hop = 256
+    S = np.abs(librosa.stft(y, n_fft=4096, hop_length=hop))
+    freqs = librosa.fft_frequencies(sr=SR, n_fft=4096)
+    logf = np.geomspace(25, 20000, 480)          # log-frequency rows, drawn with imshow (fast)
+    S = np.stack([np.interp(logf, freqs, col) for col in S.T], axis=1)
+    D = librosa.amplitude_to_db(S, ref=np.max)
     fig, (a0, a1) = plt.subplots(2, 1, figsize=(34, 11), gridspec_kw={'height_ratios': [1, 4]}, sharex=True)
     # short-term loudness strip (momentary, 400 ms)
     starts, ms = block_loudness(kpower(out), 0.4, 0.02)
@@ -1120,15 +1195,20 @@ def spectrogram(out, cue_rows):
     a0.axhline(TARGET_LUFS, color='r', lw=0.6, ls='--')
     a0.set_ylim(-50, -2)
     a0.set_ylabel('momentary LUFS')
-    librosa.display.specshow(D, sr=SR, hop_length=256, x_axis='time', y_axis='log', ax=a1, cmap='magma')
-    a1.set_ylim(25, 20000)
+    a1.imshow(D, origin='lower', aspect='auto', cmap='magma', vmin=-80, vmax=0, interpolation='nearest',
+              extent=[0, D.shape[1] * hop / SR, 0, len(logf)])
+    ft = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+    a1.set_yticks([np.interp(math.log(f), np.log(logf), np.arange(len(logf))) for f in ft])
+    a1.set_yticklabels([f'{f:g}' if f < 1000 else f'{f / 1000:g}k' for f in ft])
+    a1.set_ylabel('Hz')
     for name, (b0, _b1) in TL['SECTIONS'].items():
         for ax in (a0, a1):
             ax.axvline(fsec(b0), color='w' if ax is a1 else '0.5', lw=0.7, ls='--', alpha=0.7)
         a0.text(fsec(b0) + 0.05, -6, name, fontsize=9, color='0.2')
+    top = len(logf)
     for r in cue_rows:
-        a1.plot([r['sec'], r['sec']], [14000, 20000], color='c', lw=1.0)
-        a1.text(r['sec'], 12500, r['sfx'], rotation=90, fontsize=6, color='c', va='top', ha='center')
+        a1.plot([r['sec'], r['sec']], [top - 25, top], color='c', lw=1.0)
+        a1.text(r['sec'], top - 30, r['sfx'], rotation=90, fontsize=6, color='c', va='top', ha='center')
     ticks = list(range(0, TL['TOTAL_BEATS'] + 1, 4))
     a1.set_xticks([fsec(b) for b in ticks])
     a1.set_xticklabels([f'{b}\n{fsec(b):.1f}s' for b in ticks], fontsize=8)

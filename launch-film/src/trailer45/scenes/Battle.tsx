@@ -237,13 +237,15 @@ export const Victory: React.FC = () => {
 // ---------------------------------------------------------------- ECONOMY
 const ECON_CLIPS = [UI_CLIPS.buy, UI_CLIPS.sell, UI_CLIPS.gear] as const;
 const ECON_GLASS: Box = { x: 800, y: 540 - 232, w: 1040, h: 465 };
+/** the rank row only (y 292–398 of the result screen): no wager line, no buttons */
+const CLIMB_GLASS: Box = { x: 800, y: 540 - 120, w: 1040, h: 240 };
 
 const EconClip: React.FC<{ i: number; dur: number }> = ({ i, dur }) => {
   const frame = useCurrentFrame();
-  const p = interpolate(frame, [0, 7], [0, 1], { ...clamp, easing: EASE_IN });
+  const p = interpolate(frame, [0, 6], [0.35, 1], { ...clamp, easing: EASE_IN });
   const push = interpolate(frame, [0, dur], [1.02, 1.07], clamp);
   return (
-    <Glass box={ECON_GLASS} style={{ translate: `${(1 - p) * 140}px 0px`, opacity: p }}>
+    <Glass box={i < 3 ? ECON_GLASS : CLIMB_GLASS} style={{ translate: `${(1 - p) * 140}px 0px`, opacity: p }}>
       {i < 3 ? (
         <Video
           src={staticFile(`media/${ECON_CLIPS[i].src}.mp4`)}
@@ -252,7 +254,7 @@ const EconClip: React.FC<{ i: number; dur: number }> = ({ i, dur }) => {
           style={{ position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', scale: String(push) }}
         />
       ) : (
-        <Footage shot={SHOTS.climb} vw={ECON_GLASS.w} vh={ECON_GLASS.h} />
+        <Footage shot={SHOTS.climb} vw={CLIMB_GLASS.w} vh={CLIMB_GLASS.h} />
       )}
     </Glass>
   );

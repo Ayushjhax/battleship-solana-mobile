@@ -113,7 +113,7 @@ export const SHOTS = {
   // VICTORY — the game's own result screen: coins count up, rank bar fills (4.95 → 6.55 s)
   victory: { src: 'raid', from: 68, to: 74, in: 4.95, freezeAt: 71.7, cam: [[68, 640, 288, 1.0], [74, 640, 288, 1.0]] },
   // CLIMB. — the rank bar on the same result screen, filling 125 → 145 / 2000
-  climb: { src: 'raid', from: 80, to: 82, in: 5.55, cam: [[80, 655, 338, 2.3], [82, 655, 338, 2.5]] },
+  climb: { src: 'raid', from: 80, to: 82, in: 5.55, cam: [[80, 650, 344, 2.7], [82, 650, 344, 2.85]] },
 } as const satisfies Record<string, Shot>;
 
 /** UI clips shown in glass screens: seconds into public/media/<src>.mp4 */

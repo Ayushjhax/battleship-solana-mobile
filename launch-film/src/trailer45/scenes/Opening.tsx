@@ -100,7 +100,7 @@ export const Claim: React.FC = () => {
   const frame = useCurrentFrame();
   const [a] = SECTIONS.claim;
   const second = f(a + 2) - f(a);
-  const lift = interpolate(frame, [second, second + 6], [0, 1], { ...clamp, easing: EASE_MOVE });
+  const lift = interpolate(frame, [second - 5, second], [0, 1], { ...clamp, easing: EASE_MOVE });
   const push = interpolate(frame, [0, f(a + 4) - f(a)], [1, 1.04], clamp);
   return (
     <AbsoluteFill style={{ background: C.black, alignItems: 'center', justifyContent: 'center', scale: String(push) }}>
@@ -177,7 +177,7 @@ export const Sting: React.FC = () => {
             <div
               style={{
                 position: 'absolute',
-                top: 540 - 26,
+                top: 540 - 32,
                 width: '100%',
                 display: 'flex',
                 justifyContent: 'center',
@@ -187,7 +187,7 @@ export const Sting: React.FC = () => {
               <div
                 style={{
                   fontFamily: FONT.card,
-                  fontSize: 44,
+                  fontSize: 54,
                   lineHeight: 1.2,
                   letterSpacing: `${track}em`,
                   marginRight: `-${track}em`,
