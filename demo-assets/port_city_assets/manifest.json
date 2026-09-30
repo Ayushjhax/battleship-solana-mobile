@@ -1,0 +1,202 @@
+[
+  {
+    "file": "buildings/admiralty.png",
+    "width": 317,
+    "height": 357
+  },
+  {
+    "file": "buildings/foundry.png",
+    "width": 322,
+    "height": 364
+  },
+  {
+    "file": "buildings/fish_market.png",
+    "width": 309,
+    "height": 303
+  },
+  {
+    "file": "buildings/scrapyard.png",
+    "width": 336,
+    "height": 299
+  },
+  {
+    "file": "buildings/naval_academy.png",
+    "width": 290,
+    "height": 345
+  },
+  {
+    "file": "buildings/armory.png",
+    "width": 345,
+    "height": 292
+  },
+  {
+    "file": "buildings/shipyard.png",
+    "width": 344,
+    "height": 309
+  },
+  {
+    "file": "buildings/bounty_board.png",
+    "width": 261,
+    "height": 306
+  },
+  {
+    "file": "buildings/fleet_tavern.png",
+    "width": 340,
+    "height": 324
+  },
+  {
+    "file": "buildings/gazette.png",
+    "width": 257,
+    "height": 315
+  },
+  {
+    "file": "buildings/expedition_dock.png",
+    "width": 386,
+    "height": 367
+  },
+  {
+    "file": "buildings/lighthouse.png",
+    "width": 305,
+    "height": 373
+  },
+  {
+    "file": "buildings/harbour_defence.png",
+    "width": 294,
+    "height": 354
+  },
+  {
+    "file": "buildings/ink_and_pen_shop.png",
+    "width": 295,
+    "height": 336
+  },
+  {
+    "file": "buildings/captains_log.png",
+    "width": 304,
+    "height": 344
+  },
+  {
+    "file": "ui/port_city_title.png",
+    "width": 774,
+    "height": 167
+  },
+  {
+    "file": "ui/your_harbour_ribbon.png",
+    "width": 600,
+    "height": 125
+  },
+  {
+    "file": "ui/admiralty_label.png",
+    "width": 429,
+    "height": 95
+  },
+  {
+    "file": "ui/fish_market_label.png",
+    "width": 428,
+    "height": 95
+  },
+  {
+    "file": "ui/foundry_label.png",
+    "width": 420,
+    "height": 100
+  },
+  {
+    "file": "ui/scrapyard_label.png",
+    "width": 434,
+    "height": 99
+  },
+  {
+    "file": "ui/naval_academy_label.png",
+    "width": 432,
+    "height": 101
+  },
+  {
+    "file": "ui/shipyard_label.png",
+    "width": 433,
+    "height": 102
+  },
+  {
+    "file": "ui/counter_frame_wide.png",
+    "width": 319,
+    "height": 99
+  },
+  {
+    "file": "ui/counter_frame_small.png",
+    "width": 291,
+    "height": 98
+  },
+  {
+    "file": "ui/coin.png",
+    "width": 113,
+    "height": 112
+  },
+  {
+    "file": "ui/gem.png",
+    "width": 111,
+    "height": 100
+  },
+  {
+    "file": "ui/home.png",
+    "width": 116,
+    "height": 121
+  },
+  {
+    "file": "ui/back_arrow.png",
+    "width": 110,
+    "height": 126
+  },
+  {
+    "file": "ui/location_flag.png",
+    "width": 122,
+    "height": 138
+  },
+  {
+    "file": "ui/padlock.png",
+    "width": 96,
+    "height": 124
+  },
+  {
+    "file": "ui/compass.png",
+    "width": 159,
+    "height": 154
+  },
+  {
+    "file": "ui/tap_marker.png",
+    "width": 143,
+    "height": 134
+  },
+  {
+    "file": "ui/explore_hint.png",
+    "width": 621,
+    "height": 96
+  },
+  {
+    "file": "ui/coming_soon_popup.png",
+    "width": 802,
+    "height": 825
+  },
+  {
+    "file": "popup_parts/coming_soon_title.png",
+    "width": 760,
+    "height": 185
+  },
+  {
+    "file": "popup_parts/return_home_button.png",
+    "width": 599,
+    "height": 146
+  },
+  {
+    "file": "popup_parts/popup_message.png",
+    "width": 470,
+    "height": 122
+  },
+  {
+    "file": "popup_parts/anchor_divider.png",
+    "width": 337,
+    "height": 61
+  },
+  {
+    "file": "popup_parts/countdown_text.png",
+    "width": 225,
+    "height": 47
+  }
+]

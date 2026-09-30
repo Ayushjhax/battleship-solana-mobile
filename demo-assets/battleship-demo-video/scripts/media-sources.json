@@ -1,0 +1,71 @@
+{
+  "assetsDir": "..",
+  "gameAudioDir": "../../gm/battleship-solana-mobile/assets/audio",
+  "recordings": [
+    "arsenal-attack.mp4",
+    "defense.mp4",
+    "base-attack.mp4"
+  ],
+  "fleetIcons": [
+    "icon-atomic-bomber.png",
+    "icon-aa-gun.png",
+    "icon-bomber.png"
+  ],
+  "portUi": [
+    "your_harbour_ribbon.png",
+    "admiralty_label.png",
+    "shipyard_label.png",
+    "foundry_label.png",
+    "scrapyard_label.png",
+    "fish_market_label.png",
+    "naval_academy_label.png",
+    "location_flag.png"
+  ],
+  "sfx": [
+    "ui_tap.mp3",
+    "bomb_drop.mp3",
+    "nuke.mp3",
+    "plane_down.mp3",
+    "pen_scratch_long.mp3",
+    "explosion.mp3",
+    "ship_sink.mp3",
+    "victory.mp3",
+    "coin_flow.mp3",
+    "rank_up.mp3",
+    "pen_scratch_short.mp3",
+    "splash.mp3"
+  ],
+  "sfxGain": [
+    {
+      "file": "explosion.mp3",
+      "gainDb": 12
+    },
+    {
+      "file": "plane_down.mp3",
+      "gainDb": 8
+    },
+    {
+      "file": "splash.mp3",
+      "gainDb": 14
+    }
+  ],
+  "music": [
+    "music_battle.mp3"
+  ],
+  "gameArt": [
+    {
+      "from": "result/victory-banner.png",
+      "to": "game/victory-banner.png",
+      "scale": 1
+    },
+    {
+      "from": "battle/seagull.png",
+      "to": "game/seagull@2x.png",
+      "scale": 2
+    }
+  ],
+  "fleetLarge": [
+    "ship-battleship.png"
+  ],
+  "gameAssetsDir": "../../gm/battleship-solana-mobile/assets"
+}
