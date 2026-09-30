@@ -1,0 +1,35 @@
+{
+  "name": "empire-of-bits-launch-film",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Empire of Bits: launch films (Remotion). Trailer45 = the 45 s launch trailer.",
+  "scripts": {
+    "studio": "remotion studio",
+    "prepare-media": "python3 scripts/prepare_media.py",
+    "cast": "python3 scripts/cast.py",
+    "score": "python3 scripts/score.py",
+    "draft": "node scripts/render.mjs --draft",
+    "render": "node scripts/render.mjs",
+    "review": "python3 scripts/review.py",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter-tight": "5.3.0",
+    "@fontsource/anton": "5.3.0",
+    "@fontsource/bebas-neue": "5.3.0",
+    "@fontsource/bitter": "5.3.0",
+    "@remotion/cli": "4.0.530",
+    "@remotion/fonts": "^4.0.530",
+    "@remotion/media": "4.0.530",
+    "@remotion/motion-blur": "4.0.530",
+    "@remotion/renderer": "4.0.530",
+    "@remotion/transitions": "4.0.530",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.530"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "typescript": "5.9.3"
+  }
+}
