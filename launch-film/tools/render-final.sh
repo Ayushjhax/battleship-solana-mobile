@@ -31,14 +31,16 @@ else
 fi
 
 # ── master the audio: two-pass loudnorm → −14 LUFS / −1 dBTP ──
+# Ceiling −1.5 dBTP leaves room for AAC's inter-sample overshoot; loudnorm falls back to its dynamic
+# mode when linear can't hold the ceiling, so a final static trim lands the encoded file on −14.0.
 ffmpeg -v error -y -i "$RAW" -vn -ac 2 -ar 48000 -c:a pcm_s24le build/film_audio.wav
-J=$(ffmpeg -hide_banner -nostats -i build/film_audio.wav -af loudnorm=I=-14:TP=-1:LRA=11:print_format=json -f null - 2>&1 | sed -n '/^{/,/^}/p')
-MI=$(echo "$J" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['input_i'])")
-MTP=$(echo "$J" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['input_tp'])")
-MLRA=$(echo "$J" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['input_lra'])")
-MTH=$(echo "$J" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['input_thresh'])")
-OFF=$(echo "$J" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['target_offset'])")
-ffmpeg -v error -y -i build/film_audio.wav -af "loudnorm=I=-14:TP=-1:LRA=11:measured_I=$MI:measured_TP=$MTP:measured_LRA=$MLRA:measured_thresh=$MTH:offset=$OFF:linear=true:print_format=summary" -ar 48000 -c:a pcm_s24le build/film_audio_master.wav
+J=$(ffmpeg -hide_banner -nostats -i build/film_audio.wav -af loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json -f null - 2>&1 | sed -n '/^{/,/^}/p')
+P=$(echo "$J" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"measured_I={d['input_i']}:measured_TP={d['input_tp']}:measured_LRA={d['input_lra']}:measured_thresh={d['input_thresh']}:offset={d['target_offset']}\")")
+ffmpeg -v error -y -i build/film_audio.wav -af "loudnorm=I=-14:TP=-1.5:LRA=11:$P:linear=true" -ar 48000 -c:a pcm_s24le build/film_audio_ln.wav
+ffmpeg -v error -y -i build/film_audio_ln.wav -c:a aac -b:a 320k -ar 48000 -ac 2 build/film_audio_probe.m4a
+I=$(ffmpeg -hide_banner -nostats -i build/film_audio_probe.m4a -af ebur128 -f null - 2>&1 | grep -A3 "Integrated loudness" | grep " I:" | awk '{print $2}')
+TRIM=$(python3 -c "print(round(-14.0 - float('$I'), 2))")
+ffmpeg -v error -y -i build/film_audio_ln.wav -af "volume=${TRIM}dB" -c:a pcm_s24le build/film_audio_master.wav
 
 # ── deliverables ──
 ffmpeg -v error -y -i "$RAW" -i build/film_audio_master.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 320k -ar 48000 -ac 2 -movflags +faststart -shortest out/EmpireOfBits_LaunchFilm_4K.mp4

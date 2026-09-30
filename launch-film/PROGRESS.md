@@ -10,18 +10,19 @@ Re-read `BRIEF.md` at the start of every phase.
 - **Build**: all 13 scenes + the component system. Review round 0 (77 half-res stills, `build/sheet_r1_*.jpg`) → fixes: hit timing, economy layout (two-line type), wallet callout, build cards, last-hit framing, title subtitle, radar sweep.
 - **Checkpoint pack**: `review/STORYBOARD.md`, npm scripts, `EDIT_NOTES.md`, `tools/render-final.sh` + `tools/report.py`.
 
-## In progress
-- 960×540 animatic (`review/animatic_960x540.mp4`).
-- Real-ESRGAN plates: arsenal done; defense + base running (~60 s/frame on CPU). The checkpoint uses Lanczos stand-ins for those two; the final uses the ESRGAN plates (`npm run assets` picks them up automatically).
-- 6 style frames at 4K (`review/style_*.jpg`).
+## Delivered (2026-09-30)
+- `out/EmpireOfBits_LaunchFilm_4K.mp4`: 3840×2160, 30 fps, 1:54.0, H.264 CRF 16, AAC, −14.0 LUFS / −1.6 dBTP (512 MB; too large for git or chat, so it stays in `out/`).
+- `out/EmpireOfBits_LaunchFilm_1080p.mp4` (68 MB), also in `deliverables/` on the branch.
+- `out/poster.jpg` (4K, the title over the atomic strike), `out/thumbnail_1280x720.jpg`, `out/REPORT.md` (copies in `deliverables/`).
+- Quality gate: rounds 0, 1, 2 and the final master check (`REVIEW.md`).
+- Music switched at the user's request to the game's own audio (`audio/score_game.py`); all sound design uses game SFX.
 
 ## Next
-1. Commit + push the checkpoint; **wait for the user's go**.
-2. After go: FX-strip upscale lands, quality gate (≥ 2 rounds, `REVIEW.md`), 4K benchmark, final render, master, deliver.
+- Hand the 4K over: it needs Git LFS, a split, or a local `npm run final`, since it exceeds GitHub's 100 MB file limit and the 30 MB chat limit.
 
 ## Decisions
 - **"demo v4" doesn't exist**: re-cut from the raw sources (the demo renders have baked captions).
-- **No music supplied** → original score (§7 option 3). The game's tracks are flat 30 s loops.
+- **No music supplied** → original score first (§7 option 3); **then, at the user's request, the game's own music** (menu theme stretched to 120 BPM + the battle theme, arranged to the grid, game SFX as the kit).
 - **Battle clips are 1280×576** → Real-ESRGAN anime-video 4× plates (5120×2304), so full-bleed framing never upscales them more than 1.25×. Phone recordings (2670×1200) sit at ≤ 1.44× (full width, letterboxed when full-bleed).
 - **30 fps**: nothing was captured at a true 60. 120 BPM = 15 frames per beat.
 - **Title** typeset from `app.json` in Bitter (no vector logo exists).

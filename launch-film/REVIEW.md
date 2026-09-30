@@ -34,3 +34,12 @@ The draft includes every round-1 fix and the game-music soundtrack; it was also 
 | 3 | Whole film | Re-checked, no change: no black frames on any cut; the whip-pans read as motion (1:00.0, 1:02.0); Aim/Fire/Hit lands on the flash; the heartbeat thins; half a beat of black before Victory (1:13.75); the leaderboard punch lands on the #1 row; the bento fly-through lands in the battle tile; hard cut to silence at 1:44.0; "One more thing." after 0.9 s of black; the lockup holds 2.1 s, pings, fades to black by 1:53.6 and holds black to 1:54.0. Every line meets ≥ 0.4 s/word + 0.6 s. Runtime 1:54.0. | — |
 
 Loudness of the delivered preview: −13.8 LUFS integrated, −0.9 dBTP, AAC 320 kb/s 48 kHz (two-pass loudnorm on the rendered audio).
+
+---
+
+## Final master check (4K, `out/EmpireOfBits_LaunchFilm_4K.mp4`)
+
+- **The Real-ESRGAN plates are in**: all three battle clips (the atomic strike, the AA gun, the bomber/last-ship/Victory) and the FX strips. A 100 % crop of the last hit at 4K shows clean line art and legible HUD text (`build/master_crop.jpg`).
+- **Round-2 fixes verified in the master**: 0:12.0 has only "Command" rising, no ghosted title; 0:30.0 opens on the Battleship.
+- **Audio**: the first master measured −13.8 LUFS / **−0.9 dBTP** on the AAC file (AAC overshoot past the −1 ceiling). Re-mastered with a −1.5 dBTP ceiling plus a static trim measured on the encoded audio: **−14.0 LUFS, −1.6 dBTP, LRA 9.8 LU**. `tools/render-final.sh` now does this automatically.
+- Runtime 1:54.000 on both files; 3840×2160 and 1920×1080; 30 fps; H.264 High, yuv420p, BT.709; AAC at a 320 kb/s target (the native encoder averages ~287 kb/s on this material), 48 kHz stereo.
