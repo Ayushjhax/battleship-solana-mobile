@@ -43,8 +43,8 @@ export const SECTIONS = {
   arsenal: [30, 38], //  track hit on 34 = the strongest weapon lands
   rival: [38, 43], //    track kick roll 38–42
   silence: [43, 46], //  letterbox in, FIRE., one click
-  drop: [46, 66], //     the battle (65 is a one-beat stop)
-  victory: [66, 74], //  track drop 2 = biggest hit of the film
+  drop: [46, 66], //     the battle, straight into VICTORY
+  victory: [66, 74], //  biggest hit of the film (music continues)
   economy: [74, 82], //  four cards, two beats each
   breath: [82, 83], //   black, silence, letterbox out
   swarm: [83, 91], //    players build the logo; lands on 91
@@ -63,8 +63,7 @@ export const DURATION = f(TOTAL_BEATS);
  */
 export const MUSIC_EDIT = [
   { from: 0, to: 43, track: -46, note: 'intro pad; drums enter on 14; kick roll 38–42' },
-  { from: 46, to: 65, track: 0, note: 'drop 1 — the battle' },
-  { from: 66, to: 82, track: 156, note: 'drop 2 — VICTORY; fill; hit on 74 = economy' },
+  { from: 46, to: 82, track: 0, note: 'drop 1 runs unbroken through the battle, VICTORY and the economy' },
   { from: 83, to: 91, track: 284, note: 'last build: kick roll, one-beat gap on 90' },
   { from: 91, to: 105, track: 356, note: 'final chord rings out under the end card' },
 ] as const;

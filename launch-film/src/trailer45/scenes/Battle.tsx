@@ -114,7 +114,7 @@ const Split: React.FC = () => {
 const Sunk: React.FC = () => {
   const frame = useCurrentFrame();
   const stop = lf(61, 65);
-  const dim = interpolate(frame, [stop, stop + 6], [0, 0.18], clamp);
+  const dim = 0 * stop;
   return (
     <AbsoluteFill>
       <Footage shot={SHOTS.sunk} filter="contrast(1.08) saturate(1.15)" />

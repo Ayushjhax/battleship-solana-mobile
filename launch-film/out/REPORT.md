@@ -8,10 +8,10 @@ File: `out/EmpireOfBits_Trailer45_1080p.mp4`
 | 1920×1080 | 1920×1080 | ✅ |
 | Frame rate | 30.000 fps (1350 frames) | ✅ |
 | Video codec | h264 High yuv420p, bt709/bt709/bt709 | ✅ |
-| Audio | aac 48000 Hz 2 ch 302 kb/s | ✅ |
-| Integrated loudness −14 LUFS (±0.5) | -13.8 LUFS (LRA 3.7 LU) | ✅ |
-| True peak ≤ −1 dBTP | -1.1 dBTP | ✅ |
-| File size | 90.3 MB | ✅ |
+| Audio | aac 48000 Hz 2 ch 305 kb/s | ✅ |
+| Integrated loudness −14 LUFS (±0.5) | -13.8 LUFS (LRA 4.4 LU) | ✅ |
+| True peak ≤ −1 dBTP | -1.2 dBTP | ✅ |
+| File size | 89.7 MB | ✅ |
 
 ```
 Summary:
@@ -21,11 +21,11 @@ Summary:
     Threshold: -23.9 LUFS
 
   Loudness range:
-    LRA:         3.7 LU
+    LRA:         4.4 LU
     Threshold: -33.9 LUFS
-    LRA low:   -16.1 LUFS
-    LRA high:  -12.4 LUFS
+    LRA low:   -16.3 LUFS
+    LRA high:  -11.9 LUFS
 
   True peak:
-    Peak:       -1.1 dBFS
+    Peak:       -1.2 dBFS
 ```
