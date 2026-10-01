@@ -39,6 +39,6 @@ run() { # name source start end [scale]   (source seconds; frames at CFR 30)
 run poster  $DA/arsenal-attack.mp4 1.30 2.434 4 # 4x: the poster + ALIVE push right into the fireball
 run atomic  $DA/arsenal-attack.mp4 0.80 3.334   # flash 1.0 → fireball 1.4 (the poster) → mushroom → 3x3 marks
 run victory $DA/base-attack.mp4    4.90 6.567   # the result screen (inside VICTORY.)
-run raid    $DA/base-attack.mp4    1.40 3.700   # bomber run → the last hit (3.0) → smoke
+run raid    $DA/base-attack.mp4    1.25 3.700   # bomber run → the last hit (3.0) → smoke
 run defense $DA/defense.mp4        0.20 2.000   # bomber over your board → AA gun → "Shot down!"
 echo ALLDONE
