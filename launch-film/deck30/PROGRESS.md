@@ -7,11 +7,11 @@ review pack: `deck30/review/`, deliverables: `out/deck30/`.
 | Phase | State | Notes |
 |---|---|---|
 | 0 · Setup | done | Brief saved verbatim. Trailer project found on this branch; its two later revisions (`optimistic-bell-b1ef0j`) merged in. `npm ci`, Python stack (numpy, soundfile, librosa, pedalboard, matplotlib, opencv 4.14 + YuNet, pillow-heif), Remotion skills installed and read. Git-ignored `build/` rebuilt (faces, graded cast). |
-| 1 · Inventory | in progress | Contact sheets in `build/deck30/contact/`. Logs: `deck30/FOOTAGE_LOG.md`, `deck30/CAST.md`. |
-| 2 · Music + grid | next | |
-| 3 · Storyboard | | |
-| 4 · Style frames | | |
-| 5 · Animatic | | |
+| 1 · Inventory | done | Contact sheets in `build/deck30/contact/`. Logs: `deck30/FOOTAGE_LOG.md`, `deck30/CAST.md`; crops `npm run deck30:cast`. |
+| 2 · Music + grid | done | `src/deck30/timeline.ts` (140 BPM, 70 beats, 900 frames; `scripts/deck30/check_timeline.mjs`); `scripts/deck30/analyze_music.py`; `scripts/deck30/score.py` (built by a sound-design subagent on the trailer's `score.py`, unmodified). |
+| 3 · Storyboard | done | `deck30/review/STORYBOARD.md` |
+| 4 · Style frames | done | `deck30/review/style-frames/` (1920×1080) + `style-frames.jpg`. All seven wows built for real. |
+| 5 · Animatic | in progress | `deck30/review/animatic.mp4` (960×540, with the score) |
 | 6 · Full build + sound | | |
 | 7 · Quality gate ×3 | | |
 | 8 · Final + deliver | | |
@@ -38,6 +38,16 @@ review pack: `deck30/review/`, deliverables: `out/deck30/`.
   recording at 1.5× native fills the 2.39:1 band exactly.
 - **No vector logo exists** (`assets/` has only `ink/brand/logo.png`, 733×129). Deck30 uses the trailer's @3x logo
   mask, as its end card does.
-- **The victory video** = the game's result screen at the end of `base-attack.mp4` (4.93–6.57 s); its banner and
-  panel carry text, so inside VICTORY. the camera holds on the art (sea, ships, lighthouse) away from the panel.
 - **Cast:** the trailer's grade (`scripts/cast.py`, `build/cast/graded/`) is shared; Deck30 crops from it.
+- **VICTORY's footage:** every frame of the recorded result screen carries text (ribbon, panel, names, buttons). Per
+  the brief ("use a stretch without it"), the letters show the same screen without its text layer: the game's own
+  backdrop for it (`assets/backgrounds/decision.jpg`: ship, sea, lighthouse), drifting. The victory plate is no
+  longer upscaled.
+- **The drop's flash is the period's own:** the period lands on 29 (frame 373), its white blooms out over 2 frames,
+  then the hard cut into the game's own white flash. Full-frame flash frames only on ALIVE and VICTORY.
+- **The VS screen is frozen at 3.07 s**, before the name plates (3.12+) arrive, so the rival's facecam is never next
+  to a name or a score. The leaderboard's names/flags/wins/points and the wallet's address are blurred at prep.
+- **The mosaic grid is the logo's pixel grid** (32×8 cells of the logo's own bit), so tiles outside the silhouette
+  fall away literally; 111 lock, the bit cell stays empty.
+- **Upscaling is slow on this CPU** (~25 s a 2× frame); drafts use Lanczos stand-ins of the same ranges
+  (`prepare_media.py --lanczos`) until `scripts/deck30/upscale.sh` finishes.
