@@ -82,3 +82,53 @@ legible at 640×360. Projector: unchanged pass.
 **0:23.4–0:23.6**, the #1 row collapsing into the bit: the leaderboard faded fully to black around the bar, leaving
 ~6 near-empty frames between the punch and the mitosis. **Fixed:** the table stays at ~30 % behind the collapsing bar
 until the cut, so the bit is born out of the leaderboard rather than out of nothing.
+
+## Round 3 — draft 3 (`build/deck30/draft3.mp4`; strike and poster plates Real-ESRGAN, raid/defense still upscaling)
+
+The cut is locked; this round looked hardest at what a stranger would catch on a big screen: anything readable,
+anything dead.
+
+### Wow audit
+
+| # | Wow | At | Score | Notes |
+|---|---|---|---|---|
+| 1 | The poster comes alive | 0:00.43 | 5 | Unchanged: flash, punch, shake, ring, a third of the bits thrown at the lens with trails. |
+| 2 | The bit becomes the logo | 0:05.57 | 5 | The run-up was the weak part (see the weakest second); the BOOM, the starburst lock and the sweep are unchanged. |
+| 3 | The flip | 0:07.29 | 5 | Four landings on 17/19/21/23, punch + glint each, pieces breaking the glass; the VS lands with the rival locked on. |
+| 4 | FIRE | 0:10.71 | 5 | Strokes lock at 8ths → 16ths → 32nds under the letterbox; the hang is silent (digital zero). |
+| 5 | The drop | 0:12.43 | 5 | The period's bloom → the game's flash → HIT. on the mushroom; the facecams, "Shot down!", the grid wipe into the split, the last ship's freeze and SUNK. |
+| 6 | VICTORY | 0:19.29 | 5 | Crisp counters, the sweep, the fly-through. |
+| 7 | One becomes all | 0:23.57 | 5 | The bit is born out of the dimmed table (f707), divides with flashes, the wall sweeps and lands on the lock. |
+| — | Landing | 0:27.86 | 5 | Ping on the downbeat, the end card held from 0:27.0 to the last frame (3.0 s), no fade. |
+
+### Tests
+
+| Test | Result |
+|---|---|
+| Slide test | Frame 0: the poster (fireball, lockup). Last frame: the end card. ✅ |
+| Sound-off | build → fleet → arsenal → rival → FIRE → battle → win → economy → players → live, every step carded or labelled. ✅ |
+| Projector (+10 % blacks) | Every card and the key action read; the FIRE board and VICTORY hold their contrast. ✅ |
+| Phone (640×360) | All 22 checkpoints legible, including the bento labels and "Your move.". ✅ |
+| Sound | Silence beats 28–29: −99 dBFS rms (AAC floor; the WAV is digital zero). Peak −1.21 dBFS, 0 clipped samples. Transients on their frames: ALIVE +22 ms, BOOM +3, drop +7, HIT. +8, burst +10, "Shot down!" +15, last ship +12, VICTORY +5, lock +12, end ping +8, end BOOM +15 (onset-detector latency included; a frame is 33 ms). ✅ |
+| Rhythm | `check_timeline.mjs`: 70 beats @ 140 = 900 frames; anchors on downbeats (f13, f167, f373, f579, f784, f836); the music edit on bar lines. ✅ |
+| Cast | Faces whole, one grade, nobody beside a name or a number. ✅ |
+| Honesty | ❌ **Found:** the battle HUD — each player's rank ("Chief Ship Petty Officer"), captain name and points — was readable in three places: the white-flash strobe frame (0:01.5, "1115 Saad" under REAL PLAYERS.), the strike (0:12.5–0:12.8) and right through the last ship's freeze (0:17.2–0:19.2, "1115 Saad" above SUNK.). Neither name is in the filenames, and a name + points over a sinking reads as a specific player's result. The STORE tile's profile chip (name, rank, XP 175/2000) was borderline legible too. |
+| Runtime | 30.000 s; the end card holds 3.0 s. ✅ |
+
+### Fixes made
+
+1. **Honesty:** `scripts/deck30/prepare_media.py` now blurs both HUD text panels (rank, name, points) into every
+   battle plate at its own resolution (the avatars, flags and panel frames stay sharp), and the store's profile chip
+   (name, rank, XP) — baked in, like the leaderboard and the wallet, so no push can reveal them. The white-flash strobe
+   frame's camera also moved below the panels (y 300 → 330).
+2. **The weakest second** (below).
+
+### The weakest second
+
+**0:04.0–0:05.0**, the black before the BOOM. The brief's "hard cut to black, the bit fades up and pings" is one
+second at 120 BPM; on the 140-BPM grid the bar it lives in runs 1.7 s, and nothing moved but a static dot and a
+barely visible scatter — on a projector it read as dead air. **Fixed, not cut** (the BOOM must stay on the downbeat and
+the strobe can't grow without reusing faces): the black now breathes. The camera pushes 10 % into the bit, the
+scattered bits brighten and twinkle as a glow feathered around it, the bit throbs on beats 10 and 12 around the ping on
+11, and on the last beat the whole field draws in toward the bit with faint trails — the inhale — so the BOOM is a
+release. The rush into the logo starts exactly where the inhale left every bit.

@@ -47,6 +47,8 @@ review pack: `deck30/review/`, deliverables: `out/deck30/`.
   then the hard cut into the game's own white flash. Full-frame flash frames only on ALIVE and VICTORY.
 - **The VS screen is frozen at 3.07 s**, before the name plates (3.12+) arrive, so the rival's facecam is never next
   to a name or a score. The leaderboard's names/flags/wins/points and the wallet's address are blurred at prep.
+- **The battle HUD is soft** (QA round 3): both players' rank / captain name / points panels are blurred into every
+  battle plate at prep, and so is the store's profile chip — the game's avatars and frames stay sharp.
 - **The mosaic grid is the logo's pixel grid** (32×8 cells of the logo's own bit), so tiles outside the silhouette
   fall away literally; 111 lock, the bit cell stays empty.
 - **Upscaling is slow on this CPU** (~25 s a 2× frame); drafts use Lanczos stand-ins of the same ranges

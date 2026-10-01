@@ -151,7 +151,7 @@ export type StrobeHit = { readonly kind: 'hit'; readonly src: MediaId; readonly 
 export type StrobeFace = { readonly kind: 'face'; readonly crop: string };
 export const STROBE: readonly (StrobeHit | StrobeFace)[] = [
   { kind: 'face', crop: 'st-hunter' }, //                                         3.0  REAL PLAYERS.
-  { kind: 'hit', src: 'atomic', in: 1.02, x: 930, y: 300, zoom: 1.3 }, //        3.5  the game's white flash
+  { kind: 'hit', src: 'atomic', in: 1.02, x: 930, y: 330, zoom: 1.3 }, //        3.5  the game's white flash (below the HUD panels)
   { kind: 'face', crop: 'st-sofa' }, //                                           4.0
   { kind: 'hit', src: 'defense', in: 1.5, x: 394, y: 405, zoom: 1.6 }, //        4.5  "Shot down!"
   { kind: 'face', crop: 'st-admiral' }, //                                        5.0

@@ -9,7 +9,8 @@ seconds; the components subtract `start`). Sources in demo-assets/ are only ever
   gameplay  Real-ESRGAN plates (build/deck30/esr/<name>/out, scripts/deck30/upscale.sh) → 2560x1152; the
             poster's 4x plate → 3840x1728 (H.264 level 5.1)
   UI        the 2670x1200 phone captures → 1920 wide
-  privacy   the wallet's address line and the leaderboard's names / flags / wins / points are blurred HERE,
+  privacy   the wallet's address line, the leaderboard's names / flags / wins / points, both battle HUD panels
+            (rank, name, points of each player) and the store's profile chip (name, rank, XP) are blurred HERE,
             baked into the prepared files, so no push-in can ever reveal them
 """
 import os, subprocess, sys
@@ -33,6 +34,21 @@ def probe(p):
 PLATES = [('poster', 3840), ('atomic', 2560), ('raid', 2560), ('defense', 2560)]
 LANCZOS_RANGES = {'poster': ('arsenal-attack.mp4', 1.30, 2.434), 'atomic': ('arsenal-attack.mp4', 0.80, 3.334),
                   'raid': ('base-attack.mp4', 1.25, 3.10), 'defense': ('defense.mp4', 0.20, 2.00)}
+# the battle HUD's two text panels (rank, captain name, points) in the 1280x576 recording; the avatars, flags and
+# panel frames stay sharp. Scaled to each plate's own resolution and blurred before the final resize.
+HUD_TEXT = [(228, 50, 304, 51), (797, 50, 298, 51)]  # x, y, w, h
+
+
+def hud_blur(fac):
+    parts, last = ['[0:v]split=3[base][h0][h1]'], 'base'
+    for k, (x, y, w, h) in enumerate(HUD_TEXT):
+        X, Y, W, H = (round(v * fac) for v in (x, y, w, h))
+        parts.append(f'[h{k}]crop={W}:{H}:{X}:{Y},gblur=sigma={8 * fac:g}:steps=3[b{k}]')
+        parts.append(f'[{last}][b{k}]overlay={X}:{Y}[o{k}]')
+        last = f'o{k}'
+    return ';'.join(parts), last
+
+
 only = [a for a in sys.argv[1:] if not a.startswith('--')]
 for name, width in PLATES:
     if only and name not in only:
@@ -47,22 +63,29 @@ for name, width in PLATES:
             continue
         # stand-in until the Real-ESRGAN plate is ready: the same range, Lanczos-scaled (drafts only)
         src_file, ss, to = LANCZOS_RANGES[name]
+        fc, last = hud_blur(1)
         subprocess.check_call(['ffmpeg', '-v', 'error', '-y', '-ss', str(ss), '-to', str(to), '-i', f'{DA}/{src_file}',
-                               '-vf', f'fps=30,scale={width}:-2:flags=lanczos,format=yuv420p', '-fps_mode', 'cfr', *X264, dst])
+                               '-filter_complex', f'{fc};[{last}]fps=30,scale={width}:-2:flags=lanczos,format=yuv420p[v]',
+                               '-map', '[v]', '-fps_mode', 'cfr', *X264, dst])
         print(name, 'LANCZOS STAND-IN', probe(dst))
         continue
+    fac = Image.open(f'{src}/out/f0000.png').width / 1280  # 2 (battle) or 4 (the poster's fireball)
+    fc, last = hud_blur(fac)
     subprocess.check_call(['ffmpeg', '-v', 'error', '-y', '-framerate', '30', '-i', f'{src}/out/f%04d.png',
-                           '-vf', f'scale={width}:-2:flags=lanczos,format=yuv420p', '-r', '30', *X264, dst])
+                           '-filter_complex', f'{fc};[{last}]scale={width}:-2:flags=lanczos,format=yuv420p[v]',
+                           '-map', '[v]', '-r', '30', *X264, dst])
     print(name, probe(dst))
 
 # ---- UI captures: (name, source, start, end, extra filter before scaling)
 WALLET_BLUR = '[0:v]split[a][b];[b]crop=700:100:330:620,boxblur=24:4[bl];[a][bl]overlay=330:620'
+# the store's profile chip: captain name, rank and XP (the avatar and the flag stay)
+STORE_BLUR = '[0:v]split[a][b];[b]crop=515:185:470:30,gblur=sigma=14:steps=3[bl];[a][bl]overlay=470:30'
 UI = [
     ('build', f'{DA}/material/buildyourbase.mp4', 1.0, 6.0, None),
     ('matchmaking', f'{DA}/material/matchmaking.mp4', 0.5, 3.25, None),
     ('buy', f'{DA}/material/buy_points.mp4', 3.5, 5.03, None),
     ('sell', f'{DA}/material/sell_points.mp4', 1.3, 3.04, None),
-    ('store', f'{DA}/material/store.mp4', 0.3, 3.04, None),
+    ('store', f'{DA}/material/store.mp4', 0.3, 3.04, STORE_BLUR),
     ('wallet', f'{DA}/material/wallet_profile.mp4', 1.3, 1.72, WALLET_BLUR),
 ]
 for name, src, start, end, pre in UI:

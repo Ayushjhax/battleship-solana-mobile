@@ -188,11 +188,18 @@ export const scatterAt = (p: Piece, t: number, seed = 'sc') => {
   return { x: x0 + Math.cos(ang) * t * 0.35, y: y0 + Math.sin(ang) * t * 0.35 };
 };
 
-/** Scattered bits rush home: each starts within `spread` frames and takes `dur` frames; locks with a flare. */
+/**
+ * Scattered bits rush home: each starts within `spread` frames and takes `dur` frames; locks with a flare.
+ * `fromAt` overrides where each bit starts (default: its scatter position at `tScatter`).
+ */
 export const assemble =
-  (t: number, tScatter: number, { dur = 9, spread = 5, seed = 'sc', dim = 0.3 } = {}) =>
+  (
+    t: number,
+    tScatter: number,
+    { dur = 9, spread = 5, seed = 'sc', dim = 0.3, fromAt }: { dur?: number; spread?: number; seed?: string; dim?: number; fromAt?: (p: Piece) => { x: number; y: number } } = {},
+  ) =>
   (p: Piece, home: Home): PieceState | null => {
-    const from = scatterAt(p, tScatter, seed);
+    const from = fromAt ? fromAt(p) : scatterAt(p, tScatter, seed);
     const start = random(`${seed}s${p.i}`) * spread;
     const q = interpolate(t, [start, start + dur], [0, 1], clamp);
     const e = EASE_IN(q);
