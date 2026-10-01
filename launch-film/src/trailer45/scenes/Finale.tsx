@@ -15,7 +15,7 @@ import { C, EASE_IN, EASE_MOVE, FONT, clamp } from '../theme';
 import { f } from '../timeline';
 import SW from '../swarm.data.json';
 
-const A = 83; // section start (beat)
+const A = 82; // starts on the breath beat: the wall is already there as the letterbox opens
 const T = (b: number) => f(b) - f(A);
 
 const L = SW.logo;

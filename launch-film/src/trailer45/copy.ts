@@ -9,7 +9,7 @@ export const CAST_LABELS = ['THE ADMIRAL.', 'THE TACTICIAN.', 'THE HUNTER.', 'TH
 
 export const CLAIM = ['REAL PLAYERS.', 'REAL BATTLES.'] as const;
 
-export const STING = 'AN EMPIRE OF BITS ORIGINAL';
+export const STING = 'EMPIRE OF BITS';
 
 export const CARDS = {
   build: 'BUILD YOUR BASE.',
