@@ -30,18 +30,27 @@ def probe(p):
 
 
 # ---- gameplay plates (name, width) — ranges live in scripts/deck30/upscale.sh
-PLATES = [('poster', 3840), ('atomic', 2560), ('victory', 2560), ('raid', 2560), ('defense', 2560)]
-only = sys.argv[1:]
+PLATES = [('poster', 3840), ('atomic', 2560), ('raid', 2560), ('defense', 2560)]
+LANCZOS_RANGES = {'poster': ('arsenal-attack.mp4', 1.30, 2.434), 'atomic': ('arsenal-attack.mp4', 0.80, 3.334),
+                  'raid': ('base-attack.mp4', 1.25, 3.70), 'defense': ('defense.mp4', 0.20, 2.00)}
+only = [a for a in sys.argv[1:] if not a.startswith('--')]
 for name, width in PLATES:
     if only and name not in only:
         continue
     src = f'build/deck30/esr/{name}'
     n_in = len(os.listdir(f'{src}/in')) if os.path.isdir(f'{src}/in') else 0
     n_out = len(os.listdir(f'{src}/out')) if os.path.isdir(f'{src}/out') else 0
-    if n_in == 0 or n_out < n_in:
-        print(f'{name}: upscale not finished ({n_out}/{n_in}) — skipped; run scripts/deck30/upscale.sh')
-        continue
     dst = f'{OUT}/{name}.mp4'
+    if n_in == 0 or n_out < n_in:
+        if '--lanczos' not in sys.argv:
+            print(f'{name}: upscale not finished ({n_out}/{n_in}) — skipped; run scripts/deck30/upscale.sh (or --lanczos for a stand-in)')
+            continue
+        # stand-in until the Real-ESRGAN plate is ready: the same range, Lanczos-scaled (drafts only)
+        src_file, ss, to = LANCZOS_RANGES[name]
+        subprocess.check_call(['ffmpeg', '-v', 'error', '-y', '-ss', str(ss), '-to', str(to), '-i', f'{DA}/{src_file}',
+                               '-vf', f'fps=30,scale={width}:-2:flags=lanczos,format=yuv420p', '-fps_mode', 'cfr', *X264, dst])
+        print(name, 'LANCZOS STAND-IN', probe(dst))
+        continue
     subprocess.check_call(['ffmpeg', '-v', 'error', '-y', '-framerate', '30', '-i', f'{src}/out/f%04d.png',
                            '-vf', f'scale={width}:-2:flags=lanczos,format=yuv420p', '-r', '30', *X264, dst])
     print(name, probe(dst))
@@ -79,3 +88,12 @@ if not only or 'leaderboard' in only:
     im.paste(im.crop(box).filter(ImageFilter.GaussianBlur(16)), box)
     im.save(f'{OUT}/leaderboard.png')
     print('leaderboard', im.size, 'blurred', box)
+
+# ---- the victory screen without its text: the result screen's own backdrop art + its seagulls (assets/, read only)
+if not only or 'art' in only:
+    import shutil
+    os.makedirs('public/deck30/art', exist_ok=True)
+    shutil.copyfile('../assets/backgrounds/decision.jpg', 'public/deck30/art/victory-backdrop.jpg')
+    for k in range(1, 4):
+        shutil.copyfile(f'../assets/battle-complete-assets/results/winner/seagull-0{k}.png', f'public/deck30/art/seagull-0{k}.png')
+    print('art: victory backdrop + seagulls')

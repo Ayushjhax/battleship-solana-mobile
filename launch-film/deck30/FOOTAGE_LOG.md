@@ -55,7 +55,7 @@ All transcodes: CFR 30 fps, H.264 yuv420p CRF 16, keyframe every second (`-g 30`
 | `buildyourbase.mp4` | 4.00–5.00 | tap AA Gun → board tints green → AA gun lands, Points 260 → 250 | flip face 1, BUILD YOUR BASE. |
 | `buildyourbase.mp4` | 1.30–2.20 | placement board, 8 ships, Arsenal panel | flip faces 2–3 (behind the ships and weapons rising out of the glass) |
 | `matchmaking.mp4` | 0.75–2.75 | "Finding an opponent", radar sweep | flip face 4 |
-| `matchmaking.mp4` | 3.00–3.20 | the red VS slams in (before the name plates appear) | flip face 4: the punch into the match. Frozen at 3.17 — **no names or points on screen** next to the facecam |
+| `matchmaking.mp4` | 2.99–3.07 | the red VS slams in (3.00); the name plates slide in from 3.12 | flip face 4: the punch into the match. Frozen at 3.07 — **no names or points on screen** next to the facecam |
 | `buy_points.mp4` | 4.00–5.00 | counter 200 → 300, "Purchase complete" | bento BUY POINTS |
 | `sell_points.mp4` | 1.80–3.00 | counter 300 → 200 | bento SELL POINTS |
 | `store.mp4` | 0.50–3.00 | Crimson → Emerald → Purple tabs | bento STORE |

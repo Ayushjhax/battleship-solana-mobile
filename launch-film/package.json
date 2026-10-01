@@ -8,6 +8,7 @@
     "prepare-media": "python3 scripts/prepare_media.py",
     "cast": "python3 scripts/cast.py",
     "score": "python3 scripts/score.py",
+    "deck30:score": "python3 scripts/deck30/score.py",
     "draft": "node scripts/render.mjs --draft",
     "render": "node scripts/render.mjs",
     "review": "python3 scripts/review.py",

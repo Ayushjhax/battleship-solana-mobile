@@ -73,7 +73,8 @@ export const MUSIC_EDIT = [
     from: 5, to: 28, track: -24,
     note: 'one bar skipped under the strobe (cut on the −24 kick); breakdown under the bit; the BOOM on the −16 hit; the build and kick roll under the flips; the built-in gap under FIRE',
   },
-  { from: 29, to: 61, track: 0, note: "the trailer's drop: its first 16 beats untouched (suck-out on 44), VICTORY on 16, economy, mitosis" },
+  { from: 29, to: 45, track: 0, note: "the trailer's drop: its first 16 beats, untouched except the suck-out on 44" },
+  { from: 45, to: 61, track: 16, note: 'VICTORY on track 16 (re-entered on its own attack after the suck-out), the economy, the mosaic' },
   { from: 61, to: 70, track: 356, note: 'the final chord rings out under the end card' },
 ] as const;
 
@@ -94,7 +95,6 @@ export const MEDIA = {
   poster: { file: 'arsenal-attack.mp4', start: 1.3, rec: true },
   atomic: { file: 'arsenal-attack.mp4', start: 0.8, rec: true },
   raid: { file: 'base-attack.mp4', start: 1.25, rec: true },
-  victory: { file: 'base-attack.mp4', start: 4.9, rec: true },
   defense: { file: 'defense.mp4', start: 0.2, rec: true },
   build: { file: 'material/buildyourbase.mp4', start: 1.0, rec: false },
   matchmaking: { file: 'material/matchmaking.mp4', start: 0.5, rec: false },
@@ -129,7 +129,7 @@ export type Shot = {
  */
 export const SHOTS = {
   // the poster: frame 0 is source 1.40 (the fireball at its fullest), held for the pickup, then plays on
-  poster: { src: 'poster', from: 0, to: 3, in: 1.4, cam: [[0, 934, 288, 2.05], [1, 934, 286, 2.08], [3, 930, 268, 2.3]] },
+  poster: { src: 'poster', from: 0, to: 3, in: 1.4, cam: [[0, 948, 292, 2.2], [1, 948, 290, 2.23], [3, 935, 266, 2.4]] },
   // THE DROP — the game's own white flash (1.00) → fireball → mushroom, wide: the whole enemy board
   strike: { src: 'atomic', from: 29, to: 31, in: 1.0, cam: [[29, 900, 300, 1.0], [31, 925, 285, 1.18]] },
   // smoke, then the 3x3 marks burst on beat 32 (2.85 s)
@@ -140,11 +140,9 @@ export const SHOTS = {
     cam: [[33, 330, 410, 1.35], [34.2, 420, 410, 1.45], [35, 394, 405, 1.5], [36, 394, 405, 1.58]],
   },
   // split screen, left: the Bomber armed, released, across the enemy board — the impact lands on 40
-  run: { src: 'raid', from: 36, to: 40, in: 1.286, cam: [[36, 900, 220, 1.0], [38, 820, 170, 1.05], [40, 950, 150, 1.25]] },
+  run: { src: 'raid', from: 36, to: 40, in: 1.286, cam: [[36, 620, 260, 1.15], [37.2, 560, 235, 1.3], [38, 700, 230, 1.35], [38.5, 960, 230, 1.4], [39.5, 1000, 225, 1.4], [40, 965, 220, 1.45]] },
   // the last ship goes down on 40; freeze on the biggest frame (3.067) and push in; sucked out on 44
-  last: { src: 'raid', from: 40, to: 45, in: 2.99, freezeAt: 40.16, cam: [[40, 960, 150, 1.35], [41, 964, 143, 1.5], [44, 965, 141, 1.72], [45, 965, 141, 2.3]] },
-  // VICTORY. — the result screen inside the letters
-  victory: { src: 'victory', from: 45, to: 49, in: 4.9, freezeAt: 48.6, cam: [[45, 640, 500, 1.0], [49, 600, 480, 1.08]] },
+  last: { src: 'raid', from: 40, to: 45, in: 2.99, freezeAt: 40.16, cam: [[40, 965, 232, 1.4], [41, 965, 215, 1.5], [44, 965, 200, 1.62], [45, 965, 175, 2.1]] },
 } as const satisfies Record<string, Shot>;
 
 /** "REAL PLAYERS. / REAL BATTLES." — the strobe on the 8ths: a player, then a battle hit. */
@@ -171,7 +169,7 @@ export const UI_CLIPS = {
   fleet: { src: 'build', in: 1.35 }, //       the placement board, 8 ships
   arsenal: { src: 'build', in: 1.6 }, //      the Arsenal panel
   radar: { src: 'matchmaking', in: 0.8 }, //  "Finding an opponent", radar sweep
-  versus: { src: 'matchmaking', in: 2.95 }, // the VS slams in; frozen at 3.17, before the name plates
+  versus: { src: 'matchmaking', in: 2.99 }, // the VS slams in (3.00); frozen at 3.07 — the name plates arrive from 3.12
   buy: { src: 'buy', in: 3.82 }, //           counter 200 → 300 at 4.25
   sell: { src: 'sell', in: 1.6 }, //          counter 300 → 200 at 2.0
   store: { src: 'store', in: 0.8 }, //        Crimson → Emerald → Purple
@@ -180,8 +178,13 @@ export const UI_CLIPS = {
 
 // ------------------------------------------------------------------------------------------------ finish
 
-/** Flash frames (2 frames, white then accent) and the micro-shake: only the three biggest hits. */
-export const FLASHES = [1, 29, 45] as const;
+/**
+ * Full-frame flash frames (2 frames, white then accent): ALIVE and VICTORY. The drop's flash is the period's own:
+ * it lands on 29 (frame 373), its white blooms out over the next PERIOD_FRAMES - 1 frames, then the hard cut.
+ */
+export const FLASHES = [1, 45] as const;
+export const PERIOD_FRAMES = 3;
+/** the micro-shake: only the three biggest hits */
 export const SHAKES = [1, 29, 45] as const;
 /** Cinema mode: in as FIRE begins, held through the battle and VICTORY, out as we fly through the O. */
 export const LETTERBOX = { in: 25, out: 48, outBeats: 1 } as const;
@@ -202,8 +205,8 @@ const EIGHTHS = (a: number, b: number) => Array.from({ length: Math.round((b - a
 export const LOCKS = [25, 25.5, 26, 26.25, 26.5, 26.75, 27, 27.125, 27.25, 27.375, 27.5, 27.625, 27.75, 27.875] as const;
 /** mitosis: 1 → 4 → 16 → 64 → 256 on the 8ths, the 256 landing on the downbeat 57 */
 export const DIVISIONS = [55, 55.5, 56, 56.5, 57] as const;
-/** bento tiles snap in on the 8ths: LEADERBOARD, BUY, SELL, STORE, WALLET */
-export const TILE_BEATS = [49, 49.5, 50, 50.5, 51] as const;
+/** bento tiles snap in on the 8ths: LEADERBOARD (already there as we fly through the O), BUY, SELL, STORE, WALLET */
+export const TILE_BEATS = [48.5, 49, 49.5, 50, 50.5] as const;
 
 export const CUES: readonly Cue[] = [
   // poster → ALIVE
@@ -233,10 +236,10 @@ export const CUES: readonly Cue[] = [
   ...[19.5, 19.75, 20, 20.25].map((b) => ({ beat: b, sfx: 'metal', db: -11, note: 'ships rise out of the glass' })),
   ...[21.25, 21.5, 21.75, 21.875].map((b) => ({ beat: b, sfx: 'metal', db: -10, note: 'carousel' })),
   { beat: 22, sfx: 'lock', db: -5, note: 'the Atomic Bomber centred, glowing' },
-  { beat: 23.25, sfx: 'ping', db: -6, note: 'radar sweep' },
-  { beat: 24, sfx: 'stamp', db: -3, note: 'the VS punch' },
-  { beat: 24.5, sfx: 'pop', db: -8, note: 'the rival slides in' },
-  { beat: 24.75, sfx: 'lock', db: -6, note: 'locked' },
+  { beat: 23.1, sfx: 'ping', db: -6, note: 'radar sweep' },
+  { beat: 23.5, sfx: 'stamp', db: -3, note: 'the VS punch' },
+  { beat: 23.875, sfx: 'pop', db: -8, note: 'the rival slides in' },
+  { beat: 24.125, sfx: 'lock', db: -6, note: 'locked' },
   // FIRE — a rising digital tick per lock-on (score.py pitches them up along the run)
   ...LOCKS.map((b) => ({ beat: b, sfx: 'dtick', db: -6, note: 'lock-on' })),
   // THE DROP
@@ -271,7 +274,7 @@ export const CUES: readonly Cue[] = [
   { beat: 53, sfx: 'whoosh', db: -6, note: 'into the leaderboard' },
   { beat: 54, sfx: 'stamp', db: -6, note: 'the #1 row' },
   // ONE BECOMES ALL
-  { beat: 55, sfx: 'collapse', db: -8, note: 'the #1 highlight collapses into the bit' },
+  { beat: 54.5, sfx: 'collapse', db: -8, note: 'the #1 highlight collapses into the bit (lands on 55)' },
   { beat: 55, sfx: 'riser6', db: -7, note: 'the stepped riser, 55 → 61' },
   ...DIVISIONS.map((b) => ({ beat: b, sfx: 'step', db: -6, note: 'division (pitched step)' })),
   { beat: 59, sfx: 'scatter', db: -9, note: 'tiles outside the logo fall away' },

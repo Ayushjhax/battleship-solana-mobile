@@ -34,7 +34,7 @@ export const STROBE: readonly Crop[] = [
 export const FACECAMS: readonly Crop[] = [
   { id: 'fc-crew', photo: 'sofa', box: [0.13, 0.17, 0.255, 0.204], people: ['crew'] },
   { id: 'fc-captain', photo: 'sofa', box: [0.36, 0.24, 0.26, 0.208], people: ['captain'] },
-  { id: 'fc-rival', photo: 'admiral', box: [0.0, 0.08, 0.56, 0.42], people: ['admiral'] },
+  { id: 'fc-rival', photo: 'admiral', box: [0.0, 0.1, 0.9, 0.675], people: ['admiral'] },
 ];
 
 /** The split screen's reaction (right half, 954 x 1080). */
