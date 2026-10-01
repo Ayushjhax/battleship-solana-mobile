@@ -14,7 +14,7 @@ review pack: `deck30/review/`, deliverables: `out/deck30/`.
 | 5 · Animatic | done | `deck30/review/animatic.mp4` (960×540, with the score) |
 | 6 · Full build + sound | done | All scenes built; score by `scripts/deck30/score.py` (−14 LUFS, −1.5 dBTP, digital-zero silence); picture rendered `--muted` and muxed with ffmpeg (sample-accurate). |
 | 7 · Quality gate ×3 | done | `deck30/REVIEW.md`: three rounds (animatic, draft 2, draft 3), each with the wow audit, every test and the weakest second. Regression frames of Trailer45 and LaunchFilm in `deck30/review/regression/`. |
-| 8 · Final + deliver | in progress | `npm run deck30:render` → `out/deck30/` |
+| 8 · Final + deliver | done | `out/deck30/`: master (82.4 MB, −13.8 LUFS, −1.2 dBTP), deck file (23.6 MB, High@4.1), poster_frame0.png, endcard.png, thumbnail, deck30-music.wav, REPORT.md (all checks pass). Final contact sheets in `deck30/review/final_sheet_*.jpg`. |
 
 ## Decisions
 

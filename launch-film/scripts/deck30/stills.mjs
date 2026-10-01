@@ -24,7 +24,7 @@ let i = 0;
 async function worker() {
   while (i < frames.length) {
     const fr = frames[i++];
-    await renderStill({ composition: comp, serveUrl, frame: fr, output: path.join(outDir, `f${String(fr).padStart(4, '0')}.${opt.png !== undefined ? 'png' : 'jpg'}`), inputProps, scale, imageFormat: opt.png !== undefined ? 'png' : 'jpeg', jpegQuality: 92, puppeteerInstance: browser, browserExecutable });
+    await renderStill({ composition: comp, serveUrl, frame: fr, output: path.join(outDir, `f${String(fr).padStart(4, '0')}.${'png' in opt ? 'png' : 'jpg'}`), inputProps, scale, imageFormat: 'png' in opt ? 'png' : 'jpeg', ...('png' in opt ? {} : { jpegQuality: 92 }), puppeteerInstance: browser, browserExecutable });
   }
 }
 await Promise.all(Array.from({ length: conc }, worker));
