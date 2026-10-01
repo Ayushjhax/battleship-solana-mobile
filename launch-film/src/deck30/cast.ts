@@ -52,14 +52,15 @@ export const MOSAIC_GIFS: readonly { readonly file: string; readonly crop: reado
 ];
 /** How many tiles of the 256 play the live GIF (spread out, never neighbours). */
 export const MOSAIC_LIVE_TILES = 6;
-/** Battle frames: [plate, source second, centre x, centre y, side] in recording px (1280 x 576). */
+/** Battle frames: [plate, source second, centre x, centre y, side] in recording px (1280 x 576). Every crop sits
+ * below the HUD band (y >= 100: names, points) and away from the result panel's text. */
 export const MOSAIC_BATTLE: readonly (readonly [string, number, number, number, number])[] = [
   ['atomic', 1.4, 935, 272, 210], ['atomic', 1.55, 935, 262, 160], ['atomic', 1.72, 930, 250, 200], ['atomic', 1.9, 930, 240, 150],
   ['atomic', 2.2, 930, 260, 220], ['atomic', 2.93, 930, 320, 150], ['atomic', 3.05, 910, 330, 110], ['atomic', 1.02, 930, 300, 300],
   ['atomic', 0.9, 600, 300, 300], ['atomic', 1.1, 250, 300, 260], ['atomic', 1.8, 1180, 330, 200], ['atomic', 1.3, 930, 290, 120],
-  ['raid', 3.03, 930, 85, 110], ['raid', 3.07, 930, 85, 80], ['raid', 3.13, 930, 90, 140], ['raid', 2.2, 900, 250, 240],
-  ['raid', 1.6, 330, 300, 300], ['raid', 2.6, 1000, 140, 200], ['raid', 3.4, 920, 110, 200], ['raid', 1.9, 650, 300, 260],
+  ['raid', 3.03, 960, 158, 110], ['raid', 3.07, 965, 150, 90], ['raid', 3.13, 960, 175, 140], ['raid', 2.2, 900, 250, 240],
+  ['raid', 1.6, 330, 300, 300], ['raid', 2.6, 1000, 220, 200], ['raid', 3.4, 940, 210, 200], ['raid', 1.9, 650, 300, 260],
   ['defense', 1.15, 330, 400, 140], ['defense', 1.25, 330, 400, 200], ['defense', 1.6, 260, 360, 200], ['defense', 0.6, 380, 380, 220],
   ['defense', 1.8, 900, 300, 300], ['defense', 0.9, 300, 300, 300], ['defense', 1.4, 330, 420, 120], ['defense', 0.4, 500, 380, 220],
-  ['victory', 5.6, 640, 300, 360], ['victory', 5.6, 150, 160, 220], ['victory', 6.4, 1150, 160, 220], ['victory', 5.2, 640, 470, 260],
+  ['victory', 5.6, 150, 160, 220], ['victory', 6.4, 1150, 160, 220],
 ];
