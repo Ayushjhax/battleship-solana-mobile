@@ -13,8 +13,8 @@ review pack: `deck30/review/`, deliverables: `out/deck30/`.
 | 4 · Style frames | done | `deck30/review/style-frames/` (1920×1080) + `style-frames.jpg`. All seven wows built for real. |
 | 5 · Animatic | done | `deck30/review/animatic.mp4` (960×540, with the score) |
 | 6 · Full build + sound | done | All scenes built; score by `scripts/deck30/score.py` (−14 LUFS, −1.5 dBTP, digital-zero silence); picture rendered `--muted` and muxed with ffmpeg (sample-accurate). |
-| 7 · Quality gate ×3 | in progress | `deck30/REVIEW.md`: rounds 1–2 written; round 3 on the Real-ESRGAN plates. |
-| 8 · Final + deliver | | |
+| 7 · Quality gate ×3 | done | `deck30/REVIEW.md`: three rounds (animatic, draft 2, draft 3), each with the wow audit, every test and the weakest second. Regression frames of Trailer45 and LaunchFilm in `deck30/review/regression/`. |
+| 8 · Final + deliver | in progress | `npm run deck30:render` → `out/deck30/` |
 
 ## Decisions
 
@@ -51,5 +51,6 @@ review pack: `deck30/review/`, deliverables: `out/deck30/`.
   battle plate at prep, and so is the store's profile chip — the game's avatars and frames stay sharp.
 - **The mosaic grid is the logo's pixel grid** (32×8 cells of the logo's own bit), so tiles outside the silhouette
   fall away literally; 111 lock, the bit cell stays empty.
-- **Upscaling is slow on this CPU** (~25 s a 2× frame); drafts use Lanczos stand-ins of the same ranges
-  (`prepare_media.py --lanczos`) until `scripts/deck30/upscale.sh` finishes.
+- **Upscaling is slow on this CPU** (~25 s a 2× frame); drafts 1–3 used Lanczos stand-ins of the same ranges
+  (`prepare_media.py --lanczos`) while `scripts/deck30/upscale.sh` ran. The final render uses all four Real-ESRGAN
+  plates (poster 4×, atomic/raid/defense 2×).
