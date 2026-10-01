@@ -228,7 +228,7 @@ export const Flip: React.FC = () => {
   const frame = useCurrentFrame();
   const dur = (b0: number, b1: number) => L(b1) - L(b0);
   // the push into the board: the screen grows past the frame as the letterbox comes in, then everything stops on 28
-  const push = interpolate(frame, [L(25), L(26)], [1, 1.9], { ...clamp, easing: EASE_MOVE }) * interpolate(frame, [L(26), L(28)], [1, 1.05], clamp);
+  const push = interpolate(frame, [L(25), L(26)], [1, 1.85], { ...clamp, easing: EASE_MOVE }) * interpolate(frame, [L(26), L(28)], [1, 1.05], clamp);
   const lockFrames = LOCKS.map((b) => f(b));
   const periodFrame = f(29);
   // the board view on the glass: the word + its period centred, at 0.498 px per board unit

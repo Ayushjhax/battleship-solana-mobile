@@ -10,7 +10,7 @@ seconds of the files in `demo-assets/`. Rating 1–5.
 | Source | Native | Prepared as (`scripts/deck30/prepare_media.py`) |
 |---|---|---|
 | `arsenal-attack.mp4` (Atomic Bomber strike) | 1280×576, ~29 fps VFR | `deck30/media/poster.mp4` 1.30–2.434 s, Real-ESRGAN 4× (5120×2304 → 3840×1728) · `deck30/media/atomic.mp4` 0.80–3.334 s, ESRGAN 2× (2560×1152) |
-| `base-attack.mp4` (Bomber → last ship → Victory) | 1280×576 | `deck30/media/raid.mp4` 1.40–3.70 s and `deck30/media/victory.mp4` 4.90–6.567 s, ESRGAN 2× |
+| `base-attack.mp4` (Bomber → last ship → Victory) | 1280×576 | `deck30/media/raid.mp4` 1.25–3.10 s, ESRGAN 2× (the result screen is not used as footage: see VICTORY below) |
 | `defense.mp4` (AA gun) | 1280×576 | `deck30/media/defense.mp4` 0.20–2.00 s, ESRGAN 2× |
 | `material/buildyourbase.mp4` | 2670×1200 VFR | `deck30/media/build.mp4` 1.0–6.0 s, Lanczos → 1920 |
 | `material/matchmaking.mp4` | 2670×1200 VFR | `deck30/media/matchmaking.mp4` 0.5–3.25 s |
@@ -47,7 +47,7 @@ All transcodes: CFR 30 fps, H.264 yuv420p CRF 16, keyframe every second (`-g 30`
 | 1.40–1.80 | Bomber armed, released | 3 | split screen, left |
 | 1.80–2.95 | the Bomber crosses the enemy board | 3 | split screen, left (the Hunter reacts on the right) |
 | 3.00–3.13 | **the last ship goes down** (small fireball, top-right of the enemy board, peak 3.067) | 4 | **the drop's climax**: SUNK., freeze on 3.067 and push in · strobe hit 3 |
-| 4.93–6.57 | **the Victory result screen**: ribbon, both captains, panel counting up | 5 | **inside VICTORY.** — framed on the sea-and-sky art, away from the ribbon and the panel text |
+| 4.93–6.57 | **the Victory result screen**: ribbon, both captains, panel counting up | 5 | not used as footage: every frame carries text (ribbon, panel, names, buttons). Inside VICTORY. plays the same screen without its text layer — its backdrop art, `assets/backgrounds/decision.jpg` (ship, sea, islands, lighthouse), drifting |
 
 ### UI recordings — `material/`
 | File | t | Moment | Deck30 use |

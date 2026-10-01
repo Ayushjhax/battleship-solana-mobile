@@ -28,7 +28,9 @@ export const TheBit: React.FC = () => {
   const t = useCurrentFrame();
   const boom = L(13);
   const tb = t - boom;
-  const slot = bitOn(STING_LOGO);
+  // every shot drifts: the logo grows 3 % from the BOOM to the collapse
+  const LG: LogoPlace = { ...STING_LOGO, w: STING_LOGO.w * (1 + 0.03 * interpolate(t, [boom, L(16)], [0, 1], clamp)) };
+  const slot = bitOn(LG);
   // the bit: fades up centre, pings, flies to its slot on the BOOM, then holds as the logo's bit
   const appear = interpolate(t, [2, 10], [0, 1], { ...clamp, easing: EASE_IN });
   const fly = interpolate(tb, [0, 9], [0, 1], { ...clamp, easing: EASE_MOVE });
@@ -50,7 +52,7 @@ export const TheBit: React.FC = () => {
   if (tb < 0) {
     pieces = (
       <BitShatter
-        lg={STING_LOGO}
+        lg={LG}
         state={(p) => {
           const s = scatterAt(p, scatterT, 'sting');
           return { ...s, alpha: 0.22 * (0.6 + 0.4 * Math.sin(t * 0.3 + p.i)) * interpolate(t, [0, 6], [0, 1], clamp), bit: 1, scale: 0.9 };
@@ -58,9 +60,9 @@ export const TheBit: React.FC = () => {
       />
     );
   } else if (crisp < 1) {
-    pieces = <BitShatter lg={STING_LOGO} state={assemble(tb, scatterT, { dur: 9, spread: 5, seed: 'sting', dim: 0.22 })} />;
+    pieces = <BitShatter lg={LG} state={assemble(tb, scatterT, { dur: 9, spread: 5, seed: 'sting', dim: 0.22 })} />;
   } else if (tc >= 0 && tu < 0) {
-    pieces = <BitShatter lg={STING_LOGO} state={collapse(tc, slot, { dur: 6, spread: 2 })} />;
+    pieces = <BitShatter lg={LG} state={collapse(tc, slot, { dur: 6, spread: 2 })} />;
   }
 
   const logoShown = crisp > 0 && tc < 0;
@@ -72,10 +74,10 @@ export const TheBit: React.FC = () => {
         <AbsoluteFill style={{ background: `radial-gradient(circle 760px at ${bx}px ${by}px, rgba(124,108,255,${0.42 * flash + 0.06}), rgba(0,0,0,0) 72%)` }} />
       )}
       {pieces}
-      {logoShown && <LogoMask lg={STING_LOGO} opacity={crisp} />}
+      {logoShown && <LogoMask lg={LG} opacity={crisp} />}
       {logoShown && t >= L(14) && t <= L(15.4) && (
         <LogoMask
-          lg={STING_LOGO}
+          lg={LG}
           background={`linear-gradient(105deg, rgba(255,255,255,0) ${sweep * 100 - 12}%, rgba(255,255,255,0.95) ${sweep * 100}%, rgba(124,108,255,0.6) ${sweep * 100 + 4}%, rgba(255,255,255,0) ${sweep * 100 + 12}%)`}
         />
       )}

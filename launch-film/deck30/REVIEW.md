@@ -54,3 +54,31 @@ punch 23.1, the divisions 23.6–24.4, the lock 26.1, the ping 27.9).
    and the mushroom (both from the 4× poster plate), the plane hit.
 5. Bento labels 46 → 58 px.
 6. Wrong-frame scare at 3.75 s checked frame by frame: it is the intended hard cut to black (frame 116).
+
+## Round 2 — draft 2 (`build/deck30/draft2.mp4`, atomic plate now Real-ESRGAN)
+
+### Wow audit
+
+| # | Wow | At | Score | Notes |
+|---|---|---|---|---|
+| 1 | The poster comes alive | 0:00.43 | 5 | The blast now throws a third of the logo's bits at the camera (they swell 5×) and every bit streaks; with the flash, punch, shake and the ring it reads as one detonation through the slide. |
+| 2 | The bit becomes the logo | 0:05.57 | 5 | On the BOOM the scattered bits converge in a warp-speed starburst of trails and lock; the sweep crosses; the logo now drifts 3 % until it collapses. |
+| 3 | The flip | 0:07.29 | 5 | Each landing punches and throws a specular glint across the glass; the pieces breaking the frame read clearly. |
+| 4 | FIRE | 0:10.71 | 5 | Unchanged; the push now stops at 1.85× so the period stays inside title-safe. |
+| 5 | The drop | 0:12.43 | 5 | Same cut; the split screen is now clean of names; the strike plays from the Real-ESRGAN plate (line art and HUD crisp at full bleed). |
+| 6 | VICTORY | 0:19.29 | 5 | Unchanged. |
+| 7 | One becomes all | 0:23.57 | 5 | Every division flashes its new daughters; a light sweep crosses the 256; the wall pushes in and lands exactly on the lock. |
+| — | Landing | 0:27.86 | 5 | Unchanged. |
+
+### Tests
+
+All round-1 failures pass: sync 0 samples, silence −99 dBFS rms (AAC noise floor only, the WAV is digital zero),
+peak −1.2 dBFS, no clipped samples, transients +3…+22 ms of their frames (the onset detector's own latency included);
+no name or score beside any face (VS frozen at 3.07, split camera low, leaderboard blurred). Phone: bento labels now
+legible at 640×360. Projector: unchanged pass.
+
+### The weakest second
+
+**0:23.4–0:23.6**, the #1 row collapsing into the bit: the leaderboard faded fully to black around the bar, leaving
+~6 near-empty frames between the punch and the mitosis. **Fixed:** the table stays at ~30 % behind the collapsing bar
+until the cut, so the bit is born out of the leaderboard rather than out of nothing.

@@ -32,7 +32,7 @@ def probe(p):
 # ---- gameplay plates (name, width) — ranges live in scripts/deck30/upscale.sh
 PLATES = [('poster', 3840), ('atomic', 2560), ('raid', 2560), ('defense', 2560)]
 LANCZOS_RANGES = {'poster': ('arsenal-attack.mp4', 1.30, 2.434), 'atomic': ('arsenal-attack.mp4', 0.80, 3.334),
-                  'raid': ('base-attack.mp4', 1.25, 3.70), 'defense': ('defense.mp4', 0.20, 2.00)}
+                  'raid': ('base-attack.mp4', 1.25, 3.10), 'defense': ('defense.mp4', 0.20, 2.00)}
 only = [a for a in sys.argv[1:] if not a.startswith('--')]
 for name, width in PLATES:
     if only and name not in only:

@@ -125,7 +125,7 @@ const Bento: React.FC<{ zero: number }> = ({ zero }) => {
   return (
     <AbsoluteFill>
       <Backdrop />
-      <AbsoluteFill style={{ transform: tf, transformOrigin: e > 0 ? '0 0' : '960px 540px', opacity: 1 - col }}>
+      <AbsoluteFill style={{ transform: tf, transformOrigin: e > 0 ? '0 0' : '960px 540px', opacity: 1 - 0.72 * col }}>
         {TILES.map((tile, i) => {
           const t = frame - B(tile.at);
           if (t < -1) return null;
