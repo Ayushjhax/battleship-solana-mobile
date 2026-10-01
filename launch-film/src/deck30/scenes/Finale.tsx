@@ -37,6 +37,7 @@ const TIMING = {
   duoFrom: T(59.4),
   duoTo: T(60.5),
   lock: T(61),
+  sweepFrom: T(57.5),
 };
 
 export const Finale: React.FC = () => {
@@ -64,7 +65,12 @@ export const Finale: React.FC = () => {
       <AbsoluteFill style={{ scale: String(drift) }}>
         {/* the bit (the #1 row, collapsed) glows, then becomes the first tile */}
         {t < 8 && <Bit x={960} y={540} size={30} intensity={1.6 * interpolate(t, [1, 7], [1, 0], clamp)} />}
-        {mosaicFade > 0 && <MosaicLogo t={t} lg={logoAt(Math.min(t, lock))} timing={TIMING} from={{ x: 960, y: 540 }} maskToLogo={tl >= 0} fade={mosaicFade} />}
+        {mosaicFade > 0 && (
+          // every shot drifts: the wall pushes in and arrives at 1.0 exactly on the lock
+          <div style={{ position: 'absolute', inset: 0, scale: String(interpolate(t, [0, lock], [0.95, 1], { ...clamp, easing: EASE_MOVE })) }}>
+            <MosaicLogo t={t} lg={logoAt(Math.min(t, lock))} timing={TIMING} from={{ x: 960, y: 540 }} maskToLogo={tl >= 0} fade={mosaicFade} />
+          </div>
+        )}
         {tl >= 0 && <LogoMask lg={lg} opacity={crisp} />}
         {flash > 0 && tl >= 0 && <LogoMask lg={lg} color={C.accent} opacity={flash * 0.6} />}
         {bitOnA > 0 && <Bit x={bit.x} y={bit.y} size={bit.size} intensity={bitOnA * bitGlow} hollow={hollow} />}

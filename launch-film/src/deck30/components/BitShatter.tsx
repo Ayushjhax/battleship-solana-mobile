@@ -16,7 +16,8 @@ import { LOGO, logoToScreen, type LogoPlace } from './Logo';
 export const CELL = 11; // source px per piece (the logo is 733 x 129)
 
 export type Piece = { i: number; c: number; r: number; sx: number; sy: number; cov: number };
-export type PieceState = { x: number; y: number; scale?: number; alpha?: number; rot?: number; bit?: number };
+/** vx, vy: screen px per frame — when set, the bit draws a light trail behind it */
+export type PieceState = { x: number; y: number; scale?: number; alpha?: number; rot?: number; bit?: number; vx?: number; vy?: number };
 export type Home = { x: number; y: number; size: number };
 
 type Loaded = { tinted: HTMLCanvasElement; pieces: Piece[] };
@@ -115,6 +116,25 @@ export const BitShatter: React.FC<{
         // +0.6 px bleed so assembled pieces read as one solid logo
         ctx.drawImage(data.tinted, p.c * CELL * S, p.r * CELL * S, CELL * S, CELL * S, -s / 2 - 0.3, -s / 2 - 0.3, s + 0.6, s + 0.6);
       }
+      if (bit > 0 && (st.vx || st.vy)) {
+        // a light trail: the bit's last ~3 frames of travel, fading
+        const vx = st.vx ?? 0;
+        const vy = st.vy ?? 0;
+        const len = Math.min(110, Math.hypot(vx, vy) * 3);
+        if (len > 2) {
+          const q = s * (0.55 + 0.25 * p.cov);
+          ctx.save();
+          ctx.rotate(-(st.rot ?? 0));
+          ctx.rotate(Math.atan2(vy, vx));
+          const g = ctx.createLinearGradient(-len, 0, 0, 0);
+          g.addColorStop(0, 'rgba(124,108,255,0)');
+          g.addColorStop(1, `rgba(200,190,255,${0.55 * a * bit})`);
+          ctx.fillStyle = g;
+          ctx.globalAlpha = 1;
+          ctx.fillRect(-len, -q * 0.32, len, q * 0.64);
+          ctx.restore();
+        }
+      }
       if (bit > 0) {
         const q = s * (0.55 + 0.25 * p.cov);
         ctx.globalAlpha = a * bit;
@@ -145,10 +165,15 @@ export const explode =
     const v = push * (0.55 + random(`${seed}v${p.i}`) * 0.9);
     const travel = v * 9 * (1 - Math.exp(-u / 9)); // fast out, dragging to a stop
     const lift = -0.06 * u * u; // a touch of rise, like debris in the blast
+    const vel = v * Math.exp(-u / 9);
+    // one bit in three is blown at the camera: it swells as it comes
+    const atCam = random(`${seed}c${p.i}`) < 0.33;
     return {
       x: home.x + Math.cos(ang) * travel,
       y: home.y + Math.sin(ang) * travel + lift,
-      scale: 1 + 0.6 * Math.min(1, u / 8),
+      vx: Math.cos(ang) * vel,
+      vy: Math.sin(ang) * vel - 0.12 * u,
+      scale: atCam ? 1 + 4.5 * Math.pow(Math.min(1, u / 16), 1.4) : 1 + 0.8 * Math.min(1, u / 8),
       rot: (random(`${seed}r${p.i}`) - 0.5) * 0.35 * u,
       alpha: interpolate(u, [0, life * (0.6 + random(`${seed}l${p.i}`) * 0.6)], [1, 0], clamp),
       bit: interpolate(u, [0, 5], [0, 1], clamp),
@@ -171,10 +196,13 @@ export const assemble =
     const start = random(`${seed}s${p.i}`) * spread;
     const q = interpolate(t, [start, start + dur], [0, 1], clamp);
     const e = EASE_IN(q);
+    const de = q > 0 && q < 1 ? (EASE_IN(Math.min(1, q + 1 / dur)) - e) : 0; // progress over the next frame
     const twinkle = 0.7 + 0.3 * Math.sin(tScatter * 0.25 + p.i);
     return {
       x: from.x + (home.x - from.x) * e,
       y: from.y + (home.y - from.y) * e,
+      vx: (home.x - from.x) * de,
+      vy: (home.y - from.y) * de,
       scale: 0.9 + 0.1 * e,
       alpha: q <= 0 ? dim * twinkle : interpolate(q, [0, 0.3], [dim * twinkle, 1], clamp),
       bit: 1 - interpolate(q, [0.7, 1], [0, 1], clamp),

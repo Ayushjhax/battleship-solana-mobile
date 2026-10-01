@@ -66,6 +66,8 @@ export type MosaicTiming = {
   duoFrom: number;
   duoTo: number;
   lock: number;
+  /** local frame a light sweep starts across the full wall (optional) */
+  sweepFrom?: number;
 };
 
 const drawTile = (ctx: CanvasRenderingContext2D, a: Assets, id: number, rect: Rect, gut: number, duo: number, alpha: number, live: number) => {
@@ -176,6 +178,9 @@ export const MosaicCanvas: React.FC<{ t: number; lg: LogoPlace; timing: MosaicTi
           }
         }
         if (alpha <= 0.004) continue;
+        // a new daughter flashes as it divides off (the inheriting one doesn't)
+        const inherits = s === 0 ? true : s === 1 ? c === 0 : c % 2 === 0 && r % 2 === 0;
+        const flash = s > 0 && !inherits && q < 1 ? (1 - q) * 0.7 : 0;
         const isLive = s >= 2 && LIVE.has(`${c},${r}`) && s === STAGES.length - 1;
         if (rot) {
           ctx.save();
@@ -186,6 +191,27 @@ export const MosaicCanvas: React.FC<{ t: number; lg: LogoPlace; timing: MosaicTi
         } else {
           drawTile(ctx, assets, id, rect, gut, duo, alpha, isLive ? live + c : -1);
         }
+        if (flash > 0) {
+          ctx.globalAlpha = flash;
+          ctx.fillStyle = '#E8E4FF';
+          ctx.fillRect(rect.x + gut / 2, rect.y + gut / 2, rect.w - gut, rect.h - gut);
+        }
+      }
+    }
+    // a light sweep across the wall while it holds (only where there are tiles)
+    if (timing.sweepFrom !== undefined) {
+      const sp = interpolate(t, [timing.sweepFrom, timing.sweepFrom + 12], [-0.2, 1.2], clamp);
+      if (sp > -0.2 && sp < 1.2) {
+        const x = g.x + sp * g.w;
+        const grad = ctx.createLinearGradient(x - 160, 0, x + 160, 0);
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(0.5, 'rgba(255,255,255,0.42)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.fillStyle = grad;
+        ctx.fillRect(g.x - 200, g.y - 200, g.w + 400, g.h + 400);
+        ctx.globalCompositeOperation = 'source-over';
       }
     }
     ctx.globalAlpha = 1;

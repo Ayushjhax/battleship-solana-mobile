@@ -43,7 +43,7 @@ cards = [0.0, 0.3, 2.0, 3.5, 6.1, 7.9, 8.8, 9.6, 10.4, 11.98, 12.45, 13.1, 15.2,
 tiles = []
 for i, t in enumerate(cards):
     p = f'{dst}/_p{i:02d}.png'
-    subprocess.check_call(['ffmpeg', '-v', 'error', '-y', '-ss', str(min(t, dur - 0.04)), '-i', phone, '-frames:v', '1', p])
+    subprocess.check_call(['ffmpeg', '-v', 'error', '-y', '-ss', str(min(t, TL['DURATION'] / FPS - 0.06)), '-i', phone, '-frames:v', '1', p])
     tiles.append(p)
 subprocess.check_call(['montage'] + tiles + ['-tile', '4x', '-geometry', '+3+3', '-background', '#222', f'{dst}/phone_check.png'])
 for p in tiles:

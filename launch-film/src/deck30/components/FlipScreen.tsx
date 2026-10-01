@@ -39,14 +39,28 @@ const FlipInner: React.FC<{
   const { angle, face, turning } = flipState(frame, landings, flipFrames);
   const since = frame - landings[face];
   const sheen = interpolate(angle, [-90, 90], [130, -30]);
+  // every landing: a 4-frame punch and a specular glint racing across the glass
+  const punch = since >= 0 ? 1 + 0.035 * interpolate(since, [0, 4], [1, 0], clamp) : 1;
+  const glint = interpolate(since, [0, 7], [-0.25, 1.25], clamp);
+  const glintA = since >= 0 && since < 8 ? interpolate(since, [0, 1, 7], [0.2, 0.75, 0], clamp) : 0;
   return (
     <div style={{ position: 'absolute', inset: 0, scale: String(scale), transformOrigin: `${box.x + box.w / 2}px ${box.y + box.h / 2}px` }}>
       <Glass
         box={box}
         radius={radius}
-        style={{ transform: `perspective(2400px) rotateY(${angle}deg) scale(${1 - 0.07 * turning})`, transformOrigin: '50% 50%' }}
+        style={{ transform: `perspective(2400px) rotateY(${angle}deg) scale(${(1 - 0.07 * turning) * punch})`, transformOrigin: '50% 50%' }}
       >
         {faces[face](since)}
+        {glintA > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: `linear-gradient(115deg, rgba(255,255,255,0) ${glint * 100 - 10}%, rgba(255,255,255,${glintA}) ${glint * 100}%, rgba(200,190,255,${glintA * 0.4}) ${glint * 100 + 3}%, rgba(255,255,255,0) ${glint * 100 + 10}%)`,
+              mixBlendMode: 'screen',
+            }}
+          />
+        )}
         {turning > 0.01 && (
           <div
             style={{

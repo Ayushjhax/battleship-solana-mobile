@@ -140,7 +140,8 @@ export const SHOTS = {
     cam: [[33, 330, 410, 1.35], [34.2, 420, 410, 1.45], [35, 394, 405, 1.5], [36, 394, 405, 1.58]],
   },
   // split screen, left: the Bomber armed, released, across the enemy board — the impact lands on 40
-  run: { src: 'raid', from: 36, to: 40, in: 1.286, cam: [[36, 620, 260, 1.15], [37.2, 560, 235, 1.3], [38, 700, 230, 1.35], [38.5, 960, 230, 1.4], [39.5, 1000, 225, 1.4], [40, 965, 220, 1.45]] },
+  // (cam y >= 255: the HUD — names and points — stays behind the top bar, never beside the Hunter's face)
+  run: { src: 'raid', from: 36, to: 40, in: 1.286, cam: [[36, 620, 262, 1.4], [37.2, 560, 258, 1.42], [38, 700, 258, 1.42], [38.5, 960, 258, 1.45], [39.5, 1000, 258, 1.45], [40, 965, 258, 1.48]] },
   // the last ship goes down on 40; freeze on the biggest frame (3.067) and push in; sucked out on 44
   last: { src: 'raid', from: 40, to: 45, in: 2.99, freezeAt: 40.16, cam: [[40, 965, 232, 1.4], [41, 965, 215, 1.5], [44, 965, 200, 1.62], [45, 965, 175, 2.1]] },
 } as const satisfies Record<string, Shot>;
@@ -149,18 +150,18 @@ export const SHOTS = {
 export type StrobeHit = { readonly kind: 'hit'; readonly src: MediaId; readonly in: number; readonly x: number; readonly y: number; readonly zoom: number };
 export type StrobeFace = { readonly kind: 'face'; readonly crop: string };
 export const STROBE: readonly (StrobeHit | StrobeFace)[] = [
-  { kind: 'face', crop: 'st-hunter' }, //                                         3.0
-  { kind: 'hit', src: 'atomic', in: 1.0, x: 930, y: 300, zoom: 1.25 }, //         3.5  the game's white flash
+  { kind: 'face', crop: 'st-hunter' }, //                                         3.0  REAL PLAYERS.
+  { kind: 'hit', src: 'atomic', in: 1.02, x: 930, y: 300, zoom: 1.3 }, //        3.5  the game's white flash
   { kind: 'face', crop: 'st-sofa' }, //                                           4.0
-  { kind: 'hit', src: 'defense', in: 1.08, x: 466, y: 418, zoom: 1.6 }, //       4.5  plane hit
+  { kind: 'hit', src: 'defense', in: 1.5, x: 394, y: 405, zoom: 1.6 }, //        4.5  "Shot down!"
   { kind: 'face', crop: 'st-admiral' }, //                                        5.0
-  { kind: 'hit', src: 'atomic', in: 2.83, x: 905, y: 340, zoom: 1.6 }, //        5.5  3x3 marks burst
+  { kind: 'hit', src: 'atomic', in: 2.86, x: 905, y: 345, zoom: 1.6 }, //        5.5  3x3 marks burst
   { kind: 'face', crop: 'st-duo' }, //                                            6.0  REAL BATTLES.
-  { kind: 'hit', src: 'defense', in: 1.5, x: 394, y: 405, zoom: 1.5 }, //        6.5  "Shot down!"
+  { kind: 'hit', src: 'poster', in: 1.31, x: 920, y: 296, zoom: 2.4 }, //        6.5  the fireball forming (4x plate)
   { kind: 'face', crop: 'st-focus' }, //                                          7.0
-  { kind: 'hit', src: 'raid', in: 3.02, x: 965, y: 142, zoom: 1.6 }, //          7.5  the last hit
+  { kind: 'hit', src: 'defense', in: 1.12, x: 466, y: 420, zoom: 1.6 }, //       7.5  the plane hit
   { kind: 'face', crop: 'st-topdown' }, //                                        8.0
-  { kind: 'hit', src: 'atomic', in: 1.66, x: 920, y: 272, zoom: 1.6 }, //        8.5  mushroom cloud
+  { kind: 'hit', src: 'poster', in: 1.85, x: 918, y: 262, zoom: 2.3 }, //        8.5  the mushroom cloud (4x plate)
 ];
 
 /** UI clips in glass: SOURCE seconds at the moment the clip appears. */
@@ -221,7 +222,7 @@ export const CUES: readonly Cue[] = [
   { beat: 3, sfx: 'slam', db: -4 },
   { beat: 6, sfx: 'stab', db: -3, note: 'REAL BATTLES.' },
   { beat: 6, sfx: 'slam', db: -4 },
-  ...[3.5, 5.5, 8.5].map((b) => ({ beat: b, sfx: 'explosion', db: -9, note: 'strobe hit' })),
+  ...[3.5, 5.5, 6.5, 8.5].map((b) => ({ beat: b, sfx: 'explosion', db: -10, note: 'strobe hit' })),
   // THE BIT — the sonic logo: ping on 11, BOOM on 13; bits rush in; light sweep; collapse; unfold
   { beat: 11, sfx: 'sonic', db: 0, note: 'sonic logo: ping 11 → BOOM 13' },
   { beat: 13.1, sfx: 'rush', db: -7, note: 'the scattered bits rush back into the logo' },

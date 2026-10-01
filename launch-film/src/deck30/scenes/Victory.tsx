@@ -66,7 +66,7 @@ const Label: React.FC<{ text: string; t: number }> = ({ text, t }) => {
         left: 26,
         bottom: 20,
         fontFamily: FONT.card,
-        fontSize: 46,
+        fontSize: 58,
         lineHeight: 1,
         letterSpacing: '0.02em',
         color: C.offWhite,
