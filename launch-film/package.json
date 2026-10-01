@@ -8,10 +8,18 @@
     "prepare-media": "python3 scripts/prepare_media.py",
     "cast": "python3 scripts/cast.py",
     "score": "python3 scripts/score.py",
+    "deck30:score": "python3 scripts/deck30/score.py",
     "draft": "node scripts/render.mjs --draft",
     "render": "node scripts/render.mjs",
     "review": "python3 scripts/review.py",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deck30:cast": "python3 scripts/deck30/cast.py",
+    "deck30:prepare": "python3 scripts/deck30/prepare_media.py",
+    "deck30:mosaic": "python3 scripts/deck30/mosaic.py",
+    "deck30:check": "node --experimental-strip-types --no-warnings scripts/deck30/check_timeline.mjs",
+    "deck30:draft": "node scripts/deck30/render.mjs --draft",
+    "deck30:render": "node scripts/deck30/render.mjs",
+    "deck30:review": "python3 scripts/deck30/review.py"
   },
   "dependencies": {
     "@fontsource-variable/inter-tight": "5.3.0",
@@ -30,6 +38,7 @@
   },
   "devDependencies": {
     "@types/react": "19.2.2",
+    "opentype.js": "1.3.4",
     "typescript": "5.9.3"
   }
 }

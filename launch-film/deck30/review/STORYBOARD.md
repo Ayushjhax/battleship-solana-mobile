@@ -1,0 +1,46 @@
+# Deck30 — storyboard
+
+**Empire of Bits · 30-second deck film.** 1920×1080, 30 fps, 900 frames = 30.0 s. The song is the trailer's
+(`demo-assets/music/Music.mp3`, A minor), which measures **140 BPM**, so the brief's 120-BPM sheet is re-gridded:
+1 beat = 0.4286 s = 12.86 frames, one-beat pickup, downbeats on film beats 1 + 4k. All times below come from
+`src/deck30/timeline.ts` (frames = round(beat × 12.857)). Source times are seconds in `demo-assets/`.
+
+**The idea:** the slide that explodes. Frame 0 is a finished poster; frame 899 is the trailer's end card. In between,
+one bit becomes an empire: the logo, a base, a fleet, a battle, a victory, then hundreds of real players who sculpt
+themselves into the logo — with one bit left empty: yours.
+
+| # | Beats | Time | Section | Picture | Source | Text | Sound |
+|---|---|---|---|---|---|---|---|
+| 1 | 0–1 | 0:00.00–0:00.43 | **Poster** (frame 0) | The Atomic Bomber's fireball frozen at its fullest, pushed in to ~600 px, the paper around it burnt down to deep ink-violet, warm bloom; the logo lockup small and confident at the bottom, its bit glowing. A barely-there push. | `arsenal-attack.mp4` @ **1.40** (Real-ESRGAN 4× plate, the same clip ALIVE plays) | Logo | A breath in: reversed explosion tail swelling into the hit |
+| 2 | 1–3 | 0:00.43–0:01.30 | **★1 ALIVE** | Time cracks back on: 2-frame flash (white → violet), zoom punch 1.08 → 1.00, micro-shake; the fireball rolls into the mushroom cloud; a shockwave ring races out and **blows the logo apart into bits** along it. | `arsenal-attack.mp4` 1.40 → 2.27 | — | Game nuke + explosion + sub boom; granular glass sweep (the shatter). Music: the drums enter (track −32) |
+| 3 | 3–9 | 0:01.30–0:03.86 | **Real** | Strobe on the 8ths, 12 cuts of 6–7 frames: a player, then a battle hit. Plates dimmed under the text. | faces: Hunter, Crew + Captain, Admiral, Duo, Focus, Topdown · hits: `arsenal-attack` 1.00 (the game's white flash), `defense` 1.08 (plane hit), `arsenal-attack` 2.83 (3×3 burst), `defense` 1.50 ("Shot down!"), `base-attack` 3.02 (last hit), `arsenal-attack` 1.66 (mushroom) | "REAL PLAYERS." (3) · "REAL BATTLES." (6) | A stab + sub hit per card, ticks on every 8th, explosion under the hits. One bar of the song skipped on the −24 kick (beat 5) |
+| 4 | 9–17 | 0:03.86–0:07.29 | **★2 The bit** | Hard cut to black. The scattered bits drift faintly; one glowing bit fades up and **pings** (11). On the downbeat (13) it **BOOMs**: the bits rush back and lock into the logo under a light sweep (14). At 16 the logo collapses back into the bit, which unfolds into a glass screen (16.5 → 17). | the logo (`assets/ink/brand/logo.png` via the trailer's @3x mask) | Logo | **Sonic logo: ping (11) → BOOM (13)**. Music muffled (low-pass) under the black, thrown open by the BOOM on the track's −16 hit |
+| 5 | 17–25 | 0:07.29–0:10.71 | **★3 The flip** | One glass screen flips (rotateY, motion-blurred) and lands face-on exactly on 17, 19, 21, 23. **Base**: the AA gun lands on the board, defence + Port City art snapping around the edges · **Fleet**: the four ships rise out of the glass into a lineup, names beneath · **Arsenal**: the weapons rise into a carousel, the Atomic Bomber centred and glowing · **Rival**: radar sweep → punch into the VS → the rival's facecam slides in, locked. | `buildyourbase.mp4` 3.9–5.0 (AA gun placed), 1.35 (8 ships), 1.6 (Arsenal panel); `matchmaking.mp4` 0.8–2.75 (radar), 2.95–3.17 (VS, frozen before the name plates); fleet + arsenal art; Admiral facecam | "BUILD YOUR BASE." "ASSEMBLE YOUR FLEET." "LOAD YOUR ARSENAL." "FIND YOUR RIVAL." | The build + kick roll (track −12 … −4); a whoosh + glassy tick per flip, a slam per label, metallic ticks per piece, lock on the Atomic Bomber, sonar ping, VS stamp |
+| 6 | 25–28 | 0:10.71–0:12.00 | **★4 FIRE** | One last flip: the back of the screen is the game's board (two 10×10 boards, A–J × 1–10, as in battle) and we push into it as the **letterbox slides in**. Lock-on brackets snap onto cells — 8ths, 16ths, 32nds — and the lit cells spell **FIRE** in pixels across the two boards. | drawn in the game's tokens (`src/engine/types.ts`, `src/board/layout.ts`) | "FIRE" (pixels) | A rising digital tick per lock (14), pitch climbing |
+| 7 | 28–29 | 0:12.00–0:12.43 | **Silence** | Everything stops. The word hangs, with no period. | — | FIRE | **Digital silence** (the track's own gap) |
+| 8a | 29–31 | 0:12.43–0:13.29 | **★5 The drop** | **The period — the bit — slams in after E and detonates**: a 2-frame white flash blooms out of it, hard cut into the game's own white flash, the fireball blooming wide over the whole enemy board, zoom punch, micro-shake. | `arsenal-attack.mp4` 1.00 → 1.86 (2× plate) | "HIT." (30) | **The trailer's drop, untouched** (track 0–16) + nuke + sub boom |
+| 8b | 31–36 | 0:13.29–0:15.43 | | Beat cuts with speed ramps: smoke → the 3×3 marks burst on 32 (**Crew facecam** pops); the AA gun: approach at 2×, fires on 33.46, plane hit 34.2, **"Shot down!" lands on 35** (**Captain facecam** pops). | `arsenal-attack` 2.40–3.26; `defense.mp4` 0.30 → 1.93 (ramps 2.06× / 1.2× / 1×) | — | explosion, pop, shot_fire, plane_down, stamp, pop |
+| 8c | 36–40 | 0:15.43–0:17.14 | | **Grid wipe** (the only one) into a split screen: the Bomber's run across the enemy board on the left, the **Hunter** watching on the right. | `base-attack.mp4` 1.29 → 3.00 | — | wipe, whoosh, bomb whistle into the hit |
+| 8d | 40–45 | 0:17.14–0:19.29 | | **The last ship goes down** on 40; freeze on its biggest frame (3.067) and push in; **SUNK.** On 44 the picture and the music **suck out**. | `base-attack.mp4` 2.99 → 3.067 freeze | "SUNK." (41) | explosion + boom + ship_sink; suck-out |
+| 9 | 45–49 | 0:19.29–0:21.00 | **★6 VICTORY** | Hard cut on the downbeat: "VICTORY." fills ~85 % of the width — real Anton glyph outlines with **the game's victory screen playing inside the letters**, a hairline highlight on the edges, a light sweep crossing. On 48 the camera **flies through the O** (its counter is a true hole) as the letterbox pulls back. | `base-attack.mp4` 4.90 → 6.57 (the result screen, framed on its art) | "VICTORY." | **The biggest hit of the film** (victory + boom + slam + flash + shake); whoosh opening through the O |
+| 10 | 49–55 | 0:21.00–0:23.57 | **Economy** | Out of the O into a bento of five glass tiles, snapping in on the 8ths with labels; each plays its UI clip. On 53 the camera flies into the leaderboard; on 54 it punches into the #1 row (names and points soft). | `leaderboard.mp4` 0.90 (blurred), `buy_points` 3.82→, `sell_points` 1.6→, `store` 0.8→, `wallet_profile` 1.3 (address blurred) | "LEADERBOARD" "BUY POINTS" "SELL POINTS" "STORE" "WALLET" | A soft tick per tile; coin flow; whoosh in; stamp on the row |
+| 11 | 55–61 | 0:23.57–0:26.14 | **★7 One becomes all** | The #1 row's highlight collapses into the bit. It divides on the 8ths — **1 → 4 → 16 → 64 → 256** — every tile a real player (six live GIF tiles) or a real battle, the gutters shrinking. The 32×8 grid is the logo's own pixel grid: on 59 the tiles outside the silhouette fall away, the rest duotone and **lock into the logo on 61** as the crisp logo resolves through them. One bit stays empty and glowing. | the mosaic (`scripts/deck30/mosaic.py`): 87 player crops, the live GIF, 30 battle frames | — | A riser stepping up a note per division; a pitched step per division; the lock hit on 61 |
+| 12 | 61–65 | 0:26.14–0:27.86 | **Live** | The logo eases up; the Solana dApp Store image rises beneath it; "Your move." fades in between them on 63. | `public/brand/dapp-store.png` | "Your move." | Warm pad, soft tick. The song's final chord rings out (track 356) |
+| 13 | 65–70 | 0:27.86–0:30.00 | **Landing** | On the downbeat the empty bit pings once. **The trailer's end card**, held to the last frame. No fade. | — | (end card) | **Sonic logo: ping (65) → BOOM (67)**; the tail rings out on the final frame |
+
+Wows (★): 1 ALIVE 0:00.43 · 2 the bit 0:05.57 · 3 the flip 0:07.29 · 4 FIRE 0:10.71 · 5 the drop 0:12.43 · 6 VICTORY
+0:19.29 · 7 one becomes all 0:23.57 (lock 0:26.14) · landing 0:27.86. Longest gap without a wow or a big hit: the
+drop's hits keep 0:12.4–0:19.3 dense (12.4, 12.9, 13.7, 14.6, 15.0, 17.1, 17.6).
+
+## The music edit (`MUSIC_EDIT`)
+
+| Film beats | Film time | Track beats | Source seconds | What |
+|---|---|---|---|---|
+| 0–5 | 0.00–2.14 | −33 … −28 | 6.44–8.58 | intro pad pickup → **ALIVE on the drums entering** (−32) |
+| 5–28 | 2.14–12.00 | −24 … −1 | 10.29–20.16 | one bar skipped (cut on the −24 kick); breakdown under the bit (low-passed 9–13); **BOOM on the −16 hit**; build + kick roll under the flips; the built-in gap under FIRE |
+| 28–29 | 12.00–12.43 | — | — | digital silence |
+| 29–61 | 12.43–26.14 | 0 … 32 | 20.58–34.30 | **the trailer's drop** (first 16 beats untouched; suck-out on 44), VICTORY on track 16, the groove under the economy and the mosaic |
+| 61–70 | 26.14–30.00 | 356 … 365 | 173.16–177.01 | the song's final chord rings out under the end card |
+
+Ducks under ALIVE, the logo, the drop, the last hit, VICTORY, the lock and the end logo. Cuts on bar lines with 10 ms
+equal-power crossfades. Not the trailer's mix: the bed is the song itself; every effect is placed fresh.

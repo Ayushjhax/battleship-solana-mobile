@@ -43,3 +43,11 @@ All seven tests pass: hook (fireball f0, card by 0.47 s), sound-off story, phone
 640×360), rhythm (cuts on burned-in beats; silence, drop and landing on their hits), cast (4 different people, whole
 faces, one grade), honesty (only the game's names/numbers; no quotes; wager line cropped out of CLIMB.), finale (end
 card complete from 42.2 s, held 2.8 s to the last frame, 45.0 s). No further fixes → final render.
+
+## Round 4 — client notes
+
+- Sting line "AN EMPIRE OF BITS ORIGINAL" → "EMPIRE OF BITS".
+- 0:27–0:28 broke the flow (dim + one-beat silence, then a jump to the track's second drop). Now drop 1 runs unbroken
+  from beat 46 through the battle, VICTORY and the economy; the dim is gone. Re-rendered: −13.8 LUFS, −1.2 dBTP, 45.0 s.
+- 0:35 broke the flow (black breath beat + silence, then a jump to the track's last build). Now the wall of players
+  appears on beat 82 as the letterbox opens and drop 1 runs unbroken into the swarm until the landing on 91.
