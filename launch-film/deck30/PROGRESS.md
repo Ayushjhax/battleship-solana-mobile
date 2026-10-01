@@ -11,9 +11,9 @@ review pack: `deck30/review/`, deliverables: `out/deck30/`.
 | 2 · Music + grid | done | `src/deck30/timeline.ts` (140 BPM, 70 beats, 900 frames; `scripts/deck30/check_timeline.mjs`); `scripts/deck30/analyze_music.py`; `scripts/deck30/score.py` (built by a sound-design subagent on the trailer's `score.py`, unmodified). |
 | 3 · Storyboard | done | `deck30/review/STORYBOARD.md` |
 | 4 · Style frames | done | `deck30/review/style-frames/` (1920×1080) + `style-frames.jpg`. All seven wows built for real. |
-| 5 · Animatic | in progress | `deck30/review/animatic.mp4` (960×540, with the score) |
-| 6 · Full build + sound | | |
-| 7 · Quality gate ×3 | | |
+| 5 · Animatic | done | `deck30/review/animatic.mp4` (960×540, with the score) |
+| 6 · Full build + sound | done | All scenes built; score by `scripts/deck30/score.py` (−14 LUFS, −1.5 dBTP, digital-zero silence); picture rendered `--muted` and muxed with ffmpeg (sample-accurate). |
+| 7 · Quality gate ×3 | in progress | `deck30/REVIEW.md`: rounds 1–2 written; round 3 on the Real-ESRGAN plates. |
 | 8 · Final + deliver | | |
 
 ## Decisions
