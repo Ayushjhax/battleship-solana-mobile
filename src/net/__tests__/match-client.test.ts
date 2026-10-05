@@ -487,6 +487,31 @@ describe('match client', () => {
     expect(new Set(ids).size).toBe(1);
   }, 20_000);
 
+  // BUG-005: when the other captain cancelled a wagered match before it
+  // started, the store was reset wholesale — the queue choice with it — so
+  // "Try again" had nothing to re-queue and the screen sat on "Connecting…".
+  it('re-queues on "Try again" after the opponent cancels, with a fresh stake request', async () => {
+    const mc = await client();
+    mc.getState().queue('classic', { wagered: true });
+    await until(() => mc.getState().status === 'queued', 5000, 'queued');
+    const first = server.received.filter((m) => m.t === 'queue').at(-1) as Extract<ClientMessage, { t: 'queue' }>;
+    server.alice?.send(
+      JSON.stringify({ t: 'queue:cancelled', v: 1, refunded: true, reason: 'opponent_cancelled', pointBalance: 100 }),
+    );
+    await until(() => mc.getState().status === 'failed', 5000, 'failed');
+    expect(mc.getState().failure?.reason).toBe('match_cancelled');
+
+    const queuesBefore = server.received.filter((m) => m.t === 'queue').length;
+    mc.getState().retry();
+    await until(() => server.received.filter((m) => m.t === 'queue').length > queuesBefore, 8000, 'a new queue');
+    const again = server.received.filter((m) => m.t === 'queue').at(-1) as Extract<ClientMessage, { t: 'queue' }>;
+    expect(again).toMatchObject({ mode: 'classic', wagered: true, opponent: 'player' });
+    // The old hold was refunded; reserving it again would be refused.
+    expect(again.wagerRequestId).toBeDefined();
+    expect(again.wagerRequestId).not.toBe(first.wagerRequestId);
+    await until(() => mc.getState().status === 'queued', 5000, 'queued again');
+  }, 20_000);
+
   it('sends and hears emotes over the socket when the server relays them', async () => {
     server.emotes = true;
     const mc = await playUntilPlaying();

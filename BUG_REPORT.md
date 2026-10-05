@@ -49,7 +49,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-002 | High | Fixed | A late close of a player's old socket detaches their live match seat → forfeit |
 | BUG-003 | High | Fixed | Re-queueing from a new socket: `matched` goes to the dead socket, or the player is silently dropped from the queue while the app shows "In line" |
 | BUG-004 | High | Fixed | Android back on "Finding an opponent" leaves the player queued in the background → silent forfeit (and stake) |
-| BUG-005 | Medium | Open | "Try again" after an opponent cancels a wagered match dead-ends on "Connecting…" |
+| BUG-005 | Medium | Fixed | "Try again" after an opponent cancels a wagered match dead-ends on "Connecting…" |
 | BUG-006 | Medium | Open | Double-tapping Battle! can open two searching/battle screens (double-speed turn clock; hot-seat skips player 2's placement) |
 | BUG-007 | Medium | Open | Changing your avatar from Settings or Profile stacks a new menu on top instead of going back |
 | BUG-008 | Medium | Open | `npm run typecheck` fails and `npm run lint` crashes: root tooling sweeps in the nested video projects |
@@ -171,7 +171,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 ## Medium
 
 ### BUG-005 — "Try again" after the opponent cancels does nothing
-- **Severity:** Medium · **Status:** Open
+- **Severity:** Medium · **Status:** Fixed — the opponent-cancel reset keeps the queue choice
+  (mode, wager, opponent) and a fresh wager request id, so `retry()` re-queues. Test:
+  `src/net/__tests__/match-client.test.ts` ("re-queues on \"Try again\"…").
 - **Where:** `src/net/match-client.ts:742-770` (`queue:cancelled` resets everything,
   including `mode`), `src/net/match-client.ts:1173-1194` (`retry()` with no mode just goes
   idle).

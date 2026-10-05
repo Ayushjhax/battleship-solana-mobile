@@ -790,6 +790,12 @@ function handleMessage(message: ServerMessage): void {
           ? {
               ...EMPTY,
               status: 'failed',
+              // What the player chose stays, so "Try again" re-queues it. The
+              // refunded hold is spent, so a wagered retry needs a new request.
+              mode: s.mode,
+              wagered: s.wagered,
+              queueOpponent: s.queueOpponent,
+              wagerRequestId: s.wagered ? randomUuid() : null,
               failure: {
                 reason: 'match_cancelled',
                 detail: 'The other captain cancelled before the battle began. Your wager was refunded.',
