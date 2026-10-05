@@ -6,7 +6,7 @@ import { validateSubmission } from '@engine/match';
 import { validateArsenalPlacement } from '@engine/placement';
 import type { ArsenalItem, ArsenalKind, Orientation, ShipClass } from '@engine/types';
 import { Image } from 'expo-image';
-import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   forwardRef,
   memo,
@@ -54,6 +54,7 @@ import { usePoints } from '@/state/points';
 import { ArtImageButton } from '@/ui/ArtImageButton';
 import { ArtPlate } from '@/ui/ArtPlate';
 import { BACKGROUNDS, BATTLE_ART, FLEET_ART } from '@/ui/assets';
+import { createOncePerFocus } from '@/ui/oncePerFocus';
 import { Scale, useScale } from '@/ui/Scale';
 import { CANVAS_H, CANVAS_W, artColor, color, font } from '@/ui/tokens';
 import { RoughShape, hashString, useRough } from '@/ui/useRough';
@@ -1128,6 +1129,9 @@ function PlacementCanvas() {
   const requestedWager = (Array.isArray(params.wager) ? params.wager[0] : params.wager) === '1';
   const sessionSeed = useRef((Date.now() ^ 0x5ea71e) >>> 0);
   const shuffleSeed = useRef(sessionSeed.current + 1);
+  // One launch per visit: a double tap on Battle! opened two screens (BUG-006).
+  const launch = useRef(createOncePerFocus()).current;
+  useFocusEffect(useCallback(() => launch.reopen(), [launch]));
   const previewRef = useRef<PreviewHandle>(null);
   const [fuelShakeNonce, setFuelShakeNonce] = useState(0);
   // Only an online match can carry a stake: the server has to see the game to
@@ -1286,7 +1290,8 @@ function PlacementCanvas() {
       state.beginSecondPlayer(shuffleSeed.current++);
       return;
     }
-    if (state.mode === 'hotseat') state.finishSecondPlayer();
+    if (state.mode === 'hotseat' && !state.finishSecondPlayer().ok) return;
+    if (!launch.take()) return;
     if (state.mode === 'online') {
       // P13 owns the live socket; the placement store remains the payload source.
       router.push({
@@ -1296,7 +1301,7 @@ function PlacementCanvas() {
       return;
     }
     router.push('/battle');
-  }, [pointBalance, pointsReady, router, wagered]);
+  }, [launch, pointBalance, pointsReady, router, wagered]);
 
   const showsPicker = mode === 'ai';
   const showsWager = mode === 'online';

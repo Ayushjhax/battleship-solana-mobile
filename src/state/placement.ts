@@ -349,6 +349,9 @@ export const usePlacement = create<PlacementState>((set, get) => ({
 
   finishSecondPlayer: () => {
     const state = get();
+    // Player two hasn't taken the device yet: a second tap on Battle! landing
+    // under the curtain must not start the battle on a fleet they never saw.
+    if (state.handoffVisible) return { ok: false, reason: 'hand the device to player two first' };
     const check = validateLayout(state.ships);
     if (!check.ok || state.ships.length !== FLEET_SHIP_COUNT) {
       const reason = check.ok ? 'place every ship before battle' : check.reason;

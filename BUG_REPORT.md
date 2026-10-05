@@ -50,7 +50,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-003 | High | Fixed | Re-queueing from a new socket: `matched` goes to the dead socket, or the player is silently dropped from the queue while the app shows "In line" |
 | BUG-004 | High | Fixed | Android back on "Finding an opponent" leaves the player queued in the background → silent forfeit (and stake) |
 | BUG-005 | Medium | Fixed | "Try again" after an opponent cancels a wagered match dead-ends on "Connecting…" |
-| BUG-006 | Medium | Open | Double-tapping Battle! can open two searching/battle screens (double-speed turn clock; hot-seat skips player 2's placement) |
+| BUG-006 | Medium | Fixed | Double-tapping Battle! can open two searching/battle screens (double-speed turn clock; hot-seat skips player 2's placement) |
 | BUG-007 | Medium | Open | Changing your avatar from Settings or Profile stacks a new menu on top instead of going back |
 | BUG-008 | Medium | Open | `npm run typecheck` fails and `npm run lint` crashes: root tooling sweeps in the nested video projects |
 | BUG-009 | Medium | Needs decision | The server's private Solana RPC key ships inside the APK (local `.env` config) |
@@ -187,7 +187,11 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   opponent-cancel so `retry()` re-queues it, with a fresh wager request id.
 
 ### BUG-006 — Double-tapping Battle! opens two screens
-- **Severity:** Medium · **Status:** Open (found by reading; not reproduced on a device)
+- **Severity:** Medium · **Status:** Fixed (the double push itself still not reproduced on a
+  device) — placement lets one launch through per focus (`src/ui/oncePerFocus.ts`), and
+  `finishSecondPlayer` refuses while the hot-seat handover curtain is up, with
+  `beginBattle` now respecting its result. Tests: `tests/ui/once-per-focus.test.ts`,
+  `src/state/__tests__/placement.test.ts` ("hot-seat handover").
 - **Where:** `app/(game)/placement.tsx:1264` (`beginBattle`: no re-entry guard except while
   staking), `app/(game)/placement.tsx:1437`.
 - **What's wrong:** a fast second tap runs `beginBattle` again before the screen changes:

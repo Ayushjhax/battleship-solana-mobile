@@ -69,3 +69,30 @@ describe('placement store', () => {
     expect(usePlacement.getState().arsenal).toEqual([]);
   });
 });
+
+// BUG-006: a fast double tap on Battle! ran the launch twice. In hot-seat the
+// first tap handed the device to player two (beginSecondPlayer) and the second
+// tap, seeing hotseatPlayer === 2, finished player two's placement at once —
+// starting the battle on an auto-placed fleet player two never saw.
+describe('hot-seat handover', () => {
+  beforeEach(() => usePlacement.getState().initialize('hotseat', 7, 'classic'));
+
+  it("won't finish player two's placement while the handover curtain is still up", () => {
+    const store = usePlacement.getState();
+    expect(store.beginSecondPlayer(8)).toEqual({ ok: true });
+    expect(usePlacement.getState().handoffVisible).toBe(true);
+
+    const early = usePlacement.getState().finishSecondPlayer();
+
+    expect(early.ok).toBe(false);
+    expect(usePlacement.getState().playerTwoShips).toBeNull();
+  });
+
+  it('finishes it once player two has taken the device', () => {
+    usePlacement.getState().beginSecondPlayer(8);
+    usePlacement.getState().dismissHandoff();
+
+    expect(usePlacement.getState().finishSecondPlayer()).toEqual({ ok: true });
+    expect(usePlacement.getState().playerTwoShips).toHaveLength(FLEET_SHIP_COUNT);
+  });
+});
