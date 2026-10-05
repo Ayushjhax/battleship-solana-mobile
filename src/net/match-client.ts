@@ -339,6 +339,11 @@ export interface SocketEmote {
 }
 const emoteListeners = new Set<(emote: SocketEmote) => void>();
 
+/** Whether the match server this client last said hello to relays emotes. */
+export function emotesRelayedByServer(): boolean {
+  return serverRelaysEmotes;
+}
+
 /** Sends an emote through the match server. False when this server can't relay it (or no socket). */
 export function sendEmoteOverSocket(emoteId: number): boolean {
   if (!serverRelaysEmotes || !useMatchClient.getState().matchId) return false;

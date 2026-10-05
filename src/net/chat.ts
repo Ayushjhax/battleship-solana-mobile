@@ -6,7 +6,13 @@
  * server they go over the private Realtime match channel `match:{matchId}` —
  * broadcast only, never game state. RLS on realtime.messages lets only the
  * two players of the match in (0005_realtime.sql), so a stranger's subscribe
- * fails with CHANNEL_ERROR. Both are listened to; a sender uses exactly one.
+ * fails with CHANNEL_ERROR.
+ *
+ * Realtime is the fallback only: a phone whose server relays emotes never
+ * joins the channel. Joining it anyway cost a Realtime join per match for a
+ * channel that, with both phones current, carried nothing (BUG-023). The price
+ * is that an opponent still on an APK from before socket emotes — which only
+ * ever sends over Realtime — isn't heard; they can't hear us either.
  *
  * Offline matches (ai, hotseat, tutorial) have no channel: sending resolves
  * and nothing is broadcast.
@@ -22,7 +28,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 import { isForcedOffline } from '@/state/demo';
-import { onServerEmote, sendEmoteOverSocket } from './match-client';
+import { emotesRelayedByServer, onServerEmote, sendEmoteOverSocket } from './match-client';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface EmoteMessage {
@@ -34,7 +40,8 @@ export interface EmoteMessage {
 type Listener = (message: EmoteMessage) => void;
 
 interface Entry {
-  readonly channel: RealtimeChannel;
+  /** Null when the match server relays emotes, or Supabase isn't configured. */
+  readonly channel: RealtimeChannel | null;
   readonly listeners: Set<Listener>;
   /** Stops hearing the match server's relayed emotes. */
   readonly offSocket: () => void;
@@ -58,9 +65,12 @@ function open(matchId: string): Entry {
     }
     return entry;
   }
-  const channel = supabase.channel(`match:${matchId}`, {
-    config: { private: true, broadcast: { self: false } },
-  });
+  const channel =
+    emotesRelayedByServer() || !isSupabaseConfigured
+      ? null
+      : supabase.channel(`match:${matchId}`, {
+          config: { private: true, broadcast: { self: false } },
+        });
   const listeners = new Set<Listener>();
   const deliver = (message: EmoteMessage) => {
     for (const listener of listeners) listener(message);
@@ -69,7 +79,7 @@ function open(matchId: string): Entry {
   const created: Entry = { channel, listeners, offSocket, releaseTimer: null };
   entries.set(matchId, created);
   channel
-    .on('broadcast', { event: 'emote' }, ({ payload }) => {
+    ?.on('broadcast', { event: 'emote' }, ({ payload }) => {
       const p = payload as Partial<EmoteMessage>;
       if (typeof p.emoteId !== 'number' || typeof p.from !== 'string') return;
       deliver({ matchId, from: p.from, emoteId: p.emoteId });
@@ -90,7 +100,7 @@ function release(matchId: string): void {
     }
     entries.delete(matchId);
     entry.offSocket();
-    void supabase.removeChannel(entry.channel);
+    if (entry.channel) void supabase.removeChannel(entry.channel);
   }, HANDOVER_GRACE_MS);
 }
 
@@ -101,7 +111,7 @@ export async function sendEmote(message: EmoteMessage): Promise<void> {
   if (!isSupabaseConfigured) return;
   try {
     const entry = entries.get(message.matchId);
-    if (!entry || entry.channel.state !== 'joined') return; // subscribeEmotes() opens it; no join, no send
+    if (!entry?.channel || entry.channel.state !== 'joined') return; // subscribeEmotes() opens it; no join, no send
     await entry.channel.send({ type: 'broadcast', event: 'emote', payload: message });
   } catch (error) {
     console.warn('[chat] emote not sent', error);
@@ -109,11 +119,12 @@ export async function sendEmote(message: EmoteMessage): Promise<void> {
 }
 
 /**
- * Opens (or joins) the match channel and delivers the opponent's emotes.
+ * Delivers the opponent's emotes — from the match socket, or from the match
+ * channel, which this opens (or joins) when the server doesn't relay them.
  * Returns the unsubscribe. Pass no listener just to warm the channel up.
  */
 export function subscribeEmotes(matchId: string, onEmote?: Listener): () => void {
-  if (!isSupabaseConfigured || isForcedOffline() || !isServerMatch(matchId)) return () => {};
+  if (isForcedOffline() || !isServerMatch(matchId)) return () => {};
   const entry = open(matchId);
   const listener: Listener = onEmote ?? (() => {});
   entry.listeners.add(listener);

@@ -230,13 +230,14 @@ that looks like a rectangle from a UI kit.
   (`{type: string}` + passthrough) because the engine's event union keeps growing and
   `applyEvent` already has a default case.
 - **Game state comes from the socket only.** Emotes ride the match socket too when the
-  server's `hello:ok` carries `emotes: true` (the room relays `emote` to the other seat); a
-  sender then never touches Realtime. Against an older server they fall back to Supabase
-  Realtime `match:{id}` — `chat.ts` listens to both, ref-counts the channel with a hand-over
-  grace, so searching.tsx warms it up during the reveal and battle.tsx takes it over;
-  `lobby:{mode}` presence is the online count. Never send an `emote` to a server that didn't
-  advertise it: an unknown message type counts as a protocol violation. Realtime is the
-  fallback only; a phone whose server answered `emotes: true` never touches it.
+  server's `hello:ok` carries `emotes: true` (the room relays `emote` to the other seat).
+  Against an older server they fall back to Supabase Realtime `match:{id}` — `chat.ts`
+  ref-counts that channel with a hand-over grace, so searching.tsx warms it up during the
+  reveal and battle.tsx takes it over; `lobby:{mode}` presence is the online count. Never
+  send an `emote` to a server that didn't advertise it: an unknown message type counts as a
+  protocol violation. Realtime is the fallback only; a phone whose server answered
+  `emotes: true` never joins the match channel (BUG-023) — so it can't hear an opponent on
+  an APK from before socket emotes, which only sends over Realtime.
 - The flow is place first, then queue: placement → `/searching` (`queue`) → `matched` →
   `ready` with the placement store's fleet, immediately → arena reveal 2 s → `/battle`.
   The server's 90 s layout deadline is the *opponent's* problem; ours is already in.
