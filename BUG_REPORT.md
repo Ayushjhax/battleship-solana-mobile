@@ -59,10 +59,10 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-012 | Low | Fixed | Misleading failure text ("…for 45 seconds… counted as a loss", every failure titled "No connection") |
 | BUG-013 | Low | Fixed | Hot-seat names screen's endless caret animation keeps running under the whole hot-seat match |
 | BUG-014 | Low | Fixed | Android back on How to Play probably leaves the guide instead of turning back a page |
-| BUG-015 | Low | Needs decision | expo-doctor 20/21: six Expo packages a patch version behind |
+| BUG-015 | Low | Won't fix (deferred) | expo-doctor 20/21: six Expo packages a patch version behind |
 | BUG-016 | Low | Open | A failing wagered settlement retries forever and blocks both players from queueing |
 | BUG-017 | Low | Open | With both captains away, the turn clock keeps running and can forfeit one of them inside the abandon window |
-| BUG-018 | Low | Open | Signing out discards a won-but-unpaid offline wager |
+| BUG-018 | Low | Fixed (by BUG-001) | Signing out discards a won-but-unpaid offline wager |
 | BUG-019 | Low | Open | Store purchases made as "guest" can appear under the next account on the device |
 | BUG-020 | Low | Open | Leaderboard briefly shows the previous account's "you" row after switching accounts |
 | BUG-021 | Low | Fixed (with BUG-010) | Offline-result rewards are hard-coded in SQL (drift risk against `REWARD`) |
@@ -325,7 +325,8 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 - **Proposed fix:** add `/how-to-play` to the exempt routes.
 
 ### BUG-015 — expo-doctor 20/21
-- **Status:** Needs decision
+- **Status:** Won't fix in this pass — deferred, per your decision, to a separate branch so
+  the version bump (and the dev-client rebuild it needs) isn't mixed in with these fixes.
 - **What's wrong:** these packages are a patch version behind SDK 57:
 
   | Package | Installed | Expected |
@@ -358,6 +359,10 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 - **Proposed fix:** clear the turn timer while every human is away, and re-arm it on attach.
 
 ### BUG-018 — Sign-out drops an unpaid offline wager win
+- **Status:** Fixed by BUG-001 — there are no offline wager wins any more. A stake an older
+  build left pending is refunded on the next launch (`src/net/offlineWager.ts`); if the player
+  signs out first, the stake stays held on the server and the next reservation hands it back
+  (`reserve_point_wager` reuses an unmatched hold) rather than charging again.
 - **Where:** `app/profile.tsx:125-132`, `src/state/points.ts:95`.
 - **What's wrong:** `usePoints.clear()` throws away `pendingWagerSettlement`. If you win an
   offline wager while the server is unreachable and then sign out, the win is never paid.
