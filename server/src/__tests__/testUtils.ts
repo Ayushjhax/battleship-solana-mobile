@@ -42,6 +42,8 @@ export interface DbMockOptions {
   readonly settleDelayMs?: number;
   /** Holds up the profile lookup a queue join waits on — a slow database. */
   readonly profileDelayMs?: number;
+  /** Rank points per player id; anyone not listed has 0. */
+  readonly rankPoints?: Readonly<Record<string, number>>;
 }
 
 export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } {
@@ -64,7 +66,7 @@ export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } 
         avatarId: 1,
         avatarColor: 'violet',
         countryCode: null,
-        rankPoints: 0,
+        rankPoints: options.rankPoints?.[userId] ?? 0,
         isBot: userId === 'b0000000-0000-4000-8000-000000000001',
       };
     }),

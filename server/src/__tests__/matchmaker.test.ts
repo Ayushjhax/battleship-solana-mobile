@@ -289,6 +289,59 @@ describe('matchmaking under concurrency', () => {
   }, 20000);
 });
 
+describe('two captains far apart in rank', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installAuthMock();
+    // 400 apart: outside the starting 150-point window, so before the fix the
+    // pair sat in line for 10 s until the window widened.
+    installDbMock({ rankPoints: { veteran: 400, rookie: 0 } });
+  });
+
+  it('seats them at once when nobody else is in line', async () => {
+    const server = await startTestServer();
+    const veteran = await queueUp(server, 'veteran');
+    await veteran.waitFor((m) => m.t === 'queued', 5000);
+    const rookie = await queueUp(server, 'rookie');
+
+    const matched = await veteran.waitFor((m) => m.t === 'matched', 1500);
+    expect((matched.opponent as { id: string }).id).toBe('rookie');
+    await rookie.waitFor((m) => m.t === 'matched', 1500);
+
+    veteran.close();
+    rookie.close();
+    await server.close();
+  }, 15000);
+});
+
+describe('the online count while in line', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installAuthMock();
+    installDbMock();
+  });
+
+  it('tells the first captain when a second joins and leaves', async () => {
+    const server = await startTestServer();
+    const first = await queueUp(server, 'count-a', { mode: 'classic' });
+    expect(await first.waitFor((m) => m.t === 'queued', 5000)).toMatchObject({ onlineCount: 1 });
+
+    // A different ruleset, so the two stay in line and the count is all that moves.
+    const second = await queueUp(server, 'count-b', { mode: 'advanced' });
+    expect(await second.waitFor((m) => m.t === 'queued', 5000)).toMatchObject({ onlineCount: 2 });
+    await first.waitFor((m) => m.t === 'queued' && m.onlineCount === 2, 2000);
+
+    second.close();
+    await first.waitFor((m) => m.t === 'queued' && m.onlineCount === 1, 3000);
+    // Unchanged status is not re-sent every sweep.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(first.history().filter((m) => m.t === 'queued')).toHaveLength(3);
+
+    first.close();
+    await server.close();
+  }, 15000);
+});
+
 describe('a slow database behind a queue join', () => {
   beforeEach(() => {
     vi.resetModules();

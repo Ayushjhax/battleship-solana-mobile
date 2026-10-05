@@ -67,6 +67,13 @@ const rescan = new Set<QueueKey>();
  * clear the "already queued" check inside that window and be seated twice.
  */
 const joining = new Set<string>();
+/**
+ * The last `queued` each waiting entry was told, as `position:onlineCount`.
+ * `queued` used to go out once, at join, so whoever joined first sat looking
+ * at "1 sailor online" while the other phone read 2 — it looked like the two
+ * could not see each other. `notifyWaiting` re-sends only what changed.
+ */
+const lastToldStatus = new WeakMap<Waiting, string>();
 
 /** Removes every entry for a player from one queue, in place. Returns them. */
 function removeFrom(key: QueueKey, playerId: string): Waiting[] {
@@ -94,6 +101,19 @@ function rankWindow(waitMs: number): number {
 
 function totalOnlineCount(): number {
   return totalQueued() + rooms.size * 2;
+}
+
+/** Tells every player still in line their current place and the online count, when either moved. */
+function notifyWaiting(): void {
+  const onlineCount = totalOnlineCount();
+  for (const key of queueKeys) {
+    queues[key].forEach((entry, index) => {
+      const status = `${index + 1}:${onlineCount}`;
+      if (lastToldStatus.get(entry) === status) return;
+      lastToldStatus.set(entry, status);
+      send(entry.socket, { t: 'queued', v: 1, position: index + 1, onlineCount });
+    });
+  }
 }
 
 function waitingFor(playerId: string): Waiting | undefined {
@@ -208,13 +228,18 @@ async function enqueueVerified(
 
   const key = keyFor(mode, options.wagered);
   queues[key].push(entry);
+  const position = queues[key].length;
+  const onlineCount = totalOnlineCount();
+  lastToldStatus.set(entry, `${position}:${onlineCount}`);
   send(socket, {
     t: 'queued',
     v: 1,
-    position: queues[key].length,
-    onlineCount: totalOnlineCount(),
+    position,
+    onlineCount,
     ...(pointBalance === undefined ? {} : { pointBalance }),
   });
+  // Everyone already in line just gained a sailor.
+  notifyWaiting();
   ensureSweeping();
   await tryPair(key);
 }
@@ -233,6 +258,7 @@ export async function dequeue(playerId: string): Promise<QueueCancellation> {
     await prior;
     const removedEntries: Waiting[] = [];
     for (const key of queueKeys) removedEntries.push(...removeFrom(key, playerId));
+    if (removedEntries.length > 0) notifyWaiting();
 
     let pointBalance: number | undefined;
     let refunded = false;
@@ -302,6 +328,8 @@ function ensureSweeping(): void {
   if (sweepTimer) return;
   sweepTimer = setInterval(() => {
     for (const key of queueKeys) void tryPair(key);
+    // Rooms finishing elsewhere move the count too; this catches those.
+    notifyWaiting();
   }, SWEEP_INTERVAL_MS);
   sweepTimer.unref?.();
 }
@@ -341,6 +369,12 @@ async function pairPass(key: QueueKey): Promise<void> {
   // the room awaits and the queue may have changed underneath.
   for (;;) {
     const now = Date.now();
+    // The rank window chooses BETWEEN opponents. With only two captains in
+    // line there is no closer one to wait for, and holding them apart only
+    // made both stare at the radar for up to 30 s — every match moves the two
+    // ranks 20 points apart (+25 / +5), so two regular opponents drift out of
+    // the starting 150-point window within a handful of games.
+    const onlyPair = queue.length === 2;
     let foundA = -1;
     let foundB = -1;
     let bestDiff = Infinity;
@@ -355,7 +389,7 @@ async function pairPass(key: QueueKey): Promise<void> {
         if (!b || b.playerId === a.playerId) continue;
         const window = Math.max(rankWindow(now - a.since), rankWindow(now - b.since));
         const diff = Math.abs(a.rankPoints - b.rankPoints);
-        if (diff <= window && diff < bestDiff) {
+        if ((onlyPair || diff <= window) && diff < bestDiff) {
           bestDiff = diff;
           foundA = i;
           foundB = j;
@@ -370,6 +404,7 @@ async function pairPass(key: QueueKey): Promise<void> {
       queue.splice(foundB, 1);
       queue.splice(foundA, 1);
       await pair(mode, a, b);
+      notifyWaiting();
       continue;
     }
 
@@ -378,6 +413,7 @@ async function pairPass(key: QueueKey): Promise<void> {
     const entry = queue[stale] as Waiting;
     queue.splice(stale, 1);
     await pairWithBot(mode, entry);
+    notifyWaiting();
   }
 }
 

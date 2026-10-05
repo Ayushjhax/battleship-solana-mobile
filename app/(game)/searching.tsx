@@ -5,8 +5,8 @@
  * plays while the other side finishes placing.
  *
  *   searching   "Finding an opponent", an ink radar sweep, the live count
- *               from Supabase Presence on lobby:{mode}, an elapsed timer,
- *               Cancel.
+ *               (the match server's once queued, Supabase Presence on
+ *               lobby:{mode} before that), an elapsed timer, Cancel.
  *   matched     on BACKGROUNDS.matchFound: the arena banner drops in with its
  *               name, both captains' cards slide in from the sides, VS stamps
  *               down between them, hold 2 s, route to /battle.
@@ -338,7 +338,11 @@ export default function SearchingScreen() {
     }
   };
 
-  const count = presenceCount ?? queuedCount;
+  // The server's count once we are in line: it is the same number on every
+  // phone searching, and it updates as captains join and leave. Presence
+  // (everyone on the menu too, and only as live as this phone's Realtime
+  // socket) fills in until then.
+  const count = queuedCount ?? presenceCount;
   // Exactly what handoff.sync() schedules the reveal on, so the screen and
   // the timer can never disagree about whether we are revealing. Left as a
   // chain rather than a Boolean() so it still narrows matchId/you/opponent.
