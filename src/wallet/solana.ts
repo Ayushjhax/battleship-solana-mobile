@@ -14,7 +14,10 @@ export function solanaConfig(): { rpcUrl: string; cluster: SolanaClusterName } {
     cluster === 'mainnet-beta'
       ? 'https://api.mainnet-beta.solana.com'
       : `https://api.${cluster}.solana.com`;
-  const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL?.trim() || defaultRpc;
+  // The app's own key: a separate, restricted one, never the server's private
+  // SOLANA_RPC_URL — whatever is set here ships inside the APK (BUG-009).
+  // Unset, the cluster's public endpoint is used.
+  const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_APP_RPC_URL?.trim() || defaultRpc;
   return { rpcUrl, cluster };
 }
 

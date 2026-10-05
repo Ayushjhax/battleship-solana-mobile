@@ -358,7 +358,10 @@ that looks like a rectangle from a UI kit.
   subscribe), `api.ts guard()`, `match-client.ts connect()`, and the two Realtime hooks.
   Any new network path must consult `isForcedOffline()` too. It persists across restarts.
 - `npm run check:bundle` exports the Android bundle and fails if the server secret appears
-  by value or by shape (`sb_secret_` + base64url). Only `EXPO_PUBLIC_*` may be inlined.
+  by value or by shape (`sb_secret_` + base64url). Only `EXPO_PUBLIC_*` may be inlined, and
+  `metro.config.js` refuses to bundle at all when one the app reads carries a server-only value
+  (`scripts/env-guard.cjs`). The app's Solana RPC is `EXPO_PUBLIC_SOLANA_APP_RPC_URL`, a key of
+  its own — never the server's `SOLANA_RPC_URL`.
 - `eas.json` `preview` = APK, R8-minified (expo-build-properties), public env baked in;
   `EXPO_PUBLIC_WS_URL` there must be the deployed `wss://` host. `server/scripts/seed-demo.ts`
   seeds a crew, history and your rank through the secret key (idempotent).

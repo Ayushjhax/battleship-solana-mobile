@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { formatLamports, isRentError, parseSolToLamports, shortAddress, transferShortfall } from '../solana';
+import {
+  formatLamports,
+  isRentError,
+  parseSolToLamports,
+  shortAddress,
+  solanaConfig,
+  transferShortfall,
+} from '../solana';
 
 describe('Solana wallet helpers', () => {
   it('parses SOL without floating-point rounding', () => {
@@ -65,5 +72,32 @@ describe('transferShortfall', () => {
   it('formats lamports without trailing zeros', () => {
     expect(formatLamports(650_240)).toBe('0.00065024');
     expect(formatLamports(1_000_000_000)).toBe('1');
+  });
+});
+
+// BUG-009: the app's RPC URL was the server's private one (API key and all),
+// so every APK shipped the server's key. The app now reads a variable of its
+// own, meant for a separate, restricted key, and never the old name.
+describe('solanaConfig', () => {
+  const KEYS = ['EXPO_PUBLIC_SOLANA_APP_RPC_URL', 'EXPO_PUBLIC_SOLANA_RPC_URL', 'EXPO_PUBLIC_SOLANA_CLUSTER'] as const;
+  const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
+  afterEach(() => {
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  it('uses the app-only RPC variable when it is set', () => {
+    process.env.EXPO_PUBLIC_SOLANA_CLUSTER = 'mainnet-beta';
+    process.env.EXPO_PUBLIC_SOLANA_APP_RPC_URL = 'https://rpc.example.test/app-restricted';
+    expect(solanaConfig().rpcUrl).toBe('https://rpc.example.test/app-restricted');
+  });
+
+  it('never reads the old shared variable, and falls back to the public endpoint', () => {
+    process.env.EXPO_PUBLIC_SOLANA_CLUSTER = 'mainnet-beta';
+    delete process.env.EXPO_PUBLIC_SOLANA_APP_RPC_URL;
+    process.env.EXPO_PUBLIC_SOLANA_RPC_URL = 'https://rpc.example.test/?api-key=server-secret';
+    expect(solanaConfig().rpcUrl).toBe('https://api.mainnet-beta.solana.com');
   });
 });

@@ -53,7 +53,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-006 | Medium | Fixed | Double-tapping Battle! can open two searching/battle screens (double-speed turn clock; hot-seat skips player 2's placement) |
 | BUG-007 | Medium | Fixed | Changing your avatar from Settings or Profile stacks a new menu on top instead of going back |
 | BUG-008 | Medium | Fixed | `npm run typecheck` fails and `npm run lint` crashes: root tooling sweeps in the nested video projects |
-| BUG-009 | Medium | Needs decision | The server's private Solana RPC key ships inside the APK (local `.env` config) |
+| BUG-009 | Medium | Fixed (key rotation pending — yours) | The server's private Solana RPC key ships inside the APK (local `.env` config) |
 | BUG-010 | Medium | Needs decision | Self-reported offline and hot-seat results earn ladder points; hot-seat can be farmed |
 | BUG-011 | Medium | Needs decision | Unwagered match: a Cancel that crosses `matched` becomes a 45 s forfeit loss |
 | BUG-012 | Low | Open | Misleading failure text ("…for 45 seconds… counted as a loss", every failure titled "No connection") |
@@ -233,7 +233,14 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 - **Proposed fix:** exclude both folders in `tsconfig.json` and in the ESLint `ignores`.
 
 ### BUG-009 — The server's Solana RPC key ships in the APK
-- **Severity:** Medium (security; local config, not code) · **Status:** Needs decision
+- **Severity:** Medium (security) · **Status:** Fixed in code; key rotation pending (yours).
+  The app now reads its own `EXPO_PUBLIC_SOLANA_APP_RPC_URL` (public endpoint when unset) and
+  never the old shared name; `metro.config.js` refuses to bundle when a public variable the
+  app reads carries a server-only value (`scripts/env-guard.cjs`); the bundle secrets check
+  passes. Worse than first reported: the same key was also **committed in `eas.json`** (both
+  release profiles, since `48ecf33`, pushed) — removed from HEAD, but it stays in git history,
+  so rotating it is required. Tests: `tests/tooling/env-guard.test.ts`,
+  `src/wallet/__tests__/solana.test.ts`.
 - **Where:** your local `.env`, which is git-ignored.
 - **What's wrong:** `scripts/check-bundle-secrets.mjs` fails because the server-only
   `SOLANA_RPC_URL` value appears in the app bundle. `EXPO_PUBLIC_SOLANA_RPC_URL` is set to

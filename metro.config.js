@@ -1,5 +1,11 @@
 const { getDefaultConfig } = require('expo/metro-config');
 
+const { assertNoServerSecretsInPublicEnv } = require('./scripts/env-guard.cjs');
+
+// A server secret in a public variable the app reads would be compiled into
+// the bundle. Refuse to build at all rather than ship it (BUG-009).
+assertNoServerSecretsInPublicEnv(__dirname);
+
 const config = getDefaultConfig(__dirname);
 
 // Privy's React Native dependency graph contains a few packages whose export

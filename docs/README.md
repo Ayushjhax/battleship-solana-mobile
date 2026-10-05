@@ -45,7 +45,7 @@ Expo inlines only the `EXPO_PUBLIC_*` names into the app bundle; the server read
 | `EXPO_PUBLIC_API_URL` | app | optional HTTP base; otherwise derived from the WebSocket URL |
 | `EXPO_PUBLIC_PRIVY_APP_ID` | app | public Privy application id |
 | `EXPO_PUBLIC_PRIVY_CLIENT_ID` | app | public native/mobile app client id |
-| `EXPO_PUBLIC_SOLANA_RPC_URL` | app | authenticated RPC recommended in production |
+| `EXPO_PUBLIC_SOLANA_APP_RPC_URL` | app | the app's OWN Solana RPC, compiled into the APK: a separate key restricted to this app, never `SOLANA_RPC_URL`. Unset = the cluster's public endpoint |
 | `EXPO_PUBLIC_SOLANA_CLUSTER` | app | `devnet`, `testnet`, or `mainnet-beta` |
 | `SUPABASE_URL` | server | same project |
 | `SUPABASE_SECRET_KEY` | server | `sb_secret_…` — bypasses RLS; **never** under `app/` or `src/`, `server/src/db.ts` is the only reader |
@@ -58,8 +58,10 @@ Expo inlines only the `EXPO_PUBLIC_*` names into the app bundle; the server read
 | `SELL_POINTS_COST` / `SELL_SOL_PAYOUT` | server | fixed supported quote: `100` / `0.001` |
 | `PORT` | server | default 8080; Render injects its own |
 
-Never put the secret key in an `EXPO_PUBLIC_*` name. `npm run check:bundle` scans the
-exported bundle for it by value and by shape and fails the build if it ever leaks.
+Never put the secret key in an `EXPO_PUBLIC_*` name. Metro refuses to bundle when a public
+variable the app reads carries a server-only value (`scripts/env-guard.cjs`), and
+`npm run check:bundle` scans the exported bundle for it by value and by shape and fails the
+build if it ever leaks.
 
 The EAS build profiles (`eas.json`) carry the three public values for the cloud build;
 `EXPO_PUBLIC_WS_URL` there must be the **deployed** `wss://` address — plain `ws://`

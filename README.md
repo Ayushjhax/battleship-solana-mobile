@@ -40,6 +40,8 @@ Before running the app:
    `EXPO_PUBLIC_PRIVY_CLIENT_ID`. Put `PRIVY_APP_ID` and `PRIVY_APP_SECRET` only
    on the server. Put `SOLANA_RPC_URL`, `TREASURY_PUBLIC_KEY`, and
    `TREASURY_PRIVATE_KEY` only on the server. Use a private authenticated Solana RPC for production.
+   Give the app its own, separate, restricted RPC key in `EXPO_PUBLIC_SOLANA_APP_RPC_URL`
+   (it ships inside the APK); Metro refuses to bundle if it carries the server's key.
 4. Rebuild the development app whenever Privy native dependencies or native
    configuration changes.
 
