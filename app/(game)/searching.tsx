@@ -21,7 +21,7 @@ import { validateSubmission } from '@engine/match';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, StyleSheet, Text, View } from 'react-native';
+import { AppState, BackHandler, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   cancelAnimation,
@@ -342,6 +342,19 @@ export default function SearchingScreen() {
   // phone searching, and it updates as captains join and leave. Presence
   // (everyone on the menu too, and only as live as this phone's Realtime
   // socket) fills in until then.
+  // Android back leaves the search exactly as Cancel does. Popping the screen
+  // alone kept the socket in line, with any stake held, and a match found then
+  // had nobody to send the fleet or open the battle (BUG-004).
+  const cancelRef = useRef(onCancel);
+  cancelRef.current = onCancel;
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      void cancelRef.current();
+      return true;
+    });
+    return () => subscription.remove();
+  }, []);
+
   const count = queuedCount ?? presenceCount;
   // Exactly what handoff.sync() schedules the reveal on, so the screen and
   // the timer can never disagree about whether we are revealing. Left as a

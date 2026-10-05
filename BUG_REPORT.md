@@ -48,7 +48,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-001 | Critical | Fixed | Points can be minted without playing (self-reported offline-wager wins) and sold for treasury SOL |
 | BUG-002 | High | Fixed | A late close of a player's old socket detaches their live match seat → forfeit |
 | BUG-003 | High | Fixed | Re-queueing from a new socket: `matched` goes to the dead socket, or the player is silently dropped from the queue while the app shows "In line" |
-| BUG-004 | High | Open | Android back on "Finding an opponent" leaves the player queued in the background → silent forfeit (and stake) |
+| BUG-004 | High | Fixed | Android back on "Finding an opponent" leaves the player queued in the background → silent forfeit (and stake) |
 | BUG-005 | Medium | Open | "Try again" after an opponent cancels a wagered match dead-ends on "Connecting…" |
 | BUG-006 | Medium | Open | Double-tapping Battle! can open two searching/battle screens (double-speed turn clock; hot-seat skips player 2's placement) |
 | BUG-007 | Medium | Open | Changing your avatar from Settings or Profile stacks a new menu on top instead of going back |
@@ -152,7 +152,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   remove only entries that hold the closing socket.
 
 ### BUG-004 — Android back on the searching screen leaves you queued
-- **Severity:** High · **Status:** Open
+- **Severity:** High · **Status:** Fixed — the root handler now leaves `/searching` to the
+  screen (`rootBackAction`, extracted in a no-behaviour-change refactor first), and the
+  screen answers back exactly as its Cancel does. Test: `tests/navigation/root-back.test.ts`.
 - **Where:** `app/(game)/searching.tsx` (no back handler; the on-screen Cancel is `onCancel`
   at line 322), `app/_layout.tsx:188-207` (the global handler calls `router.back()` for
   `/searching`).
