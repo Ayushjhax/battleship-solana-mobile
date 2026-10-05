@@ -30,6 +30,8 @@ import type { Href } from 'expo-router';
 import { StackRouter } from 'expo-router/build/react-navigation/routers/StackRouter';
 import { describe, expect, it } from 'vitest';
 
+import { rootBackAction } from '../../src/features/navigation/rootBack';
+
 import { playAgain, replayHref, returnToMenu } from '../../src/features/matchmaking/exits';
 
 const ROUTE_NAMES = [
@@ -266,7 +268,11 @@ describe('no exit from a match replaces its way to the menu', () => {
   });
 
   it("the root back handler's result branch pops to the menu", () => {
+    // The route decision lives in rootBackAction() (src/features/navigation);
+    // the layout carries it out. Result must route to 'menu', and 'menu' must
+    // mean returnToMenu — never a replace.
+    expect(rootBackAction('/result')).toBe('menu');
     const source = readFileSync(join(ROOT, 'app/_layout.tsx'), 'utf8');
-    expect(source).toMatch(/pathname\.includes\('result'\)\) returnToMenu\(router\)/);
+    expect(source).toMatch(/action === 'menu'\) returnToMenu\(router\)/);
   });
 });

@@ -25,6 +25,7 @@ import { PrivyLoginScreen } from '@/features/auth/PrivyLoginScreen';
 import { PrivyProfileSync } from '@/features/auth/PrivyProfileSync';
 import { ResumeMatchPrompt } from '@/features/battle/ResumeMatchPrompt';
 import { returnToMenu } from '@/features/matchmaking/exits';
+import { rootBackAction } from '@/features/navigation/rootBack';
 import { WelcomePointsModal } from '@/features/points/WelcomePointsModal';
 import { subscribeConnectivity } from '@/net/connectivity';
 import { flushPendingResults } from '@/net/offlineResults';
@@ -182,26 +183,18 @@ function AuthenticatedApp() {
     setMusic(inBattle ? 'battle' : 'menu');
   }, [pathname]);
 
-  // Explicit fallback for every route. Battle/tutorial, placement and the port
-  // city own richer back behavior, so returning false lets their focused
-  // handler run (the city's plays its exit and returns home exactly once).
+  // Explicit fallback for every route. Where it goes is rootBackAction()
+  // (src/features/navigation/rootBack.ts); 'screen' returns false so a screen
+  // with back behaviour of its own gets the press.
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (
-        pathname.includes('battle') ||
-        pathname === '/tutorial' ||
-        pathname.includes('placement') ||
-        pathname === '/city'
-      ) {
-        return false;
+      const action = rootBackAction(pathname);
+      if (action === 'screen') return false;
+      if (action === 'menu') returnToMenu(router);
+      else if (action === 'back') {
+        if (router.canGoBack()) router.back();
+        else router.replace('/menu');
       }
-      if (pathname === '/' || pathname === '/menu') return true;
-      // The winner's-base reveal leaves by itself in five seconds, to the
-      // defeat screen. Back neither skips it nor returns to the battle.
-      if (pathname === '/reveal') return true;
-      if (pathname.includes('result')) returnToMenu(router);
-      else if (router.canGoBack()) router.back();
-      else router.replace('/menu');
       return true;
     });
     return () => subscription.remove();
