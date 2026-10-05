@@ -119,6 +119,8 @@ export type FailureReason =
 export interface MatchFailure {
   readonly reason: FailureReason;
   readonly detail: string;
+  /** A live match was forfeited along the way (not merely a search that couldn't connect). */
+  readonly matchLost?: boolean;
 }
 
 /** A live match the server still holds for us, waiting on rejoin or resign. */
@@ -496,7 +498,7 @@ function send(message: ClientMessage): boolean {
   }
 }
 
-function fail(reason: FailureReason, detail: string): void {
+function fail(reason: FailureReason, detail: string, options: { matchLost?: boolean } = {}): void {
   settlePendingCancellation();
   clearAllTimers();
   dropSocket();
@@ -511,7 +513,11 @@ function fail(reason: FailureReason, detail: string): void {
     return;
   }
   log(`failed: ${reason} — ${detail}`);
-  useMatchClient.setState({ status: 'failed', failure: { reason, detail }, reconnectDeadline: null });
+  useMatchClient.setState({
+    status: 'failed',
+    failure: { reason, detail, ...(options.matchLost ? { matchLost: true } : {}) },
+    reconnectDeadline: null,
+  });
 }
 
 function endDiscovery(): void {
@@ -695,7 +701,9 @@ function scheduleReconnect(why: string): void {
     useMatchClient.setState({ reconnectDeadline: disconnectedAt + DISCONNECT_GRACE_MS });
   }
   if (inMatch && disconnectedAt !== null && Date.now() - disconnectedAt > DISCONNECT_GRACE_MS) {
-    fail('unreachable', "Couldn't raise the server inside 45 seconds. The match was forfeited.");
+    fail('unreachable', "Couldn't raise the server inside 45 seconds. The match was forfeited.", {
+      matchLost: true,
+    });
     return;
   }
 
@@ -1257,6 +1265,34 @@ export const useMatchClient = create<MatchClientState>((set, get) => ({
   },
 }));
 
+/** A failure panel's title: what happened, in a few words. */
+export function failureTitle(failure: MatchFailure): string {
+  switch (failure.reason) {
+    case 'insufficient_points':
+      return 'Not enough points';
+    case 'match_cancelled':
+      return 'Match cancelled';
+    case 'layout_rejected':
+      return 'Fleet not accepted';
+    case 'already_searching':
+      return 'Already searching';
+    case 'match_gone':
+      return 'Match over';
+    case 'kicked':
+    case 'rate_limited':
+      return 'Disconnected by the server';
+    case 'unauthenticated':
+    case 'no_session':
+      return 'Sign-in needed';
+    case 'server_error':
+      return 'Server problem';
+    case 'no_ws_url':
+    case 'forced_offline':
+    case 'unreachable':
+      return 'No connection';
+  }
+}
+
 /** Copy for the connection UI. Plain, specific, never "something went wrong". */
 export function failureCopy(failure: MatchFailure): string {
   switch (failure.reason) {
@@ -1269,7 +1305,11 @@ export function failureCopy(failure: MatchFailure): string {
     case 'unauthenticated':
       return 'The match server rejected this sign-in. Restart the app to sign in again.';
     case 'unreachable':
-      return "Couldn't reach the match server for 45 seconds. If a match was on, it counted as a loss.";
+      // Only a match that was actually on can have been lost; a search that
+      // couldn't connect (a free-tier server still waking, say) lost nothing.
+      return failure.matchLost
+        ? "Couldn't reach the match server for 45 seconds, so the match counted as a loss."
+        : "Couldn't reach the match server. It may still be starting up — try again in a moment.";
     case 'match_gone':
       return 'The match ended while you were away. The 45-second grace period ran out.';
     case 'rate_limited':

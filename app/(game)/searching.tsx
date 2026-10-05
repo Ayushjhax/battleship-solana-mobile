@@ -40,7 +40,7 @@ import { FlagBadge } from '@/features/flags/FlagBadge';
 import { returnToMenu } from '@/features/matchmaking/exits';
 import { createMatchHandoff } from '@/features/matchmaking/handoff';
 import { subscribeEmotes } from '@/net/chat';
-import { failureCopy, useMatchClient } from '@/net/match-client';
+import { failureCopy, failureTitle, useMatchClient } from '@/net/match-client';
 import { cancelPointWager } from '@/net/points';
 import { useOnlineCount } from '@/net/presence';
 import { toLayoutPayload, type OpponentSummary } from '@/net/protocol';
@@ -371,17 +371,7 @@ export default function SearchingScreen() {
           <View style={{ width: FAILED.w, height: FAILED.h }}>
             <VSlicedImage slices={PROFILE_ART.accountPanel} w={FAILED.w} h={FAILED.h} style={StyleSheet.absoluteFill} />
             <View style={styles.failedBox}>
-              <Text style={styles.failedTitle}>
-                {failure?.reason === 'insufficient_points'
-                  ? 'Not enough points'
-                  : failure?.reason === 'match_cancelled'
-                    ? 'Match cancelled'
-                    : failure?.reason === 'layout_rejected'
-                      ? 'Fleet not accepted'
-                      : failure?.reason === 'already_searching'
-                        ? 'Already searching'
-                        : 'No connection'}
-              </Text>
+              <Text style={styles.failedTitle}>{failure ? failureTitle(failure) : 'No connection'}</Text>
               <Text style={styles.failedBody}>
                 {failure ? failureCopy(failure) : 'The match server is out of reach.'}
               </Text>

@@ -16,7 +16,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { returnToMenu } from '@/features/matchmaking/exits';
-import { DISCONNECT_GRACE_MS, failureCopy, useMatchClient } from '@/net/match-client';
+import { DISCONNECT_GRACE_MS, failureCopy, failureTitle, useMatchClient } from '@/net/match-client';
 import { useBattle } from '@/state/battle';
 import { AssetSlot } from '@/ui/AssetSlot';
 import { AVATARS } from '@/ui/assets';
@@ -148,7 +148,7 @@ export function ConnectionOverlay() {
   return (
     <View style={styles.centre} pointerEvents="box-none">
       <InkPanel w={w} h={h} seedKey="connection-failed" padding={space.md}>
-        <Text style={styles.failedTitle}>No connection</Text>
+        <Text style={styles.failedTitle}>{failure ? failureTitle(failure) : 'No connection'}</Text>
         <Text style={styles.failedBody}>{failure ? failureCopy(failure) : 'The match server is out of reach.'}</Text>
         <View style={styles.buttons}>
           <InkButton

@@ -757,3 +757,27 @@ describe('match client', () => {
     server = await startFakeServer(port);
   });
 });
+
+// BUG-012: every `unreachable` failure read "Couldn't reach the match server
+// for 45 seconds. If a match was on, it counted as a loss." — also when
+// matchmaking simply couldn't connect after a few seconds with nothing at
+// stake (a free-tier server waking up). And every failure panel was titled
+// "No connection", a kick and a refused fleet included.
+describe('failure copy', () => {
+  it('only talks about a lost match when a match was actually lost', async () => {
+    const { failureCopy } = await import('../match-client');
+    const searching = failureCopy({ reason: 'unreachable', detail: "Couldn't reach the match server after 4 tries." });
+    expect(searching).not.toMatch(/45 seconds|loss|forfeit/i);
+    const inMatch = failureCopy({ reason: 'unreachable', detail: 'x', matchLost: true });
+    expect(inMatch).toMatch(/loss/i);
+  });
+
+  it('titles each failure by what happened', async () => {
+    const { failureTitle } = await import('../match-client');
+    expect(failureTitle({ reason: 'unreachable', detail: '' })).toBe('No connection');
+    expect(failureTitle({ reason: 'kicked', detail: '' })).not.toBe('No connection');
+    expect(failureTitle({ reason: 'layout_rejected', detail: '' })).toBe('Fleet not accepted');
+    expect(failureTitle({ reason: 'server_error', detail: '' })).not.toBe('No connection');
+    expect(failureTitle({ reason: 'match_gone', detail: '' })).not.toBe('No connection');
+  });
+});

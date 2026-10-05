@@ -56,7 +56,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-009 | Medium | Fixed (key rotation pending — yours) | The server's private Solana RPC key ships inside the APK (local `.env` config) |
 | BUG-010 | Medium | Fixed | Self-reported offline and hot-seat results earn ladder points; hot-seat can be farmed |
 | BUG-011 | Medium | Fixed | Unwagered match: a Cancel that crosses `matched` becomes a 45 s forfeit loss |
-| BUG-012 | Low | Open | Misleading failure text ("…for 45 seconds… counted as a loss", every failure titled "No connection") |
+| BUG-012 | Low | Fixed | Misleading failure text ("…for 45 seconds… counted as a loss", every failure titled "No connection") |
 | BUG-013 | Low | Open | Hot-seat names screen's endless caret animation keeps running under the whole hot-seat match |
 | BUG-014 | Low | Open | Android back on How to Play probably leaves the guide instead of turning back a page |
 | BUG-015 | Low | Needs decision | expo-doctor 20/21: six Expo packages a patch version behind |
@@ -287,6 +287,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 ## Low
 
 ### BUG-012 — Misleading failure text
+- **Status:** Fixed — a failure records whether a match was really lost, and the copy only
+  mentions a loss then; `failureTitle()` names each failure for both panels. Test:
+  `src/net/__tests__/match-client.test.ts` ("failure copy").
 - **Where:** `src/net/match-client.ts:1229` (`failureCopy` for `unreachable`) and `:672`;
   `src/features/battle/ConnectionOverlay.tsx:151`; `app/(game)/searching.tsx:370`.
 - **What's wrong:** `unreachable` always says "Couldn't reach the match server for 45
