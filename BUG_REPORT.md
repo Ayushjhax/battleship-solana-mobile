@@ -67,7 +67,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-020 | Low | Fixed | Leaderboard briefly shows the previous account's "you" row after switching accounts |
 | BUG-021 | Low | Fixed (with BUG-010) | Offline-result rewards are hard-coded in SQL (drift risk against `REWARD`) |
 | BUG-022 | Low | Fixed | The launch-time cloud merge ignores unsynced offline results, so rank and coins dip until the next sync |
-| BUG-023 | Low | Open | Every online match joins a Supabase Realtime channel even when the server relays emotes |
+| BUG-023 | Low | Needs decision | Every online match joins a Supabase Realtime channel even when the server relays emotes |
 
 ---
 
@@ -417,6 +417,13 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 - **Proposed fix:** after `mergeRemote`, add back the rewards of still-pending results.
 
 ### BUG-023 — Realtime channel joined even when the server relays emotes
+- **Status:** Needs decision — not changed. On a closer look the extra channel is deliberate:
+  the commit that added server-relayed emotes (`43d6104`) wrote "Both are listened to; a
+  sender uses exactly one" into `chat.ts`. Listening on Realtime is how this app still hears
+  an opponent on an older APK, which only ever sends over Realtime. The cost is one private
+  Realtime channel joined per online match, unused when both phones are current. What is
+  wrong either way is `CLAUDE.md`, which says both "`chat.ts` listens to both" and "a phone
+  whose server answered `emotes: true` never touches it". See question 6 below.
 - **Where:** `src/net/chat.ts:52-81`, `:115`.
 - **What's wrong:** `subscribeEmotes` always joins the private Supabase Realtime match
   channel. `CLAUDE.md` says a phone whose server relays emotes never touches Realtime, but
@@ -427,13 +434,27 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 
 ## Decisions I need from you
 
-1. **BUG-001:** which way to close the points-minting hole: remove offline wagers, cap
-   them, or make their prizes unsellable? And should welcome points be sellable?
-2. **BUG-009:** rotate the RPC key and give the app its own (your action, outside the repo).
-3. **BUG-010:** should hot-seat, and offline AI, results count toward the ladder?
-4. **BUG-011:** for an unwagered cancel in that race, should the match row be closed with
-   no result (as the abandon path does)?
-5. **BUG-015:** upgrade the six Expo packages now (needs a rebuild), or later?
+Answered on 2026-10-05 and done as decided:
+
+1. **BUG-001:** offline wagers removed; welcome points are tracked apart and never sellable.
+2. **BUG-009:** you rotate the key; the app has its own restricted RPC variable.
+3. **BUG-010:** only server-verified online matches count toward the ladder.
+4. **BUG-011:** the match closes with no result; a wagered cancel refunds both stakes.
+5. **BUG-015:** the Expo upgrades go on a separate branch later.
+
+Still open:
+
+6. **BUG-023:** keep listening on Realtime in online matches (hears opponents still on an
+   older APK; costs a channel join per match), or skip the channel when the server relays
+   emotes (an older-APK opponent's emotes are then not shown — they already can't see ours)?
+   Either way I'll correct whichever `CLAUDE.md` sentence doesn't match.
+7. **Offline coins (follows BUG-010):** offline AI and hot-seat games still pay coins
+   (+50 win, +10 loss) on the device's word. Coins only buy cosmetic store items, which are
+   device-local and never convert to points or SOL, so I left this alone. Keep it, or pay
+   nothing for offline games?
+8. **Ladder points already earned offline:** points that offline and hot-seat results
+   earned before the BUG-010 fix are still on the ladder. A one-off correction could subtract
+   them; I haven't written one. Want it?
 
 ## Checked and found sound
 
