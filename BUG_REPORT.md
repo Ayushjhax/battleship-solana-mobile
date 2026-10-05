@@ -113,6 +113,11 @@ Mac. It passed three times on its own and in every full run since.
   are split once by the migration; legacy pending offline settlements are refunded. Tests:
   `tests/db/verify-offline.test.ts`, `server/tests/regression/offline-wagers-removed.test.ts`,
   `tests/net/legacy-offline-wager.test.ts`, `tests/regression/no-offline-wagers.test.ts`.
+  **Audit:** `supabase/audits/bug-001-offline-wagers-and-welcome-sales.sql` (read-only) lists
+  the accounts that used offline wagers or sold welcome points. It checks each sale against
+  what the account had bought or netted from server-run wagers at that moment, so a welcome
+  sold before a later purchase still shows. It reads the same before and after the
+  migrations (checked by `supabase/verify-offline.mjs`).
 - **Where:** `server/src/index.ts:242` (`POST /points/wager/settle`),
   `supabase/migrations/0012_offline_wagers.sql:74` (`settle_offline_wager`),
   `server/src/points.ts:154` (`sellPoints`).

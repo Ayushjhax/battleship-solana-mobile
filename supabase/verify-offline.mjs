@@ -446,7 +446,25 @@ check(await fails_with(`select * from public.reserve_point_wager($1, $2, 50)`, [
   const INFLIGHT_HOLD = hold(7);
   await lq(`select * from public.reserve_point_wager($1, $2, 50)`, [L.inflight, INFLIGHT_HOLD]);
 
+  // The BUG-001 audit (supabase/audits) reads only tables that predate 0014,
+  // so it must find the same accounts whether it runs before or after.
+  const AUDIT = fs.readFileSync(fileURLToPath(new URL('./audits/bug-001-offline-wagers-and-welcome-sales.sql', import.meta.url)), 'utf8');
+  const audit = async () => {
+    try {
+      return JSON.stringify((await lq(AUDIT)).rows, (_key, value) => (typeof value === 'bigint' ? value.toString() : value));
+    } catch (e) {
+      return `error: ${e.message}`;
+    }
+  };
+  const auditBefore = await audit();
+
   await applyMigrations(legacy, files.filter((f) => f >= '0014'), 'legacy, 0014 onwards:');
+  const auditAfter = await audit();
+  const flagged = auditBefore.startsWith('[') ? JSON.parse(auditBefore).map((row) => row.privy_user_id).sort().join(', ') : auditBefore;
+  check(flagged === 'did:privy:legacy-offline, did:privy:legacy-relapsed, did:privy:legacy-sold', `audit: flags the offline wagerers and the welcome seller (${flagged})`);
+  check(auditBefore === auditAfter, 'audit: reads the same before and after the migrations');
+  const soldRow = auditBefore.startsWith('[') ? JSON.parse(auditBefore).find((row) => row.privy_user_id === 'did:privy:legacy-sold') : null;
+  check(String(soldRow?.unbacked_points_sold) === '100', `audit: a welcome sold before buying counts, though purchases covered it later (${soldRow?.unbacked_points_sold})`);
   const split = async (id) => {
     try {
       const row = (await lq(`select * from public.get_point_balances($1)`, [id])).rows[0];

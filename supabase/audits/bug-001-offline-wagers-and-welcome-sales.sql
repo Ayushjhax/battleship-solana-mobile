@@ -10,16 +10,21 @@
 --                                 (a hold settled with no match attached — only
 --                                 settle_offline_wager, 0012, ever did that).
 --                                 Every such win was self-reported.
---   sold_welcome_or_offline_points sold more points for SOL than it ever bought
---                                 or won in server-run wagers, so the sales were
---                                 funded by welcome points or offline winnings.
+--   sold_welcome_or_offline_points made a sale, at some moment, of more points
+--                                 than it had bought or netted from server-run
+--                                 wagers by then — so that sale was funded by
+--                                 welcome points or offline winnings, even if
+--                                 the account bought points afterwards.
 --
 -- Columns worth reading first:
 --   offline_net_gain   points minted by self-reported offline wins (prizes
 --                      minus the stakes on those offline holds)
---   unbacked_points_sold  points sold beyond what purchases and server-run
---                      wager winnings can explain
+--   unbacked_points_sold  the most that sales ever ran ahead of the points
+--                      bought and netted from server-run wagers at the time
 --   sol_paid           SOL the treasury actually sent this account
+--
+-- Server-run wager losses are taken from welcome points first, as 0014 does,
+-- so losing a wager never makes a later sale of bought points look unbacked.
 -- Ordered so the accounts that took the most SOL come first.
 
 with ledger as (
@@ -61,6 +66,42 @@ with ledger as (
     from public.point_trades t
    where t.kind = 'sell'
    group by t.privy_user_id
+), moves as (
+  -- Every ledger row, with what it did to points sold, points bought, and the
+  -- net of server-run wagers (stakes and refunds on holds that had a match).
+  select l.privy_user_id,
+         l.id,
+         l.reason,
+         l.created_at,
+         case when l.reason in ('sell_reserve', 'sell_refund') then -l.delta else 0 end as sold,
+         case when l.reason = 'buy' then l.delta else 0 end as bought,
+         case
+           when l.reason = 'wager_prize' and coalesce(l.metadata ->> 'offline', 'false') <> 'true' then l.delta
+           when l.reason in ('wager_entry', 'wager_refund') and h.match_id is not null then l.delta
+           else 0
+         end as server_wager
+    from public.point_ledger l
+    left join public.point_wager_holds h
+      on l.reason in ('wager_entry', 'wager_refund')
+     and h.request_id::text = l.reference_id
+), running as (
+  select m.privy_user_id,
+         m.reason,
+         sum(m.sold) over w as sold_so_far,
+         sum(m.bought) over w as bought_so_far,
+         sum(m.server_wager) over w as server_net_so_far
+    from moves m
+  window w as (
+    partition by m.privy_user_id
+    order by m.created_at, m.id
+    rows between unbounded preceding and current row
+  )
+), sold_ahead as (
+  select r.privy_user_id,
+         max(r.sold_so_far - r.bought_so_far - greatest(0, r.server_net_so_far)) as most
+    from running r
+   where r.reason = 'sell_reserve'
+   group by r.privy_user_id
 ), identities as (
   select p.privy_user_id,
          string_agg(p.profile_id::text, ', ' order by p.created_at) as profile_ids,
@@ -84,18 +125,19 @@ with ledger as (
          coalesce(ledger.points_sold, 0) as points_sold,
          coalesce(sales.sales_paid, 0) as sales_paid,
          coalesce(sales.sales_in_flight, 0) as sales_in_flight,
-         round(coalesce(sales.lamports_paid, 0) / 1e9, 6) as sol_paid
+         round(coalesce(sales.lamports_paid, 0) / 1e9, 6) as sol_paid,
+         greatest(0, coalesce(sold_ahead.most, 0)) as unbacked_points_sold
     from public.point_accounts a
     left join ledger on ledger.privy_user_id = a.privy_user_id
     left join holds on holds.privy_user_id = a.privy_user_id
     left join sales on sales.privy_user_id = a.privy_user_id
+    left join sold_ahead on sold_ahead.privy_user_id = a.privy_user_id
     left join identities on identities.privy_user_id = a.privy_user_id
 )
 select s.*,
-       greatest(0, s.points_sold - s.bought - greatest(0, s.server_wager_net)) as unbacked_points_sold,
        s.offline_wagers > 0 as used_offline_wagers,
-       s.points_sold > s.bought + greatest(0, s.server_wager_net) as sold_welcome_or_offline_points
+       s.unbacked_points_sold > 0 as sold_welcome_or_offline_points
   from summary s
  where s.offline_wagers > 0
-    or s.points_sold > s.bought + greatest(0, s.server_wager_net)
+    or s.unbacked_points_sold > 0
  order by s.sol_paid desc, s.offline_net_gain desc, s.points_sold desc;
