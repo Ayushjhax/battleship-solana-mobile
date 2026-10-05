@@ -52,7 +52,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-005 | Medium | Fixed | "Try again" after an opponent cancels a wagered match dead-ends on "Connecting…" |
 | BUG-006 | Medium | Fixed | Double-tapping Battle! can open two searching/battle screens (double-speed turn clock; hot-seat skips player 2's placement) |
 | BUG-007 | Medium | Fixed | Changing your avatar from Settings or Profile stacks a new menu on top instead of going back |
-| BUG-008 | Medium | Open | `npm run typecheck` fails and `npm run lint` crashes: root tooling sweeps in the nested video projects |
+| BUG-008 | Medium | Fixed | `npm run typecheck` fails and `npm run lint` crashes: root tooling sweeps in the nested video projects |
 | BUG-009 | Medium | Needs decision | The server's private Solana RPC key ships inside the APK (local `.env` config) |
 | BUG-010 | Medium | Needs decision | Self-reported offline and hot-seat results earn ladder points; hot-seat can be farmed |
 | BUG-011 | Medium | Needs decision | Unwagered match: a Cancel that crosses `matched` becomes a 45 s forfeit loss |
@@ -221,7 +221,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   the avatar screen goes back when `next=back`.
 
 ### BUG-008 — Typecheck fails and lint crashes on the nested video projects
-- **Severity:** Medium (tooling) · **Status:** Open
+- **Severity:** Medium (tooling) · **Status:** Fixed — both folders excluded from the root
+  `tsconfig.json` and ESLint config; `npm run typecheck` and `npm run lint` now pass. Test:
+  `tests/tooling/nested-projects.test.ts`.
 - **Where:** `tsconfig.json:13-21` (`exclude`), `eslint.config.js:27-35` (`ignores`).
 - **What's wrong:** `npm run typecheck` reports 68 errors and `npm run lint` crashes. All
   of them come from `launch-film/` and `demo-assets/`, separate Remotion apps that the root

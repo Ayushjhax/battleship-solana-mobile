@@ -17,6 +17,8 @@
     "eslint.config.js",
     "server",
     "android",
-    "ios"
+    "ios",
+    "launch-film",
+    "demo-assets"
   ]
 }
