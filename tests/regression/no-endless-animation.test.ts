@@ -25,6 +25,9 @@ const ROOT = join(__dirname, '..', '..');
 /** Everything that stays on screen through a match, or under it. */
 const ALWAYS_ON = [
   'app/menu.tsx',
+  // Pushed under placement and the whole hot-seat match (BUG-013): its caret
+  // blinked on, invisibly, from the names screen to the last shot.
+  'app/(game)/hotseat.tsx',
   'app/(game)/placement.tsx',
   'app/(game)/battle.tsx',
   'app/(game)/reveal.tsx',

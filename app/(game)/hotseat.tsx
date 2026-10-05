@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 import Animated, {
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -45,15 +46,25 @@ function Art({ source, style }: { source: Asset; style: ImageStyle }) {
   );
 }
 
-function Caret() {
+/**
+ * Blinks for about 20 s from the last keystroke, then rests visible. This
+ * screen stays mounted under placement and the whole hot-seat match, and an
+ * endless blink kept redrawing it, unseen, until the last shot (BUG-013).
+ */
+const CARET_BLINKS = 24;
+
+function Caret({ value }: { value: string }) {
   const opacity = useSharedValue(1);
   useEffect(() => {
+    cancelAnimation(opacity);
+    opacity.value = 1;
     opacity.value = withRepeat(
       withSequence(withTiming(0, { duration: 420 }), withTiming(1, { duration: 420 })),
-      -1,
+      CARET_BLINKS,
       true,
     );
-  }, [opacity]);
+    return () => cancelAnimation(opacity);
+  }, [opacity, value]);
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return (
     <Animated.View style={[styles.caret, style]} pointerEvents="none">
@@ -101,7 +112,7 @@ function NameField({
           <Text numberOfLines={1} style={styles.fieldValue}>
             {value}
           </Text>
-          {active ? <Caret /> : null}
+          {active ? <Caret value={value} /> : null}
         </View>
       </Pressable>
     </View>

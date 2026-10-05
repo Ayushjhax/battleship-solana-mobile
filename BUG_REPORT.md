@@ -57,7 +57,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-010 | Medium | Fixed | Self-reported offline and hot-seat results earn ladder points; hot-seat can be farmed |
 | BUG-011 | Medium | Fixed | Unwagered match: a Cancel that crosses `matched` becomes a 45 s forfeit loss |
 | BUG-012 | Low | Fixed | Misleading failure text ("…for 45 seconds… counted as a loss", every failure titled "No connection") |
-| BUG-013 | Low | Open | Hot-seat names screen's endless caret animation keeps running under the whole hot-seat match |
+| BUG-013 | Low | Fixed | Hot-seat names screen's endless caret animation keeps running under the whole hot-seat match |
 | BUG-014 | Low | Open | Android back on How to Play probably leaves the guide instead of turning back a page |
 | BUG-015 | Low | Needs decision | expo-doctor 20/21: six Expo packages a patch version behind |
 | BUG-016 | Low | Open | A failing wagered settlement retries forever and blocks both players from queueing |
@@ -302,6 +302,8 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   per reason.
 
 ### BUG-013 — Endless caret animation under the hot-seat match
+- **Status:** Fixed — the caret blinks ~20 s from the last keystroke, then rests visible;
+  `hotseat.tsx` joined the guarded list in `tests/regression/no-endless-animation.test.ts`.
 - **Where:** `app/(game)/hotseat.tsx:48-63`, `tests/regression/no-endless-animation.test.ts:26-37`.
 - **What's wrong:** the names screen stays mounted under placement and the battle, and its
   blinking caret repeats forever. That keeps a redraw going for the whole hot-seat match,
