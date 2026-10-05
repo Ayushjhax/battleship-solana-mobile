@@ -383,6 +383,38 @@ const EMPTY: MatchClientData = {
   reconnectDeadline: null,
 };
 
+const INSTALL_ID_KEY = 'eob.installId';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+let installIdCache: string | null = null;
+
+/**
+ * One id per app install, presented in every `hello`. It lets the server tell
+ * this app reconnecting while in line (its place moves to the new socket)
+ * from another device signed in to the same account (refused). Without it a
+ * reconnect left the place on the dead socket (BUG-003). Kept in storage so it
+ * survives an app restart; one id per process if storage is unavailable.
+ */
+function installId(): string {
+  if (installIdCache) return installIdCache;
+  try {
+    const stored = globalThis.localStorage?.getItem(INSTALL_ID_KEY);
+    if (stored && UUID.test(stored)) {
+      installIdCache = stored;
+      return stored;
+    }
+  } catch {
+    /* no storage: this process keeps one id */
+  }
+  const fresh = randomUuid();
+  installIdCache = fresh;
+  try {
+    globalThis.localStorage?.setItem(INSTALL_ID_KEY, fresh);
+  } catch {
+    /* as above */
+  }
+  return fresh;
+}
+
 function wsUrl(): string | null {
   const url = process.env.EXPO_PUBLIC_WS_URL?.trim() ?? '';
   return url.length > 0 ? url : null;
@@ -567,7 +599,7 @@ async function connect(): Promise<void> {
         fail('match_gone', 'The server no longer has this match. Its 45-second grace ran out while we were away.');
       }, RESYNC_TIMEOUT_MS);
     }
-    send(helloMessage(token.value, resumeMatchId));
+    send(helloMessage(token.value, resumeMatchId, installId()));
   };
 
   ws.onmessage = (event) => {

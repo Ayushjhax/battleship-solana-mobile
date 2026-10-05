@@ -34,6 +34,8 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 interface Connection {
   socket: WebSocket;
   playerId: string | null;
+  /** The app install this socket belongs to, from `hello`; null for older apps. */
+  clientId: string | null;
   isAlive: boolean;
   missedPongs: number;
   /** Timestamps of recent inbound messages, for the 10 msg/s rate limit. */
@@ -79,6 +81,7 @@ export function attachWebSocketServer(server: Server, log: (msg: string) => void
     const conn: Connection = {
       socket,
       playerId: null,
+      clientId: null,
       isAlive: true,
       missedPongs: 0,
       recentMessages: [],
@@ -125,7 +128,9 @@ export function attachWebSocketServer(server: Server, log: (msg: string) => void
       void conn.messageChain
         .then(async () => {
           if (!conn.playerId) return;
-          await dequeue(conn.playerId);
+          // Only what THIS socket holds: a reconnected app may already have
+          // moved its place in line to a new socket (BUG-003).
+          await dequeue(conn.playerId, socket);
           findRoomForPlayer(conn.playerId)?.handleDisconnect(conn.playerId, socket);
         })
         .catch((error: unknown) => {
@@ -210,6 +215,7 @@ async function handleMessage(conn: Connection, message: ClientMessage, log: (msg
       return;
     }
     conn.playerId = result.token.userId;
+    conn.clientId = message.clientId ?? null;
     send(conn, { t: 'hello:ok', v: 1, playerId: conn.playerId, emotes: true });
 
     // Reconnect: re-attach to an in-progress match regardless of whether the
@@ -237,6 +243,7 @@ async function handleMessage(conn: Connection, message: ClientMessage, log: (msg
       await enqueue(message.mode, playerId, conn.socket, {
         wagered: message.wagered,
         opponent: message.opponent,
+        ...(conn.clientId ? { clientId: conn.clientId } : {}),
         ...(message.wagerRequestId ? { wagerRequestId: message.wagerRequestId } : {}),
       });
       return;

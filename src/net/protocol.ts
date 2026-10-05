@@ -284,7 +284,7 @@ export function decodeServerMessage(raw: unknown): { ok: true; message: ServerMe
 // ---------------------------------------------------------------------------
 
 export type ClientMessage =
-  | { t: 'hello'; v: 1; token: string; resumeMatchId?: string }
+  | { t: 'hello'; v: 1; token: string; resumeMatchId?: string; clientId?: string }
   | {
       t: 'queue';
       v: 1;
@@ -304,8 +304,14 @@ export function encodeClientMessage(message: ClientMessage): string {
   return JSON.stringify(message);
 }
 
-export function helloMessage(token: string, resumeMatchId?: string): ClientMessage {
-  return resumeMatchId ? { t: 'hello', v: 1, token, resumeMatchId } : { t: 'hello', v: 1, token };
+export function helloMessage(token: string, resumeMatchId?: string, clientId?: string): ClientMessage {
+  return {
+    t: 'hello',
+    v: 1,
+    token,
+    ...(resumeMatchId ? { resumeMatchId } : {}),
+    ...(clientId ? { clientId } : {}),
+  };
 }
 export function queueMessage(
   mode: MatchMode,

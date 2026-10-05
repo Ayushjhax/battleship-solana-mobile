@@ -31,6 +31,8 @@ type QueueKey = `${MatchMode}:${'normal' | 'wager'}`;
 interface Waiting {
   readonly playerId: string;
   readonly socket: WebSocket;
+  /** The app install that queued (from `hello`); null for an older app. */
+  readonly clientId: string | null;
   readonly since: number;
   readonly rankPoints: number;
   readonly wagered: boolean;
@@ -75,14 +77,40 @@ const joining = new Set<string>();
  */
 const lastToldStatus = new WeakMap<Waiting, string>();
 
-/** Removes every entry for a player from one queue, in place. Returns them. */
-function removeFrom(key: QueueKey, playerId: string): Waiting[] {
+/**
+ * Removes a player's entries from one queue, in place, and returns them —
+ * only the ones held by `socket` when one is given.
+ */
+function removeFrom(key: QueueKey, playerId: string, socket?: WebSocket): Waiting[] {
   const queue = queues[key];
   const removed: Waiting[] = [];
   for (let i = queue.length - 1; i >= 0; i--) {
-    if (queue[i]?.playerId === playerId) removed.push(...queue.splice(i, 1));
+    const entry = queue[i];
+    if (entry?.playerId === playerId && (!socket || entry.socket === socket)) {
+      removed.push(...queue.splice(i, 1));
+    }
   }
   return removed;
+}
+
+/**
+ * Moves a place in line to a new socket from the same app install: it
+ * reconnected, and the server may not have noticed the old socket is dead.
+ * The entry keeps its position, its wait (and so its rank window) and its
+ * stake; only where `queued` and `matched` are sent changes.
+ */
+function rehome(entry: Waiting, socket: WebSocket): void {
+  for (const key of queueKeys) {
+    const queue = queues[key];
+    const index = queue.indexOf(entry);
+    if (index === -1) continue;
+    const moved: Waiting = { ...entry, socket };
+    queue[index] = moved;
+    const onlineCount = totalOnlineCount();
+    lastToldStatus.set(moved, `${index + 1}:${onlineCount}`);
+    send(socket, { t: 'queued', v: 1, position: index + 1, onlineCount });
+    return;
+  }
 }
 
 function send(socket: WebSocket, message: ServerMessage): void {
@@ -132,6 +160,7 @@ export async function enqueue(
     wagered: boolean;
     opponent: 'player' | 'bot';
     wagerRequestId?: string;
+    clientId?: string;
   },
 ): Promise<void> {
   // A reconnect can arrive while the prior socket's asynchronous refund is
@@ -142,7 +171,22 @@ export async function enqueue(
     send(socket, { t: 'error', v: 1, code: 'already_queued', message: 'already in a match' });
     return;
   }
-  if (waitingFor(playerId) || joining.has(playerId)) {
+  const waiting = waitingFor(playerId);
+  if (
+    waiting &&
+    waiting.socket !== socket &&
+    options.clientId !== undefined &&
+    waiting.clientId === options.clientId
+  ) {
+    // The same app on a new socket: it reconnected while in line. Refusing it
+    // left the place on the old socket, so `matched` went to a dead socket or
+    // the old socket's close dropped the place altogether (BUG-003).
+    rehome(waiting, socket);
+    return;
+  }
+  // Another device signed in to the same account keeps being refused: the
+  // place belongs to the device that took it.
+  if (waiting || joining.has(playerId)) {
     send(socket, { t: 'error', v: 1, code: 'already_queued', message: 'already queued' });
     return;
   }
@@ -163,6 +207,7 @@ async function enqueueVerified(
     wagered: boolean;
     opponent: 'player' | 'bot';
     wagerRequestId?: string;
+    clientId?: string;
   },
 ): Promise<void> {
   let wagerRequestId: string | null = null;
@@ -200,6 +245,7 @@ async function enqueueVerified(
   const entry: Waiting = {
     playerId,
     socket,
+    clientId: options.clientId ?? null,
     since: Date.now(),
     rankPoints: summary.rankPoints,
     wagered: options.wagered,
@@ -252,12 +298,17 @@ export interface QueueCancellation {
   readonly notifiedByRoom?: boolean;
 }
 
-export async function dequeue(playerId: string): Promise<QueueCancellation> {
+/**
+ * Takes a player out of line. `socket`, when given, limits it to the places
+ * that socket holds — a closing socket must not remove a place its app has
+ * already moved to a newer one.
+ */
+export async function dequeue(playerId: string, socket?: WebSocket): Promise<QueueCancellation> {
   const prior = pendingDequeues.get(playerId);
   const work = (async (): Promise<QueueCancellation> => {
     await prior;
     const removedEntries: Waiting[] = [];
-    for (const key of queueKeys) removedEntries.push(...removeFrom(key, playerId));
+    for (const key of queueKeys) removedEntries.push(...removeFrom(key, playerId, socket));
     if (removedEntries.length > 0) notifyWaiting();
 
     let pointBalance: number | undefined;

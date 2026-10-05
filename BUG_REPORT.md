@@ -47,7 +47,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 |---|---|---|---|
 | BUG-001 | Critical | Fixed | Points can be minted without playing (self-reported offline-wager wins) and sold for treasury SOL |
 | BUG-002 | High | Fixed | A late close of a player's old socket detaches their live match seat → forfeit |
-| BUG-003 | High | Open | Re-queueing from a new socket: `matched` goes to the dead socket, or the player is silently dropped from the queue while the app shows "In line" |
+| BUG-003 | High | Fixed | Re-queueing from a new socket: `matched` goes to the dead socket, or the player is silently dropped from the queue while the app shows "In line" |
 | BUG-004 | High | Open | Android back on "Finding an opponent" leaves the player queued in the background → silent forfeit (and stake) |
 | BUG-005 | Medium | Open | "Try again" after an opponent cancels a wagered match dead-ends on "Connecting…" |
 | BUG-006 | Medium | Open | Double-tapping Battle! can open two searching/battle screens (double-speed turn clock; hot-seat skips player 2's placement) |
@@ -124,7 +124,11 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   is the seat's current socket.
 
 ### BUG-003 — Re-queueing from a new socket strands the player
-- **Severity:** High · **Status:** Open
+- **Severity:** High · **Status:** Fixed — `hello` now carries a per-install `clientId`; a
+  queue from the same install moves its place in line to the new socket (keeping position,
+  wait and stake), a closing socket only removes what it holds, and another device on the
+  account is still refused. Tests: `server/tests/regression/requeue-new-socket.test.ts`,
+  `src/net/__tests__/match-client.test.ts` ("presents the same install id…").
 - **Where:** `server/src/matchmaker.ts:145` (refuses a second queue for the same player),
   `server/src/ws.ts:128` (dequeues by player id), `src/net/match-client.ts:953-966` (the
   app reads `already_queued` as "still in line").

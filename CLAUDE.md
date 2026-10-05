@@ -240,6 +240,10 @@ that looks like a rectangle from a UI kit.
 - The flow is place first, then queue: placement → `/searching` (`queue`) → `matched` →
   `ready` with the placement store's fleet, immediately → arena reveal 2 s → `/battle`.
   The server's 90 s layout deadline is the *opponent's* problem; ours is already in.
+- `hello` carries the app install's `clientId` (persisted, `installId()` in match-client.ts).
+  The server keys reconnects on it: a queue from the same install on a new socket takes over
+  its own place in line, one from another device on the account is refused, and a closing
+  socket only ever drops what that socket holds (seat or queue entry).
 - `useMatchClient` is a module-level singleton that survives the route change. `status`
   is one enum for the whole lifecycle (`idle → connecting → queued → matched → active →
   over`, with `reconnecting` and `failed` on the side); `opponentDisconnected` is separate

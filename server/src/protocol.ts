@@ -84,6 +84,12 @@ export const ClientMessageSchema = z.discriminatedUnion('t', [
     v: z.literal(1),
     token: z.string().min(1).max(4096),
     resumeMatchId: z.string().uuid().optional(),
+    /**
+     * One id per app install (additive, optional). A queue from the same
+     * install on a new socket takes over its own place in line; one from
+     * another device signed in to the account is refused. See matchmaker.ts.
+     */
+    clientId: z.string().uuid().optional(),
   }),
   z.object({
     t: z.literal('queue'),

@@ -467,6 +467,26 @@ describe('match client', () => {
     expect(count('ping')).toBeGreaterThan(0);
   }, 45_000);
 
+  // BUG-003: the server has to tell this app reconnecting (take over your own
+  // place in line) from another device on the same account (refused). Every
+  // socket one install opens presents the same id.
+  it('presents the same install id in every hello, across a reconnect', async () => {
+    const mc = await client();
+    mc.getState().queue('classic');
+    await until(() => mc.getState().status === 'queued', 5000, 'queued');
+    server.mute = true;
+    mc.getState().nudge();
+    await until(() => server.received.filter((m) => m.t === 'hello').length >= 2, 12_000, 'a second hello');
+    server.mute = false;
+
+    const ids = server.received
+      .filter((m): m is Extract<ClientMessage, { t: 'hello' }> => m.t === 'hello')
+      .map((m) => m.clientId);
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(ids[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(new Set(ids).size).toBe(1);
+  }, 20_000);
+
   it('sends and hears emotes over the socket when the server relays them', async () => {
     server.emotes = true;
     const mc = await playUntilPlaying();
