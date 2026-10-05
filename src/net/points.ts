@@ -6,6 +6,13 @@ import { ensureSession } from './auth';
 const QuoteSchema = z.object({
   quote: z.object({
     balance: z.number().int().nonnegative(),
+    /**
+     * What a sale may spend: the balance less welcome points, which are play
+     * money (0014). Optional so an older server, which has no such split,
+     * still parses; then the whole balance is sellable, as it is there.
+     */
+    sellableBalance: z.number().int().nonnegative().optional(),
+    lockedBalance: z.number().int().nonnegative().optional(),
     points: z.literal(100),
     lamports: z.literal(1_000_000),
     sol: z.string(),
@@ -25,23 +32,14 @@ const WagerCancellationSchema = z.object({
   balance: z.number().int().nonnegative().nullable(),
 });
 
-const WagerReservationSchema = z.object({
-  ok: z.boolean(),
-  requestId: z.string().uuid(),
-  balance: z.number().int().nonnegative(),
-  reason: z.string().nullable(),
-});
-
-const WagerSettlementSchema = z.object({
-  settled: z.boolean(),
-  balance: z.number().int().nonnegative(),
-});
-
 export type PointQuote = z.infer<typeof QuoteSchema>['quote'];
 export type PointTradeResult = z.infer<typeof TradeSchema>;
 export type WagerCancellation = z.infer<typeof WagerCancellationSchema>;
-export type WagerReservation = z.infer<typeof WagerReservationSchema>;
-export type WagerSettlement = z.infer<typeof WagerSettlementSchema>;
+
+/** How many of the quoted points a sale may spend. */
+export function sellableOf(quote: PointQuote): number {
+  return quote.sellableBalance ?? quote.balance;
+}
 
 function apiBase(): string {
   const explicit = process.env.EXPO_PUBLIC_API_URL?.trim();
@@ -124,37 +122,6 @@ export async function requestPointSell(requestId: string): Promise<PointTradeRes
   if (!response.ok) throw new Error(await message(response));
   const parsed = TradeSchema.safeParse(await response.json());
   if (!parsed.success) throw new Error('The sale response was invalid.');
-  return parsed.data;
-}
-
-/**
- * Holds the 50-point stake for a match against this device's AI. Online
- * wagers reserve through the match socket instead — there the room owns the
- * hold — so this is the offline path only. Idempotent by requestId.
- */
-export async function reserveOfflineWager(requestId: string): Promise<WagerReservation> {
-  const response = await request('/points/wager/reserve', {
-    method: 'POST',
-    body: JSON.stringify({ requestId }),
-  });
-  if (!response.ok) throw new Error(await message(response));
-  const parsed = WagerReservationSchema.safeParse(await response.json());
-  if (!parsed.success) throw new Error('The wager reservation response was invalid.');
-  return parsed.data;
-}
-
-/** Pays out (or keeps) that stake once the local match is over. Idempotent. */
-export async function settleOfflineWager(
-  requestId: string,
-  won: boolean,
-): Promise<WagerSettlement> {
-  const response = await request('/points/wager/settle', {
-    method: 'POST',
-    body: JSON.stringify({ requestId, won }),
-  });
-  if (!response.ok) throw new Error(await message(response));
-  const parsed = WagerSettlementSchema.safeParse(await response.json());
-  if (!parsed.success) throw new Error('The wager settlement response was invalid.');
   return parsed.data;
 }
 

@@ -1,8 +1,8 @@
 /**
- * The client's points API. Every call is money-adjacent — a wager hold, a SOL
+ * The client's points API. Every call is money-adjacent — a wager refund, a SOL
  * purchase, a payout — so each one validates its response shape and each one
- * must fail loudly rather than return a plausible-looking default. The wager
- * calls are idempotent by requestId; these pin that the id is actually sent.
+ * must fail loudly rather than return a plausible-looking default. The calls
+ * are idempotent by requestId; these pin that the id is actually sent.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -126,72 +126,42 @@ describe('requestPointSell', () => {
   });
 });
 
-describe('reserveOfflineWager', () => {
-  it('sends the request id so the hold is idempotent', async () => {
-    mocks.fetch.mockResolvedValue(
-      jsonResponse({ ok: true, requestId: REQUEST_ID, balance: 200, reason: null }),
-    );
-    const { reserveOfflineWager } = await import('../../src/net/points');
+describe('offline wagers (BUG-001)', () => {
+  it('has no way to reserve or settle a stake outside a server-run match', async () => {
+    const points = await import('../../src/net/points');
 
-    await expect(reserveOfflineWager(REQUEST_ID)).resolves.toMatchObject({ ok: true });
-    expect(sentUrl()).toBe('https://api.example.test/points/wager/reserve');
-    expect(sentBody()).toEqual({ requestId: REQUEST_ID });
-  });
-
-  it('carries a refusal reason through instead of throwing', async () => {
-    mocks.fetch.mockResolvedValue(
-      jsonResponse({ ok: false, requestId: REQUEST_ID, balance: 10, reason: 'insufficient_points' }),
-    );
-    const { reserveOfflineWager } = await import('../../src/net/points');
-
-    await expect(reserveOfflineWager(REQUEST_ID)).resolves.toEqual({
-      ok: false,
-      requestId: REQUEST_ID,
-      balance: 10,
-      reason: 'insufficient_points',
-    });
-  });
-
-  it('rejects a reservation whose requestId is not a uuid', async () => {
-    mocks.fetch.mockResolvedValue(
-      jsonResponse({ ok: true, requestId: 'nope', balance: 200, reason: null }),
-    );
-    const { reserveOfflineWager } = await import('../../src/net/points');
-
-    await expect(reserveOfflineWager(REQUEST_ID)).rejects.toThrow(
-      /wager reservation response was invalid/,
-    );
+    // Removed with the server routes: a device could report a win it never
+    // played and be paid for it, then sell the points for SOL.
+    expect(points).not.toHaveProperty('reserveOfflineWager');
+    expect(points).not.toHaveProperty('settleOfflineWager');
   });
 });
 
-describe('settleOfflineWager', () => {
-  it('reports the win flag and returns the new balance', async () => {
-    mocks.fetch.mockResolvedValue(jsonResponse({ settled: true, balance: 300 }));
-    const { settleOfflineWager } = await import('../../src/net/points');
+describe('fetchPointQuote', () => {
+  const quote = {
+    balance: 250,
+    points: 100,
+    lamports: 1_000_000,
+    sol: '0.001',
+    treasuryAddress: 'TreasuryAddress1111111111111111111111111111',
+  };
 
-    await expect(settleOfflineWager(REQUEST_ID, true)).resolves.toEqual({
-      settled: true,
-      balance: 300,
-    });
-    expect(sentBody()).toEqual({ requestId: REQUEST_ID, won: true });
-  });
-
-  it('sends won:false for a loss', async () => {
-    mocks.fetch.mockResolvedValue(jsonResponse({ settled: true, balance: 150 }));
-    const { settleOfflineWager } = await import('../../src/net/points');
-
-    await settleOfflineWager(REQUEST_ID, false);
-
-    expect(sentBody()).toEqual({ requestId: REQUEST_ID, won: false });
-  });
-
-  it('rejects a settlement missing its balance', async () => {
-    mocks.fetch.mockResolvedValue(jsonResponse({ settled: true }));
-    const { settleOfflineWager } = await import('../../src/net/points');
-
-    await expect(settleOfflineWager(REQUEST_ID, true)).rejects.toThrow(
-      /wager settlement response was invalid/,
+  it('reads how much of the balance can be sold, apart from welcome points', async () => {
+    mocks.fetch.mockResolvedValue(
+      jsonResponse({ quote: { ...quote, sellableBalance: 100, lockedBalance: 150 } }),
     );
+    const { fetchPointQuote, sellableOf } = await import('../../src/net/points');
+
+    const read = await fetchPointQuote();
+    expect(read).toMatchObject({ balance: 250, sellableBalance: 100, lockedBalance: 150 });
+    expect(sellableOf(read)).toBe(100);
+  });
+
+  it('treats the whole balance as sellable against a server that predates the split', async () => {
+    mocks.fetch.mockResolvedValue(jsonResponse({ quote }));
+    const { fetchPointQuote, sellableOf } = await import('../../src/net/points');
+
+    expect(sellableOf(await fetchPointQuote())).toBe(250);
   });
 });
 

@@ -28,74 +28,48 @@ function reset(): void {
   usePoints.getState().clear();
 }
 
-describe('offline wager lifecycle', () => {
+describe('offline wagers are gone (BUG-001)', () => {
   beforeEach(reset);
 
-  it('carries the live stake into a settlement the app can retry', () => {
-    const points = usePoints.getState();
-    points.sync(100);
-    points.beginWager('11111111-1111-4111-8111-111111111111');
-    // The server already deducted the stake; the store mirrors that balance.
-    points.sync(100 - WAGER_STAKE);
+  it('offers no way to stake points on a match the server never sees', () => {
+    const points = usePoints.getState() as unknown as Record<string, unknown>;
 
-    expect(usePoints.getState().activeWager).toEqual({
-      requestId: '11111111-1111-4111-8111-111111111111',
-      stake: WAGER_STAKE,
+    // These carried a stake into a match against the device's own AI, which
+    // the server then paid out on the device's word.
+    expect(points.beginWager).toBeUndefined();
+    expect(points.finishWager).toBeUndefined();
+    expect(points.activeWager).toBeUndefined();
+  });
+
+  it('still persists a settlement an older version left behind, so it can be refunded', () => {
+    usePoints.setState({
+      pendingWagerSettlement: {
+        requestId: '33333333-3333-4333-8333-333333333333',
+        stake: WAGER_STAKE,
+        won: true,
+      },
     });
-
-    usePoints.getState().finishWager(true);
-    const after = usePoints.getState();
-    expect(after.activeWager).toBeNull();
-    expect(after.pendingWagerSettlement).toEqual({
-      requestId: '11111111-1111-4111-8111-111111111111',
-      stake: WAGER_STAKE,
-      won: true,
-    });
-  });
-
-  it('does nothing when the match carried no wager', () => {
-    usePoints.getState().finishWager(true);
-
-    expect(usePoints.getState().pendingWagerSettlement).toBeNull();
-  });
-
-  it('keeps one settlement per match — a second finish cannot queue another', () => {
-    const points = usePoints.getState();
-    points.beginWager('22222222-2222-4222-8222-222222222222');
-    points.finishWager(false);
-    // markFinished can run more than once for the same match; the second call
-    // has no active wager left to move, so the queued settlement stands.
-    usePoints.getState().finishWager(true);
-
-    expect(usePoints.getState().pendingWagerSettlement?.won).toBe(false);
-  });
-
-  it('persists an unpaid settlement but never the live hold', () => {
-    const points = usePoints.getState();
-    points.beginWager('33333333-3333-4333-8333-333333333333');
-    points.finishWager(true);
     const persisted = JSON.parse(values.get('eob.points') as string) as {
       state: Record<string, unknown>;
     };
 
-    // A won stake must survive a crash or a kill so the payout still happens.
     expect(persisted.state.pendingWagerSettlement).toEqual({
       requestId: '33333333-3333-4333-8333-333333333333',
       stake: WAGER_STAKE,
       won: true,
     });
-    // An abandoned hold is handed straight back by the next reservation, so
-    // the live wager is deliberately dropped on restart.
-    expect(persisted.state).not.toHaveProperty('activeWager');
   });
 
-  it('clears both halves when the account signs out', () => {
-    const points = usePoints.getState();
-    points.beginWager('44444444-4444-4444-8444-444444444444');
-    points.finishWager(true);
+  it('clears that settlement when the account signs out', () => {
+    usePoints.setState({
+      pendingWagerSettlement: {
+        requestId: '44444444-4444-4444-8444-444444444444',
+        stake: WAGER_STAKE,
+        won: true,
+      },
+    });
     usePoints.getState().clear();
 
     expect(usePoints.getState().pendingWagerSettlement).toBeNull();
-    expect(usePoints.getState().activeWager).toBeNull();
   });
 });

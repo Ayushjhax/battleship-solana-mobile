@@ -45,7 +45,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 
 | ID | Sev | Status | Summary |
 |---|---|---|---|
-| BUG-001 | Critical | Needs decision | Points can be minted without playing (self-reported offline-wager wins) and sold for treasury SOL |
+| BUG-001 | Critical | Fixed | Points can be minted without playing (self-reported offline-wager wins) and sold for treasury SOL |
 | BUG-002 | High | Open | A late close of a player's old socket detaches their live match seat → forfeit |
 | BUG-003 | High | Open | Re-queueing from a new socket: `matched` goes to the dead socket, or the player is silently dropped from the queue while the app shows "In line" |
 | BUG-004 | High | Open | Android back on "Finding an opponent" leaves the player queued in the background → silent forfeit (and stake) |
@@ -74,7 +74,13 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 ## Critical
 
 ### BUG-001 — Points can be minted without playing and sold for SOL
-- **Severity:** Critical (economy / security) · **Status:** Needs decision
+- **Severity:** Critical (economy / security) · **Status:** Fixed — offline wagers removed
+  (routes, client path, `settle_offline_wager` dropped in migration 0014); welcome points
+  locked (`point_accounts.locked_points`): playable, never sellable, and a pot pays out in
+  the kinds that were staked so they can't be laundered through a wager. Existing balances
+  are split once by the migration; legacy pending offline settlements are refunded. Tests:
+  `tests/db/verify-offline.test.ts`, `server/tests/regression/offline-wagers-removed.test.ts`,
+  `tests/net/legacy-offline-wager.test.ts`, `tests/regression/no-offline-wagers.test.ts`.
 - **Where:** `server/src/index.ts:242` (`POST /points/wager/settle`),
   `supabase/migrations/0012_offline_wagers.sql:74` (`settle_offline_wager`),
   `server/src/points.ts:154` (`sellPoints`).

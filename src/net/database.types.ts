@@ -162,6 +162,7 @@ export type Database = {
         Row: {
           balance: number
           created_at: string
+          locked_points: number
           privy_user_id: string
           updated_at: string
           welcome_awarded_at: string
@@ -169,6 +170,7 @@ export type Database = {
         Insert: {
           balance?: number
           created_at?: string
+          locked_points?: number
           privy_user_id: string
           updated_at?: string
           welcome_awarded_at?: string
@@ -176,6 +178,7 @@ export type Database = {
         Update: {
           balance?: number
           created_at?: string
+          locked_points?: number
           privy_user_id?: string
           updated_at?: string
           welcome_awarded_at?: string
@@ -269,6 +272,7 @@ export type Database = {
       point_wager_holds: {
         Row: {
           created_at: string
+          locked_stake: number
           match_id: string | null
           privy_user_id: string
           profile_id: string
@@ -279,6 +283,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          locked_stake?: number
           match_id?: string | null
           privy_user_id: string
           profile_id: string
@@ -289,6 +294,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          locked_stake?: number
           match_id?: string | null
           privy_user_id?: string
           profile_id?: string
@@ -481,6 +487,10 @@ export type Database = {
         Returns: { balance: number; welcome_awarded: boolean }[]
       }
       get_point_balance: { Args: { p_profile_id: string }; Returns: number }
+      get_point_balances: {
+        Args: { p_profile_id: string }
+        Returns: { balance: number; locked: number; sellable: number }[]
+      }
       mark_point_sell_broadcast: {
         Args: {
           p_blockhash: string
@@ -497,10 +507,6 @@ export type Database = {
         Returns: number
       }
       abandon_match: { Args: { p_match_id: string }; Returns: boolean }
-      settle_offline_wager: {
-        Args: { p_profile_id: string; p_request_id: string; p_won: boolean }
-        Returns: { balance: number; settled: boolean }[]
-      }
       refund_point_wager: {
         Args: { p_profile_id: string; p_request_id: string }
         Returns: number

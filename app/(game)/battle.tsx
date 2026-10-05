@@ -324,10 +324,8 @@ export function BattleScreen({ setup: presetSetup, tutorial = false }: BattleScr
     const matchClient = useMatchClient.getState();
     const serverBacked = Boolean(matchClient.matchId);
     const serverBot = serverBacked && matchClient.opponent?.isBot === true;
-    // An offline wager has no socket behind it — the battle store captured it
-    // at start(), so a settlement still queued from an earlier match cannot
-    // make this result read as wagered.
-    const wagered = matchClient.wagered || state.wagered;
+    // Only a match the server ran can carry a stake (BUG-001).
+    const wagered = matchClient.wagered;
     const params = {
       won: won ? '1' : '0',
       local: serverBacked || state.mode === 'online' ? '0' : '1',

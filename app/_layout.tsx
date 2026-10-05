@@ -213,7 +213,7 @@ function AuthenticatedApp() {
     const flushIfActive = () => {
       if (AppState.currentState !== 'active') return;
       void flushPendingResults();
-      // A won offline stake must still be paid out after a crash or a kill.
+      // A stake an older version took for an offline match goes back (BUG-001).
       void flushPendingWager();
     };
     flushIfActive();

@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getParsedTransaction: vi.fn(),
-  fetchPointBalance: vi.fn(),
+  fetchPointBalances: vi.fn(),
   fetchVerifiedWalletAddress: vi.fn(),
   completePointBuy: vi.fn(),
 }));
@@ -30,7 +30,7 @@ vi.mock('@solana/web3.js', async (importOriginal) => {
 });
 
 vi.mock('../../src/db', () => ({
-  fetchPointBalance: mocks.fetchPointBalance,
+  fetchPointBalances: mocks.fetchPointBalances,
   fetchVerifiedWalletAddress: mocks.fetchVerifiedWalletAddress,
   completePointBuy: mocks.completePointBuy,
   beginPointSell: vi.fn(),
@@ -88,7 +88,8 @@ function transferTx(
 beforeEach(() => {
   vi.resetModules();
   for (const mock of Object.values(mocks)) mock.mockReset();
-  mocks.fetchPointBalance.mockResolvedValue(250);
+  // 150 of the 250 are welcome points (0014): playable, never sellable.
+  mocks.fetchPointBalances.mockResolvedValue({ balance: 250, locked: 150, sellable: 100 });
   mocks.fetchVerifiedWalletAddress.mockResolvedValue(PLAYER_WALLET);
   mocks.completePointBuy.mockResolvedValue(350);
   setEnv();
@@ -100,6 +101,8 @@ describe('treasury configuration', () => {
 
     await expect(getPointQuote('profile-1')).resolves.toEqual({
       balance: 250,
+      sellableBalance: 100,
+      lockedBalance: 150,
       points: 100,
       lamports: 1_000_000,
       sol: '0.001',

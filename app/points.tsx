@@ -19,6 +19,7 @@ import { Alert, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 import {
   confirmPointBuy,
   fetchPointQuote,
+  sellableOf,
   requestPointSell,
   type PointQuote,
 } from '@/net/points';
@@ -83,6 +84,9 @@ function friendlyError(error: unknown): string {
     return 'Your wallet does not have enough SOL.';
   }
   if (/insufficient points/i.test(message)) return 'You need at least 100 points to sell.';
+  if (/welcome points/i.test(message)) {
+    return 'Welcome points are for playing, not for exchange. Only points you bought or won can be sold.';
+  }
   if (/confirming/i.test(message)) return 'The transfer is still confirming. Tap “Finish credit” shortly.';
   return message.length <= 130 ? message : 'The transaction could not be completed. Please try again.';
 }
@@ -274,8 +278,14 @@ export default function PointsScreen() {
       void execute();
       return;
     }
-    if (balance < quote.points) {
-      Alert.alert('Not enough points', `You need ${quote.points} points to make this exchange.`);
+    const sellable = sellableOf(quote);
+    if (sellable < quote.points) {
+      Alert.alert(
+        'Not enough points to sell',
+        balance >= quote.points
+          ? `Welcome points are for playing, not for exchange. You can sell ${sellable} of your ${balance} points; a sale takes ${quote.points}.`
+          : `You need ${quote.points} points to make this exchange.`,
+      );
       return;
     }
     Alert.alert(
@@ -387,7 +397,7 @@ export default function PointsScreen() {
             <Text style={styles.copy}>
               {tab === 'buy'
                 ? 'Privy will ask you to approve a 0.001 SOL transfer. Points are credited only after the backend verifies it on Solana.'
-                : 'The backend reserves 100 points, then sends 0.001 SOL from the treasury to your verified Privy wallet. Failed payouts restore the points.'}
+                : `Sells 100 points for 0.001 SOL from the treasury, sent to your verified Privy wallet. Welcome points are play-only: you can sell ${quote ? sellableOf(quote) : 0} now.`}
             </Text>
             <View style={styles.actionRow}>
               <Image source={MATCHMAKING_ART.navyDashLeft} style={styles.actionDash} contentFit="contain" />

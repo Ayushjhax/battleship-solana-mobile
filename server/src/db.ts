@@ -140,13 +140,11 @@ export async function verifyDatabaseConnection(): Promise<void> {
   if (failed) throw new Error(`Supabase schema readiness check failed: ${failed.message}`);
 
   const unused = '00000000-0000-4000-8000-000000000000';
-  const probe = await db().rpc('settle_offline_wager', {
-    p_profile_id: unused,
-    p_request_id: unused,
-    p_won: false,
-  });
+  // 0014's balance split. No profile carries this id, so it raises before it
+  // reads anything — which still proves the function is there.
+  const probe = await db().rpc('get_point_balances', { p_profile_id: unused });
   if (probe.error && isMissingFunction(probe.error)) {
-    throw missingMigration('settle_offline_wager', '0012_offline_wagers.sql');
+    throw missingMigration('get_point_balances', '0014_no_offline_wagers_locked_welcome.sql');
   }
 
   // No match carries this id, so the function returns false without writing.
@@ -399,6 +397,22 @@ export async function fetchPointBalance(profileId: string): Promise<number> {
   return Number(data);
 }
 
+export interface PointBalances {
+  readonly balance: number;
+  /** Welcome points (0014): playable, never sellable. */
+  readonly locked: number;
+  readonly sellable: number;
+}
+
+export async function fetchPointBalances(profileId: string): Promise<PointBalances> {
+  const { data, error } = await db().rpc('get_point_balances', { p_profile_id: profileId });
+  const row = data?.[0];
+  if (error || !row) {
+    throw new Error(`point balances(${profileId}): ${error?.message ?? 'not found'}`);
+  }
+  return { balance: Number(row.balance), locked: Number(row.locked), sellable: Number(row.sellable) };
+}
+
 export async function fetchVerifiedWalletAddress(profileId: string): Promise<string> {
   const { data, error } = await db()
     .from('privy_accounts')
@@ -435,37 +449,6 @@ export async function reservePointWager(
     balance: Number(row.balance),
     reason: row.reason,
   };
-}
-
-export interface OfflineWagerSettlement {
-  readonly balance: number;
-  /** False when the hold was already settled, refunded, or belongs to a room. */
-  readonly settled: boolean;
-}
-
-/**
- * Settles a wager played against the device's own AI (0012). There is no
- * matches row to go through, so the hold itself is the idempotency key and a
- * retried settlement pays the prize exactly once.
- */
-export async function settleOfflineWager(
-  profileId: string,
-  requestId: string,
-  won: boolean,
-): Promise<OfflineWagerSettlement> {
-  const { data, error } = await db().rpc('settle_offline_wager', {
-    p_profile_id: profileId,
-    p_request_id: requestId,
-    p_won: won,
-  });
-  const row = data?.[0];
-  if (error && isMissingFunction(error)) {
-    throw missingMigration('settle_offline_wager', '0012_offline_wagers.sql');
-  }
-  if (error || !row) {
-    throw new Error(`settle offline wager(${requestId}): ${error?.message ?? 'no result'}`);
-  }
-  return { balance: Number(row.balance), settled: row.settled };
 }
 
 export async function refundPointWager(profileId: string, requestId: string): Promise<number> {

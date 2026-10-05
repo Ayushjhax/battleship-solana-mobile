@@ -32,8 +32,6 @@ import {
   applyOfflineResult,
   checkDatabaseSchema,
   fetchProfileRewardTotals,
-  reservePointWager,
-  settleOfflineWager,
   upsertPrivyAccount,
   verifyAuthAdminAccess,
   verifyDatabaseConnection,
@@ -186,8 +184,6 @@ const PointTradeBody = z.object({
 });
 
 const WagerCancelBody = z.object({ requestId: z.string().uuid() });
-const WagerReserveBody = z.object({ requestId: z.string().uuid() });
-const WagerSettleBody = z.object({ requestId: z.string().uuid(), won: z.boolean() });
 
 async function verifiedProfileId(authorization: string | undefined): Promise<string | null> {
   const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
@@ -209,50 +205,11 @@ app.get('/points/quote', async (request, reply) => {
 });
 
 /**
- * Holds the stake for a wager played against the device's own AI. Online
- * wagers still reserve through the socket's `queue`, where the authoritative
- * room owns the hold; this route exists because an offline match never
- * reaches matchmaking. The reservation is idempotent by requestId, and an
- * abandoned hold is handed back by the next call rather than charged again.
+ * Refunds a stake held for matchmaking that never became a match. There is no
+ * route to reserve or settle a wager outside a room: a stake only rides on a
+ * match this server runs from start to finish, so nobody can report a win it
+ * never saw (0014).
  */
-app.post('/points/wager/reserve', async (request, reply) => {
-  const profileId = await verifiedProfileId(request.headers.authorization);
-  if (!profileId) return reply.code(401).send({ error: 'valid gameplay session required' });
-  const parsed = WagerReserveBody.safeParse(request.body);
-  if (!parsed.success) return reply.code(400).send({ error: 'invalid wager reservation' });
-  try {
-    const reservation = await reservePointWager(profileId, parsed.data.requestId);
-    return {
-      ok: reservation.ok,
-      requestId: reservation.requestId,
-      balance: reservation.balance,
-      reason: reservation.reason,
-    };
-  } catch (error) {
-    request.log.error(error);
-    return reply.code(503).send({ error: 'could not reserve the wager stake' });
-  }
-});
-
-/**
- * Settles that same offline wager. The verdict comes from the device, which
- * is the trade-off an offline wager makes: there is no server-side match to
- * check it against, unlike an online or matchmade bot game.
- */
-app.post('/points/wager/settle', async (request, reply) => {
-  const profileId = await verifiedProfileId(request.headers.authorization);
-  if (!profileId) return reply.code(401).send({ error: 'valid gameplay session required' });
-  const parsed = WagerSettleBody.safeParse(request.body);
-  if (!parsed.success) return reply.code(400).send({ error: 'invalid wager settlement' });
-  try {
-    const result = await settleOfflineWager(profileId, parsed.data.requestId, parsed.data.won);
-    return { settled: result.settled, balance: result.balance };
-  } catch (error) {
-    request.log.error(error);
-    return reply.code(503).send({ error: 'could not settle the wager' });
-  }
-});
-
 app.post('/points/wager/cancel', async (request, reply) => {
   const profileId = await verifiedProfileId(request.headers.authorization);
   if (!profileId) return reply.code(401).send({ error: 'valid gameplay session required' });
@@ -311,6 +268,9 @@ app.post('/points/sell', async (request, reply) => {
     const message = error instanceof Error ? error.message : '';
     if (/insufficient points/i.test(message)) {
       return reply.code(409).send({ error: 'insufficient points' });
+    }
+    if (/welcome points cannot be exchanged/i.test(message)) {
+      return reply.code(409).send({ error: 'welcome points cannot be exchanged for SOL' });
     }
     return reply.code(503).send({ error: 'could not process the point sale' });
   }

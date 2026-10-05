@@ -4,16 +4,18 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MIG = fileURLToPath(new URL('./migrations/', import.meta.url));
-const db = new PGlite();
 let fails = 0;
 const check = (ok, msg) => { if (!ok) fails++; console.log((ok ? 'ok   ' : 'FAIL ') + msg); };
-const q = (sql, params) => db.query(sql, params);
-const fails_with = async (sql, params, codeOrText) => {
-  try { await q(sql, params); return false; } catch (e) { return String(e.code ?? '') === codeOrText || String(e.message).includes(codeOrText); }
-};
+
+/** A fresh in-process Postgres with the Supabase stand-ins below already in it. */
+async function freshDb() {
+  const fresh = new PGlite();
+  await fresh.exec(STAND_INS);
+  return fresh;
+}
 
 // ---- Supabase stand-ins: the parts of auth.* and realtime.* the migrations touch ----
-await db.exec(`
+const STAND_INS = `
   create role anon nologin; create role authenticated nologin; create role service_role nologin;
   create schema auth;
   create table auth.users (
@@ -34,19 +36,28 @@ await db.exec(`
   grant usage on schema public, auth, realtime to anon, authenticated, service_role;
   grant select, insert on realtime.messages to authenticated;
   grant usage, select on all sequences in schema realtime to authenticated;
-`);
+`;
+
+const db = await freshDb();
+const q = (sql, params) => db.query(sql, params);
+const fails_with = async (sql, params, codeOrText) => {
+  try { await q(sql, params); return false; } catch (e) { return String(e.code ?? '') === codeOrText || String(e.message).includes(codeOrText); }
+};
 
 // ---- apply every migration, in order, twice (idempotency) ----
 const files = fs.readdirSync(MIG).filter((f) => f.endsWith('.sql')).sort();
-for (const pass of [1, 2]) {
-  for (const f of files) {
-    try { await db.exec(fs.readFileSync(path.join(MIG, f), 'utf8')); }
+async function applyMigrations(target, list, label) {
+  for (const f of list) {
+    try { await target.exec(fs.readFileSync(path.join(MIG, f), 'utf8')); }
     catch (e) {
       fails++;
       const at = e.position ? ` at character ${e.position}` : '';
-      console.log(`FAIL pass ${pass} ${f}: ${e.message}${at}`);
+      console.log(`FAIL ${label} ${f}: ${e.message}${at}`);
     }
   }
+}
+for (const pass of [1, 2]) {
+  await applyMigrations(db, files, `pass ${pass}`);
   console.log(`ok    pass ${pass}: ${files.join(', ')} applied`);
 }
 
@@ -201,7 +212,7 @@ check(await fails_with(
   '42501',
 ), 'clients cannot invoke the Privy sync function');
 
-// ---- universal points, wagers, and replay-safe trades (0010) ----
+// ---- universal points, wagers, and replay-safe trades (0010, 0014) ----
 await asServer();
 await q(
   `select public.sync_privy_account($1, 'did:privy:challenger', 'b@example.com', 'Challenger', 'email', 'SolanaB', 'wallet-b', '[]'::jsonb, now())`,
@@ -213,13 +224,33 @@ pointInit = (await q(`select * from public.ensure_point_account($1, 'did:privy:c
 check(Number(pointInit.balance) === 100 && pointInit.welcome_awarded === false, 're-syncing the same Privy user never repeats the welcome award');
 await q(`select * from public.ensure_point_account($1, 'did:privy:challenger')`, [B]);
 
+// 0014: welcome points are play money. They can be staked and won with, but
+// never sold, and that has to survive every way points move between accounts.
+const pointsOf = async (id) => {
+  try {
+    const row = (await q(`select * from public.get_point_balances($1)`, [id])).rows[0];
+    return { balance: Number(row.balance), locked: Number(row.locked), sellable: Number(row.sellable) };
+  } catch (e) {
+    // Reported as failed checks, so one missing function can't hide the rest.
+    return { balance: NaN, locked: NaN, sellable: NaN, error: e.message };
+  }
+};
+let pts = await pointsOf(A);
+check(pts.balance === 100 && pts.locked === 100 && pts.sellable === 0, `the welcome award is locked: playable, not sellable (${JSON.stringify(pts)})`);
+const WELCOME_SALE = 'ffffffff-ffff-4fff-8fff-fffffffffff0';
+let sale = (await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, WELCOME_SALE])).rows[0];
+check(sale.ok === false && sale.reason === 'locked_points' && Number(sale.balance) === 100, 'welcome points cannot be sold for SOL');
+check((await q(`select count(*)::int as n from public.point_trades where request_id = $1`, [WELCOME_SALE])).rows[0].n === 0, '…and the refused sale leaves no trade behind');
+
 const HOLD_CANCEL = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
 let hold = (await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, HOLD_CANCEL])).rows[0];
 check(hold.ok === true && Number(hold.balance) === 50, 'reserving a wager atomically deducts 50 points');
+check((await pointsOf(A)).locked === 50, 'a stake is drawn from welcome points first');
 hold = (await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, HOLD_CANCEL])).rows[0];
 check(hold.ok === true && Number(hold.balance) === 50, 'replaying the same wager reservation never deducts twice');
 let pointBalance = (await q(`select public.refund_point_wager($1, $2) as balance`, [A, HOLD_CANCEL])).rows[0].balance;
 check(Number(pointBalance) === 100, 'cancelling matchmaking restores the wager stake');
+check((await pointsOf(A)).locked === 100, 'a refunded stake comes back as the welcome points it was');
 pointBalance = (await q(`select public.refund_point_wager($1, $2) as balance`, [A, HOLD_CANCEL])).rows[0].balance;
 check(Number(pointBalance) === 100, 'replaying a wager refund never credits twice');
 
@@ -232,6 +263,7 @@ await q(`select public.create_wagered_match($1, 'classic', $2, $3, 99, false, $4
 r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [WAGER_MATCH, A]);
 const wagerBalances = (await q(`select privy_user_id, balance from public.point_accounts order by privy_user_id`)).rows;
 check(r.rows[0].ok === true && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:captain')?.balance) === 150 && Number(wagerBalances.find((x) => x.privy_user_id === 'did:privy:challenger')?.balance) === 50, 'PvP wager settlement pays the 100-point pot to the winner exactly once');
+check((await pointsOf(A)).locked === 150 && (await pointsOf(B)).locked === 50, 'a pot staked from welcome points is paid as welcome points (no laundering them through a wager)');
 r = await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [WAGER_MATCH, A]);
 check(r.rows[0].ok === false && Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 150, 'replaying match settlement cannot pay the wager twice');
 
@@ -241,8 +273,9 @@ await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, BOT_HOLD]);
 await q(`select public.create_wagered_match($1, 'advanced', $2, $3, 100, true, $4, null)`, [BOT_WAGER_MATCH, A, BOT, BOT_HOLD]);
 await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [BOT_WAGER_MATCH, A]);
 check(Number((await q(`select public.get_point_balance($1) as balance`, [A])).rows[0].balance) === 200, 'winning a bot wager returns 100 points for a net 50-point profit');
+check((await pointsOf(A)).locked === 200, "beating the bot with welcome points pays welcome points (the house matches the stake's kind)");
 
-// ---- 0012: uint32 seeds, and wagers that settle without a match row ----
+// ---- 0012: uint32 seeds; 0014: no offline wagers ----
 // Every block below is balance-neutral overall, so the point trade checks
 // that follow still read against A's 200.
 const balanceOf = async (id) => Number((await q(`select public.get_point_balance($1) as balance`, [id])).rows[0].balance);
@@ -256,30 +289,16 @@ await q(`select public.create_wagered_match($1, 'advanced', $2, $3, 2696002283, 
 check(Number((await q(`select seed from public.matches where id = $1`, [BIG_SEED_MATCH])).rows[0].seed) === 2696002283, 'a wagered match accepts a uint32 seed above the int4 ceiling');
 await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [BIG_SEED_MATCH, BOT]);
 
-// An offline wager is played against the device's own AI: no match row, one
-// hold, and the hold's status is the only idempotency key there is.
-const OFFLINE_WIN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5';
-const OFFLINE_LOSS = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6';
-const staked = await balanceOf(A);
-await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, OFFLINE_WIN]);
-r = (await q(`select * from public.settle_offline_wager($1, $2, true)`, [A, OFFLINE_WIN])).rows[0];
-check(r.settled === true && Number(r.balance) === staked + 50, 'winning an offline wager pays 100 for a net 50-point profit');
-r = (await q(`select * from public.settle_offline_wager($1, $2, true)`, [A, OFFLINE_WIN])).rows[0];
-check(r.settled === false && (await balanceOf(A)) === staked + 50, 'replaying an offline settlement never pays twice');
-await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, OFFLINE_LOSS]);
-r = (await q(`select * from public.settle_offline_wager($1, $2, false)`, [A, OFFLINE_LOSS])).rows[0];
-check(r.settled === true && Number(r.balance) === staked, 'losing an offline wager keeps the 50-point stake');
+// Only a match the server ran from start to finish can carry a stake. The
+// device-reported settlement for a wager against the phone's own AI is gone.
+check((await q(`select to_regprocedure('public.settle_offline_wager(uuid,uuid,boolean)') as fn`)).rows[0].fn === null, 'there is no offline-wager settlement left to call');
 
 const ROOM_HOLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7';
 const ROOM_MATCH = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd4';
 await q(`select * from public.reserve_point_wager($1, $2, 50)`, [A, ROOM_HOLD]);
-r = (await q(`select * from public.settle_offline_wager($1, $2, true)`, [B, ROOM_HOLD])).rows[0];
-check(r.settled === false && (await balanceOf(A)) === staked - 50, 'another profile cannot settle a wager it does not own');
 await q(`select public.create_wagered_match($1, 'classic', $2, $3, 7, true, $4, null)`, [ROOM_MATCH, A, BOT, ROOM_HOLD]);
-r = (await q(`select * from public.settle_offline_wager($1, $2, true)`, [A, ROOM_HOLD])).rows[0];
-check(r.settled === false, 'a hold owned by a server room is never settled as an offline wager');
 await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10)`, [ROOM_MATCH, A]);
-check((await balanceOf(A)) === 200, 'the offline wager checks left A’s balance where they found it');
+check((await balanceOf(A)) === 200, 'the seed and bot-room checks left A’s balance where they found it');
 
 // 0013 - both captains walked out: nobody wins, and no stake comes back.
 const ABANDON_HOLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa8';
@@ -295,9 +314,10 @@ check(Number((await q(`select rank_points from public.profiles where id = $1`, [
 check((await q(`select count(*)::int as n from public.point_wager_holds where match_id = $1 and status = 'settled'`, [ABANDON_MATCH])).rows[0].n === 1, 'the abandoned stake is settled, not left held');
 check((await q(`select public.abandon_match($1) as ok`, [ABANDON_MATCH])).rows[0].ok === false, 'abandoning twice changes nothing');
 check((await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [ABANDON_MATCH, A])).rows[0].ok === false, 'an abandoned match can never be settled for a winner afterwards');
-// That stake is gone for good, which is the point. Put it back by hand so the
-// point-trade checks below can keep asserting absolute balances.
-await q(`update public.point_accounts set balance = balance + 50 where privy_user_id = public.point_identity_for_profile($1)`, [A]);
+// That stake is gone for good, which is the point. Put it back by hand (it
+// was welcome points) so the point-trade checks below can keep asserting
+// absolute balances.
+await q(`update public.point_accounts set balance = balance + 50, locked_points = locked_points + 50 where privy_user_id = public.point_identity_for_profile($1)`, [A]);
 check((await balanceOf(A)) === 200, 'the abandonment checks left A’s balance where they found it');
 
 const BUY_REQUEST = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
@@ -305,12 +325,14 @@ const BUY_REPLAY = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
 const BUY_SIGNATURE = 'confirmed-solana-signature-0000000000000001';
 pointBalance = (await q(`select public.complete_point_buy($1, $2, $3, 100, 1000000) as balance`, [A, BUY_REQUEST, BUY_SIGNATURE])).rows[0].balance;
 check(Number(pointBalance) === 300, 'a backend-verified 0.001 SOL purchase credits 100 points');
+pts = await pointsOf(A);
+check(pts.locked === 200 && pts.sellable === 100, `points bought with SOL are sellable; welcome points stay locked (${JSON.stringify(pts)})`);
 pointBalance = (await q(`select public.complete_point_buy($1, $2, $3, 100, 1000000) as balance`, [A, BUY_REQUEST, BUY_SIGNATURE])).rows[0].balance;
 check(Number(pointBalance) === 300, 'replaying the same purchase request never credits twice');
 check(await fails_with(`select public.complete_point_buy($1, $2, $3, 100, 1000000)`, [A, BUY_REPLAY, BUY_SIGNATURE], '23505'), 'one Solana signature cannot fund two point purchases');
 
 const SELL_REQUEST = 'ffffffff-ffff-4fff-8fff-fffffffffff1';
-let sale = (await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, SELL_REQUEST])).rows[0];
+sale = (await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, SELL_REQUEST])).rows[0];
 check(sale.ok === true && Number(sale.balance) === 200, 'starting a sale atomically reserves 100 points');
 sale = (await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, SELL_REQUEST])).rows[0];
 check(Number(sale.balance) === 200, 'replaying a point sale request never deducts twice');
@@ -318,17 +340,97 @@ const SELL_SIGNATURE = 'treasury-solana-signature-000000000000001';
 await q(`select public.mark_point_sell_broadcast($1, $2, 'signed-transaction', 'blockhash', 12345)`, [SELL_REQUEST, SELL_SIGNATURE]);
 pointBalance = (await q(`select public.complete_point_sell($1, $2) as balance`, [SELL_REQUEST, SELL_SIGNATURE])).rows[0].balance;
 check(Number(pointBalance) === 200, 'a confirmed treasury payout completes without another balance mutation');
+const DIP_SALE = 'ffffffff-ffff-4fff-8fff-fffffffffff3';
+sale = (await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, DIP_SALE])).rows[0];
+check(sale.ok === false && sale.reason === 'locked_points' && (await balanceOf(A)) === 200, 'a sale never dips into welcome points, however many are held');
 
+// A second purchase funds the refund path.
+await q(`select public.complete_point_buy($1, $2, $3, 100, 1000000)`, [A, 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', 'confirmed-solana-signature-0000000000000003']);
 const REFUND_REQUEST = 'ffffffff-ffff-4fff-8fff-fffffffffff2';
 await q(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [A, REFUND_REQUEST]);
 pointBalance = (await q(`select public.refund_point_sell($1, 'treasury unavailable') as balance`, [REFUND_REQUEST])).rows[0].balance;
-check(Number(pointBalance) === 200, 'a failed treasury payout restores every reserved point');
+check(Number(pointBalance) === 300, 'a failed treasury payout restores every reserved point');
+check((await pointsOf(A)).sellable === 100, '…as sellable points, the kind that was reserved');
 pointBalance = (await q(`select public.refund_point_sell($1, 'retry') as balance`, [REFUND_REQUEST])).rows[0].balance;
-check(Number(pointBalance) === 200, 'replaying a sale refund never credits twice');
+check(Number(pointBalance) === 300, 'replaying a sale refund never credits twice');
 
 await asUser(A);
 check(await fails_with(`select * from public.point_accounts`, [], '42501'), 'clients cannot read server-owned point balances directly');
+check(await fails_with(`select * from public.get_point_balances($1)`, [A], '42501'), 'clients cannot read the locked/sellable split directly either');
 check(await fails_with(`select * from public.reserve_point_wager($1, $2, 50)`, [A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4'], '42501'), 'clients cannot reserve or mutate wager points directly');
+
+// ---- 0014 backfill: balances that existed when welcome points were locked ----
+// A separate database, so these legacy captains can't disturb the counts and
+// the ladder checked above. Every history below was legal under 0010-0013.
+{
+  const legacy = await freshDb();
+  const lq = (sql, params) => legacy.query(sql, params);
+  await applyMigrations(legacy, files.filter((f) => f < '0014'), 'legacy, before 0014:');
+
+  const L = {
+    welcome: '44444444-4444-4444-8444-444444444401', // never did anything
+    bought: '44444444-4444-4444-8444-444444444402', // bought 100 on top
+    relapsed: '44444444-4444-4444-8444-444444444403', // lost the welcome, then bought 100
+    offline: '44444444-4444-4444-8444-444444444404', // three self-reported offline wins
+    sold: '44444444-4444-4444-8444-444444444405', // already sold the welcome, then bought 100
+    inflight: '44444444-4444-4444-8444-444444444406', // a stake still held at migration time
+  };
+  let n = 0;
+  for (const [key, id] of Object.entries(L)) {
+    n += 1;
+    await lq(`insert into auth.users (id, email) values ($1, null)`, [id]);
+    await lq(
+      `select public.sync_privy_account($1, $2, null, null, 'email', $3, $4, '[]'::jsonb, now())`,
+      [id, `did:privy:legacy-${key}`, `SolanaLegacy${n}`, `wallet-legacy-${n}`],
+    );
+    await lq(`select * from public.ensure_point_account($1, $2)`, [id, `did:privy:legacy-${key}`]);
+  }
+  const hold = (k) => `cccccccc-cccc-4ccc-8ccc-${String(k).padStart(12, '0')}`;
+  const buy = (id, k) => lq(`select public.complete_point_buy($1, $2, $3, 100, 1000000)`, [id, hold(900 + k), `legacy-confirmed-signature-${String(k).padStart(20, '0')}`]);
+  const offlineWager = async (id, k, won) => {
+    await lq(`select * from public.reserve_point_wager($1, $2, 50)`, [id, hold(k)]);
+    await lq(`select * from public.settle_offline_wager($1, $2, $3)`, [id, hold(k), won]);
+  };
+  await buy(L.bought, 1);
+  await offlineWager(L.relapsed, 1, false);
+  await offlineWager(L.relapsed, 2, false);
+  await buy(L.relapsed, 2);
+  await offlineWager(L.offline, 3, true);
+  await offlineWager(L.offline, 4, true);
+  await offlineWager(L.offline, 5, true);
+  await lq(`select * from public.begin_point_sell($1, $2, 100, 1000000)`, [L.sold, hold(6)]);
+  await lq(`select public.mark_point_sell_broadcast($1, 'legacy-payout-signature-000000000000000001', 'tx', 'bh', 1)`, [hold(6)]);
+  await lq(`select public.complete_point_sell($1, 'legacy-payout-signature-000000000000000001')`, [hold(6)]);
+  await buy(L.sold, 3);
+  const INFLIGHT_HOLD = hold(7);
+  await lq(`select * from public.reserve_point_wager($1, $2, 50)`, [L.inflight, INFLIGHT_HOLD]);
+
+  await applyMigrations(legacy, files.filter((f) => f >= '0014'), 'legacy, 0014 onwards:');
+  const split = async (id) => {
+    try {
+      const row = (await lq(`select * from public.get_point_balances($1)`, [id])).rows[0];
+      return `${Number(row.balance)}/${Number(row.locked)}/${Number(row.sellable)}`;
+    } catch (e) {
+      return `error: ${e.message}`;
+    }
+  };
+  // balance/locked/sellable
+  check((await split(L.welcome)) === '100/100/0', `backfill: an untouched welcome award is locked (${await split(L.welcome)})`);
+  check((await split(L.bought)) === '200/100/100', `backfill: points bought on top stay sellable (${await split(L.bought)})`);
+  check((await split(L.relapsed)) === '100/0/100', `backfill: points bought after the welcome was spent are never locked (${await split(L.relapsed)})`);
+  check((await split(L.offline)) === '250/250/0', `backfill: self-reported offline winnings are locked with the welcome (${await split(L.offline)})`);
+  check((await split(L.sold)) === '100/0/100', `backfill: a welcome already sold is not clawed back from later purchases (${await split(L.sold)})`);
+  check((await split(L.inflight)) === '50/50/0', `backfill: an in-flight stake keeps its welcome share outside the balance (${await split(L.inflight)})`);
+  const inflightHold = (await lq(`select locked_stake from public.point_wager_holds where request_id = $1`, [INFLIGHT_HOLD]).catch(() => ({ rows: [] }))).rows[0];
+  check(Number(inflightHold?.locked_stake) === 50, 'backfill: the held stake itself is marked as welcome points');
+  await lq(`select public.refund_point_wager($1, $2)`, [L.inflight, INFLIGHT_HOLD]);
+  check((await split(L.inflight)) === '100/100/0', `backfill: refunding that stake returns locked points, not sellable ones (${await split(L.inflight)})`);
+
+  // Re-applying every migration must leave the backfill alone.
+  await buy(L.welcome, 4);
+  await applyMigrations(legacy, files, 'legacy, re-applied:');
+  check((await split(L.welcome)) === '200/100/100', `backfill runs once: re-applying the migrations recomputes nothing (${await split(L.welcome)})`);
+}
 
 console.log(fails ? `\n${fails} FAILED` : '\nall database checks passed');
 process.exit(fails ? 1 : 0);

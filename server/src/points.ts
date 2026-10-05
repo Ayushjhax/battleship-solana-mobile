@@ -13,7 +13,7 @@ import {
   beginPointSell,
   completePointBuy,
   completePointSell,
-  fetchPointBalance,
+  fetchPointBalances,
   fetchPointTrade,
   fetchVerifiedWalletAddress,
   markPointSellBroadcast,
@@ -80,6 +80,9 @@ function treasury(): TreasuryRuntime {
 
 export interface PointQuote {
   readonly balance: number;
+  /** What a sale may spend: the balance less any welcome points (0014). */
+  readonly sellableBalance: number;
+  readonly lockedBalance: number;
   readonly points: number;
   readonly lamports: number;
   readonly sol: string;
@@ -88,8 +91,11 @@ export interface PointQuote {
 
 export async function getPointQuote(profileId: string): Promise<PointQuote> {
   const account = treasury();
+  const balances = await fetchPointBalances(profileId);
   return {
-    balance: await fetchPointBalance(profileId),
+    balance: balances.balance,
+    sellableBalance: balances.sellable,
+    lockedBalance: balances.locked,
     points: POINT_TRADE_POINTS,
     lamports: POINT_TRADE_LAMPORTS,
     sol: '0.001',
@@ -165,6 +171,7 @@ export async function sellPoints(
   );
   if (!start.ok) {
     if (start.reason === 'insufficient_points') throw new Error('Insufficient points');
+    if (start.reason === 'locked_points') throw new Error('Welcome points cannot be exchanged for SOL');
     return { status: 'refunded', balance: start.balance, signature: null };
   }
 

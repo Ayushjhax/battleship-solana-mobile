@@ -40,7 +40,6 @@ import { haptic } from '@/audio/haptics';
 import { FlagBadge } from '@/features/flags/FlagBadge';
 import { playAgain as replay, returnToMenu } from '@/features/matchmaking/exits';
 import { useMatchClient } from '@/net/match-client';
-import { flushPendingWager } from '@/net/offlineWager';
 import { spendableCoins, useLocker, walletFor } from '@/state/locker';
 import { usePoints, WAGER_STAKE } from '@/state/points';
 import { useProfile } from '@/state/profile';
@@ -85,9 +84,9 @@ interface Totals {
   readonly coinsAfter: number;
   readonly reward: { points: number; coins: number };
   /**
-   * What the wager moved. Online this is the SERVER's own settlement, captured
-   * before the socket is dropped; offline it is the fixed stake, since the
-   * payout is still in flight when this screen opens.
+   * What the wager moved: the SERVER's own settlement, captured before the
+   * socket is dropped, or the fixed stake if its `over` never arrived. Only a
+   * match the server ran can carry a stake (BUG-001).
    */
   readonly wager: { stake: number; prize: number } | null;
   /**
@@ -398,10 +397,6 @@ export default function ResultScreen() {
   const wagered = params.wager === '1';
   const reduceMotion = useReducedMotion();
   const pointBalance = usePoints((state) => state.balance);
-  // An offline payout is not real until the server has taken it. Until then
-  // the row says so rather than showing a total the backend never moved.
-  const settling = usePoints((state) => state.pendingWagerSettlement !== null);
-  const settlementFailed = usePoints((state) => state.wagerSettlementError !== null);
 
   // Applied exactly once per mount (and once per match across mounts).
   const [totals] = useState(() =>
@@ -453,13 +448,6 @@ export default function ResultScreen() {
     if (!local) useMatchClient.getState().disconnect();
   }, [local]);
 
-  // An offline wager is settled from here: the stake was taken before the
-  // first shot, so this is where a win is paid. It is idempotent and stays
-  // queued until it lands, so a failure now costs the player nothing.
-  useEffect(() => {
-    if (usePoints.getState().pendingWagerSettlement) void flushPendingWager();
-  }, []);
-
   // Ribbon drop
   const drop = useSharedValue(reduceMotion ? 0 : -80);
   useEffect(() => {
@@ -476,17 +464,7 @@ export default function ResultScreen() {
   const coinFrom = won ? CARD_CX_RIGHT : CARD_CX_LEFT;
   const coinTo = won ? CARD_CX_LEFT : CARD_CX_RIGHT;
 
-  const wagerLabel = settling
-    ? settlementFailed
-      ? won
-        ? 'Wager won · payout pending'
-        : 'Stake lost · confirming'
-      : won
-        ? 'Wager won · paying out…'
-        : 'Stake lost · settling…'
-    : won
-      ? `Wager won · ${pointBalance} total`
-      : `Stake lost · ${pointBalance} left`;
+  const wagerLabel = won ? `Wager won · ${pointBalance} total` : `Stake lost · ${pointBalance} left`;
 
   const rows: { key: string; label: string; value: string; tone?: string }[] = [
     { key: 'points', label: 'Points gained', value: `+${points}` },
@@ -499,7 +477,7 @@ export default function ResultScreen() {
       key: 'wager',
       label: wagerLabel,
       value: won ? `+${totals.wager.prize}` : `-${totals.wager.stake}`,
-      tone: settlementFailed ? artColor.soft : won ? artColor.green : color.inkRed,
+      tone: won ? artColor.green : color.inkRed,
     });
   }
   if (rankedUp) {

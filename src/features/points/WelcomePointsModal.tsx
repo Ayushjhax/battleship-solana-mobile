@@ -1,7 +1,9 @@
 /**
  * The welcome reward, drawn to its mockup on BACKGROUNDS.welcome: the logo, and
  * the complete reward panel (WELCOME_ART.panel, its text and Claim button baked
- * in) with gulls over the page. The panel's baked button is the touch target;
+ * in) with gulls over the page. The panel's last two lines were re-set in
+ * Bitter Medium 32 when welcome points became unsellable (BUG-001); keep the
+ * accessibility label below in step with them. The panel's baked button is the touch target;
  * pressing it lays the separately exported button over it as a tinted
  * silhouette, which darkens exactly the button's own shape.
  */
@@ -54,7 +56,7 @@ export function WelcomePointsModal() {
               contentFit="fill"
               accessible
               accessibilityRole="image"
-              accessibilityLabel="Welcome aboard, Captain. 100 points awarded! Use points for optional 50-point wager matches, or exchange them for SOL in the Points desk."
+              accessibilityLabel="Welcome aboard, Captain. 100 points awarded! Use points for optional 50-point wager matches. Welcome points are for play and can't be exchanged for SOL."
             />
             <Pressable
               style={styles.claim}

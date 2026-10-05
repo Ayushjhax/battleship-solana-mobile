@@ -50,7 +50,6 @@ import {
   type PlacementMode,
   type PlacementPreviewCell,
 } from '@/state/placement';
-import { stakeOfflineWager } from '@/net/offlineWager';
 import { usePoints } from '@/state/points';
 import { ArtImageButton } from '@/ui/ArtImageButton';
 import { ArtPlate } from '@/ui/ArtPlate';
@@ -1131,9 +1130,9 @@ function PlacementCanvas() {
   const shuffleSeed = useRef(sessionSeed.current + 1);
   const previewRef = useRef<PreviewHandle>(null);
   const [fuelShakeNonce, setFuelShakeNonce] = useState(0);
-  const [wagered, setWagered] = useState(requestedWager);
-  /** The offline stake is in flight — Battle! stays down until it lands. */
-  const [staking, setStaking] = useState(false);
+  // Only an online match can carry a stake: the server has to see the game to
+  // pay it out (BUG-001). Offline play against the AI is never wagered.
+  const [wagered, setWagered] = useState(requestedWager && mode === 'online');
   const [infoKind, setInfoKind] = useState<ArsenalKind | null>(null);
   const activeBand = useSharedValue(0);
   const hoverRow = useSharedValue(-1);
@@ -1262,7 +1261,6 @@ function PlacementCanvas() {
   }, [pointBalance, pointsReady, router, wagered]);
 
   const beginBattle = useCallback(() => {
-    if (staking) return;
     const state = usePlacement.getState();
     if (state.ships.length !== FLEET.length) return;
     if (wagered && (!pointsReady || pointBalance < 50)) {
@@ -1297,35 +1295,11 @@ function PlacementCanvas() {
       });
       return;
     }
-    if (state.mode === 'ai' && wagered) {
-      // Offline stays offline: the opponent is this device's AI, so there is
-      // nobody to find. Only the stake goes to the server, before the first
-      // shot — the result screen settles it once the match is decided.
-      setStaking(true);
-      void stakeOfflineWager().then((result) => {
-        setStaking(false);
-        if (result.ok) {
-          router.push('/battle');
-          return;
-        }
-        Alert.alert(
-          result.reason === 'insufficient_points' ? 'Not enough points' : 'Wager unavailable',
-          result.message,
-          result.reason === 'insufficient_points'
-            ? [
-                { text: 'Not now', style: 'cancel' },
-                { text: 'Open exchange', onPress: () => router.push('/points') },
-              ]
-            : [{ text: 'OK' }],
-        );
-      });
-      return;
-    }
     router.push('/battle');
-  }, [pointBalance, pointsReady, router, staking, wagered]);
+  }, [pointBalance, pointsReady, router, wagered]);
 
   const showsPicker = mode === 'ai';
-  const showsWager = mode !== 'hotseat';
+  const showsWager = mode === 'online';
 
   return (
     <Scale backgroundImage={BACKGROUNDS.settings}>
@@ -1435,8 +1409,8 @@ function PlacementCanvas() {
         style={ruleset === 'classic' ? styles.shuffleButtonClassic : styles.shuffleButton}
       />
       <PulsingBattleButton
-        enabled={ships.length === FLEET.length && pendingArsenalId === null && !staking}
-        label={staking ? 'Staking…' : 'Battle!'}
+        enabled={ships.length === FLEET.length && pendingArsenalId === null}
+        label="Battle!"
         onPress={beginBattle}
       />
 
