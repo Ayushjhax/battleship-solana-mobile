@@ -512,6 +512,22 @@ describe('match client', () => {
     await until(() => mc.getState().status === 'queued', 5000, 'queued again');
   }, 20_000);
 
+  // BUG-011: an unwagered match cancelled before it starts now closes with no
+  // result and tells the other captain too — who must not be told a wager
+  // they never placed was refunded.
+  it('tells the other captain an unwagered match was cancelled, without claiming a refund', async () => {
+    const mc = await client();
+    mc.getState().queue('classic');
+    await until(() => mc.getState().status === 'queued', 5000, 'queued');
+    server.alice?.send(JSON.stringify({ t: 'queue:cancelled', v: 1, refunded: false, reason: 'opponent_cancelled' }));
+    await until(() => mc.getState().status === 'failed', 5000, 'failed');
+
+    const failure = mc.getState().failure;
+    expect(failure?.reason).toBe('match_cancelled');
+    expect(failure?.detail).toMatch(/cancelled before the battle began/);
+    expect(failure?.detail).not.toMatch(/refund|wager/i);
+  });
+
   it('sends and hears emotes over the socket when the server relays them', async () => {
     server.emotes = true;
     const mc = await playUntilPlaying();

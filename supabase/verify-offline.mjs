@@ -359,6 +359,26 @@ check(await fails_with(`select * from public.point_accounts`, [], '42501'), 'cli
 check(await fails_with(`select * from public.get_point_balances($1)`, [A], '42501'), 'clients cannot read the locked/sellable split directly either');
 check(await fails_with(`select * from public.reserve_point_wager($1, $2, 50)`, [A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4'], '42501'), 'clients cannot reserve or mutate wager points directly');
 
+// ---- 0016: a match cancelled before it started closes with no result ----
+{
+  await asServer();
+  const scores = async () => (await q(`select id, rank_points, coins, battles_played, battles_won from public.profiles where id in ($1, $2) order by id`, [A, B])).rows;
+  const before16 = JSON.stringify(await scores());
+  const CANCELLED = (await q(`insert into public.matches (mode, player_a, player_b, seed) values ('classic', $1, $2, 16) returning id`, [A, B])).rows[0].id;
+  let ok = await q(`select public.cancel_match_before_start($1, $2) as ok`, [CANCELLED, A]).then((x) => x.rows[0].ok, (e) => `error: ${e.message}`);
+  const row = (await q(`select winner, ended_at, end_reason from public.matches where id = $1`, [CANCELLED])).rows[0];
+  check(ok === true && row.winner === null && row.ended_at !== null && row.end_reason === 'cancelled', `a pre-start cancel closes the match with no result (${ok}, ${row?.end_reason})`);
+  check(JSON.stringify(await scores()) === before16, '…and moves no rank, coins or battles for either captain');
+  ok = await q(`select public.cancel_match_before_start($1, $2) as ok`, [CANCELLED, A]).then((x) => x.rows[0].ok, (e) => `error: ${e.message}`);
+  check(ok === false, 'cancelling twice changes nothing');
+  check((await q(`select public.apply_match_result($1, $2, 'victory', 25, 50, 5, 10) as ok`, [CANCELLED, B])).rows[0].ok === false, 'a cancelled match can never be settled for a winner afterwards');
+  const OPEN = (await q(`insert into public.matches (mode, player_a, player_b, seed) values ('classic', $1, $2, 17) returning id`, [A, B])).rows[0].id;
+  check(await fails_with(`select public.cancel_match_before_start($1, $2)`, [OPEN, C], '42501'), 'only a player in the match can cancel it');
+  await asUser(A);
+  check(await fails_with(`select public.cancel_match_before_start($1, $2)`, [OPEN, A], '42501'), 'clients cannot call it directly');
+  await asServer();
+}
+
 // ---- 0015: offline and hot-seat results never touch the ladder ----
 // The device reports these itself, so they pay coins (cosmetics) and nothing
 // the leaderboard ranks by: no rank points, no battles played or won.

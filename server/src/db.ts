@@ -167,6 +167,15 @@ export async function verifyDatabaseConnection(): Promise<void> {
   if (offlineProbe.error && isMissingFunction(offlineProbe.error)) {
     throw missingMigration('apply_offline_result', '0015_offline_results_off_the_ladder.sql');
   }
+
+  // 0016's pre-start cancel. No match carries this id, so it returns false.
+  const cancelProbe = await db().rpc('cancel_match_before_start', {
+    p_match_id: unused,
+    p_cancelled_by: unused,
+  });
+  if (cancelProbe.error && isMissingFunction(cancelProbe.error)) {
+    throw missingMigration('cancel_match_before_start', '0016_cancelled_before_start.sql');
+  }
 }
 
 /** For matchmaking's rank window and the `matched` message's player cards. */
@@ -485,6 +494,19 @@ export async function refundPointWager(profileId: string, requestId: string): Pr
 export interface CancelledWagerBalance {
   readonly profileId: string;
   readonly balance: number;
+}
+
+/**
+ * Closes an unwagered match that never started with no result (0016): winner
+ * null, end_reason 'cancelled', nothing moved. False when it was already over.
+ */
+export async function cancelMatchBeforeStart(matchId: string, cancelledBy: string): Promise<boolean> {
+  const { data, error } = await db().rpc('cancel_match_before_start', {
+    p_match_id: matchId,
+    p_cancelled_by: cancelledBy,
+  });
+  if (error) throw new Error(`cancel match(${matchId}): ${error.message}`);
+  return data === true;
 }
 
 export async function cancelWageredMatchBeforeStart(

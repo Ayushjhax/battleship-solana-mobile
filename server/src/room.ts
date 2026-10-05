@@ -39,6 +39,7 @@ import {
   appendMatchEvent,
   applyMatchResult,
   BOT_PLAYER_ID,
+  cancelMatchBeforeStart,
   cancelWageredMatchBeforeStart,
   dbEndReason,
   fetchOpponentSummary,
@@ -93,6 +94,15 @@ export interface HandleResult {
   readonly reason?: string;
 }
 
+/** What a pre-game cancel did. */
+export type PreStartCancel =
+  /** Done: the match is closed (stakes refunded if it was wagered) and every captain told. */
+  | { readonly kind: 'cancelled'; readonly balances: readonly CancelledWagerBalance[] }
+  /** The room is still being built; it cancels itself, and tells everyone, as soon as it is. */
+  | { readonly kind: 'pending' }
+  /** Too late (the match is under way or over), or the database refused. */
+  | { readonly kind: 'refused' };
+
 export class Room {
   readonly id: string;
   readonly mode: MatchMode;
@@ -116,6 +126,8 @@ export class Room {
   private abandonTimer: NodeJS.Timeout | null = null;
   private finished = false;
   private cancellingBeforeStart = false;
+  /** A pre-game cancel that arrived while start() was still building the room. */
+  private cancelOnStart: string | null = null;
   /** Set just before a disconnect-forced RESIGN so the DB record says why. */
   private forcedDbReason: DbEndReason | null = null;
   /** What `matched` carried, re-sent on attach so a client that lost its store can rebuild the HUD. */
@@ -296,26 +308,41 @@ export class Room {
 
   /**
    * A cancel sent from the matchmaking screen may cross the `matched` frame.
-   * It is still a true pre-game cancel while the engine is in placement, so
-   * refund every human hold atomically instead of turning it into a forfeit.
+   * It is still a true pre-game cancel while the engine is in placement, never
+   * a forfeit: a wagered room refunds every human hold atomically (0011), an
+   * unwagered one closes its match with no result (0016), and both captains
+   * are told. A cancel that lands while the room is still being built is held
+   * and applied the moment it is ready, before anyone is sent `matched`.
    */
-  async cancelBeforeStart(playerId: string): Promise<readonly CancelledWagerBalance[] | null> {
+  async cancelBeforeStart(playerId: string): Promise<PreStartCancel> {
     if (
       this.finished ||
       this.cancellingBeforeStart ||
-      !this.wager.wagered ||
       this.state.phase !== 'placing' ||
       !this.seatOf(playerId)
     ) {
-      return null;
+      return { kind: 'refused' };
     }
+    if (!this.matched) {
+      this.cancelOnStart ??= playerId;
+      return { kind: 'pending' };
+    }
+    return this.cancelNow(playerId);
+  }
 
+  private async cancelNow(playerId: string): Promise<PreStartCancel> {
     this.cancellingBeforeStart = true;
     try {
-      const balances = await cancelWageredMatchBeforeStart(this.id, playerId);
-      if (balances.length === 0) {
+      let balances: readonly CancelledWagerBalance[] = [];
+      if (this.wager.wagered) {
+        balances = await cancelWageredMatchBeforeStart(this.id, playerId);
+        if (balances.length === 0) {
+          this.cancellingBeforeStart = false;
+          return { kind: 'refused' };
+        }
+      } else if (!(await cancelMatchBeforeStart(this.id, playerId))) {
         this.cancellingBeforeStart = false;
-        return null;
+        return { kind: 'refused' };
       }
 
       this.finished = true;
@@ -334,7 +361,7 @@ export class Room {
         });
       }
       this.onFinished(this);
-      return balances;
+      return { kind: 'cancelled', balances };
     } catch (error) {
       this.cancellingBeforeStart = false;
       throw error;
@@ -375,6 +402,19 @@ export class Room {
     ]);
     const layoutDeadline = Date.now() + LAYOUT_DEADLINE_MS;
     this.matched = { summaries, fuelBudget, layoutDeadline };
+
+    // A cancel that landed while the room was being built: apply it before
+    // anyone is told there is a match. Only if it can't be applied does the
+    // match go ahead.
+    const heldCancel = this.cancelOnStart;
+    this.cancelOnStart = null;
+    if (heldCancel) {
+      try {
+        if ((await this.cancelNow(heldCancel)).kind === 'cancelled') return;
+      } catch (error) {
+        console.error(`[room ${this.id}] could not cancel before the start`, error);
+      }
+    }
     for (const seat of this.seats) this.sendMatched(seat.playerId);
 
     this.layoutTimer = setTimeout(() => this.autoPlaceOverdueLayouts(), LAYOUT_DEADLINE_MS);

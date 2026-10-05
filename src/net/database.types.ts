@@ -507,6 +507,10 @@ export type Database = {
         Returns: number
       }
       abandon_match: { Args: { p_match_id: string }; Returns: boolean }
+      cancel_match_before_start: {
+        Args: { p_cancelled_by: string; p_match_id: string }
+        Returns: boolean
+      }
       refund_point_wager: {
         Args: { p_profile_id: string; p_request_id: string }
         Returns: number

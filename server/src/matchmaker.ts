@@ -346,9 +346,9 @@ export async function cancelBeforeMatchStart(
 
   const room = findRoomForPlayer(playerId);
   if (room) {
-    const balances = await room.cancelBeforeStart(playerId);
-    if (balances) {
-      const mine = balances.find((entry) => entry.profileId === playerId);
+    const outcome = await room.cancelBeforeStart(playerId);
+    if (outcome.kind === 'cancelled') {
+      const mine = outcome.balances.find((entry) => entry.profileId === playerId);
       return {
         cancelled: true,
         refunded: mine !== undefined,
@@ -356,6 +356,9 @@ export async function cancelBeforeMatchStart(
         notifiedByRoom: true,
       };
     }
+    // The room is still being built and will cancel itself — and tell both
+    // captains — the moment it is.
+    if (outcome.kind === 'pending') return { cancelled: true, refunded: false, notifiedByRoom: true };
   }
 
   // REST retries arrive after the socket acknowledgement. The RPC is

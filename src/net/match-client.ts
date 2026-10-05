@@ -798,7 +798,11 @@ function handleMessage(message: ServerMessage): void {
               wagerRequestId: s.wagered ? randomUuid() : null,
               failure: {
                 reason: 'match_cancelled',
-                detail: 'The other captain cancelled before the battle began. Your wager was refunded.',
+                // Unwagered matches are cancelled before the start too (0016),
+                // so only claim a refund when there was a stake to refund.
+                detail: message.refunded
+                  ? 'The other captain cancelled before the battle began. Your wager was refunded.'
+                  : 'The other captain cancelled before the battle began.',
               },
             }
           : { ...EMPTY },

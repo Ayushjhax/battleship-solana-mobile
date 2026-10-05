@@ -125,7 +125,7 @@ export const MatchSummarySchema = z.object({
   winner: z.string().uuid().nullable(),
   started_at: z.string().nullable(),
   ended_at: z.string().nullable(),
-  end_reason: z.enum(['victory', 'resign', 'timeout', 'disconnect']).nullable(),
+  end_reason: z.enum(['victory', 'resign', 'timeout', 'disconnect', 'cancelled']).nullable(),
 });
 export type MatchSummary = z.infer<typeof MatchSummarySchema>;
 

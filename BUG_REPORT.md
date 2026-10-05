@@ -55,7 +55,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-008 | Medium | Fixed | `npm run typecheck` fails and `npm run lint` crashes: root tooling sweeps in the nested video projects |
 | BUG-009 | Medium | Fixed (key rotation pending — yours) | The server's private Solana RPC key ships inside the APK (local `.env` config) |
 | BUG-010 | Medium | Fixed | Self-reported offline and hot-seat results earn ladder points; hot-seat can be farmed |
-| BUG-011 | Medium | Needs decision | Unwagered match: a Cancel that crosses `matched` becomes a 45 s forfeit loss |
+| BUG-011 | Medium | Fixed | Unwagered match: a Cancel that crosses `matched` becomes a 45 s forfeit loss |
 | BUG-012 | Low | Open | Misleading failure text ("…for 45 seconds… counted as a loss", every failure titled "No connection") |
 | BUG-013 | Low | Open | Hot-seat names screen's endless caret animation keeps running under the whole hot-seat match |
 | BUG-014 | Low | Open | Android back on How to Play probably leaves the guide instead of turning back a page |
@@ -266,7 +266,14 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   off the ladder; or cap them per day.
 
 ### BUG-011 — A cancel that crosses `matched` forfeits an unwagered match
-- **Severity:** Medium · **Status:** Needs decision
+- **Severity:** Medium · **Status:** Fixed — an unwagered match cancelled before the start now
+  closes with no result (0016: winner null, `end_reason` 'cancelled', no rank or coin moves)
+  and both captains are told. Wagered: the existing path already refunded both stakes in one
+  transaction (0011, the row is removed); the fix also closes a race both kinds had — a
+  cancel landing while the room was still being built was ignored (unwagered) or applied and
+  then followed by `matched` anyway (wagered). It is now held and applied before `matched`
+  is sent. Tests: `server/tests/regression/cancel-crossing-matched.test.ts`,
+  `supabase/verify-offline.mjs` (0016 checks), `src/net/__tests__/match-client.test.ts`.
 - **Where:** `server/src/room.ts:297` (`cancelBeforeStart` only handles wagered rooms),
   `server/src/matchmaker.ts` (`cancelBeforeMatchStart`).
 - **What's wrong:** if Cancel is tapped just as `matched` arrives, an unwagered match isn't

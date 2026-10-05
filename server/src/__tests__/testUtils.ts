@@ -83,6 +83,10 @@ export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } 
       record('refundPointWager')(profileId, requestId);
       return 100;
     }),
+    cancelMatchBeforeStart: vi.fn(async (...args: unknown[]) => {
+      record('cancelMatchBeforeStart')(...args);
+      return true;
+    }),
     cancelWageredMatchBeforeStart: vi.fn(async (matchId: string, cancelledBy: string) => {
       record('cancelWageredMatchBeforeStart')(matchId, cancelledBy);
       return (wagerPlayers.get(matchId) ?? [])
