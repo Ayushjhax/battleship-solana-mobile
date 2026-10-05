@@ -66,7 +66,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-019 | Low | Fixed | Store purchases made as "guest" can appear under the next account on the device |
 | BUG-020 | Low | Fixed | Leaderboard briefly shows the previous account's "you" row after switching accounts |
 | BUG-021 | Low | Fixed (with BUG-010) | Offline-result rewards are hard-coded in SQL (drift risk against `REWARD`) |
-| BUG-022 | Low | Open | The launch-time cloud merge ignores unsynced offline results, so rank and coins dip until the next sync |
+| BUG-022 | Low | Fixed | The launch-time cloud merge ignores unsynced offline results, so rank and coins dip until the next sync |
 | BUG-023 | Low | Open | Every online match joins a Supabase Realtime channel even when the server relays emotes |
 
 ---
@@ -407,6 +407,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   `apply_match_result`. It needs a deploy, so this may be "Won't fix" for now.
 
 ### BUG-022 — The launch merge ignores unsynced offline results
+- **Status:** Fixed — a merged cloud row keeps the coins of results still waiting to sync on
+  top, as `settleResults` does. Since BUG-010 offline results pay coins only, so coins were
+  the only number that dipped. Test: `src/state/__tests__/profile.test.ts`.
 - **Where:** `src/features/auth/PrivyProfileSync.tsx:59`, `src/state/profile.ts:191`.
 - **What's wrong:** every launch overwrites local rank, coins and battle counts with the
   cloud row. Offline results not yet synced aren't added back (`settleResults` does add

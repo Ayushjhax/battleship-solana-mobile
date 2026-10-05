@@ -75,6 +75,41 @@ describe('offline result queue', () => {
     expect(state.battlesWon).toBe(3);
   });
 
+  // BUG-022: every launch merges the cloud row over the local profile, and the
+  // merge took the cloud's coins as they were — dropping what the offline
+  // games still waiting to sync had paid, so the balance dipped until the
+  // next sync put them back.
+  it('keeps the coins of results still waiting to sync when the cloud row is merged in', () => {
+    useProfile.getState().queueResult({
+      id: 'unsynced-win',
+      mode: 'ai',
+      won: true,
+      completedAt: '2026-09-12T00:00:00.000Z',
+    });
+
+    useProfile.getState().mergeRemote({ name: 'Cloud captain', rankPoints: 125, coins: 300 });
+
+    const state = useProfile.getState();
+    expect(state.coins).toBe(350);
+    expect(state.rankPoints).toBe(125);
+    expect(state.name).toBe('Cloud captain');
+    expect(state.pendingResults).toHaveLength(1);
+  });
+
+  it('leaves the coins alone when the merged data carries none', () => {
+    useProfile.setState({ coins: 80 });
+    useProfile.getState().queueResult({
+      id: 'unsynced-loss',
+      mode: 'hotseat',
+      won: false,
+      completedAt: '2026-09-12T00:00:00.000Z',
+    });
+
+    useProfile.getState().mergeRemote({ name: 'Renamed' });
+
+    expect(useProfile.getState().coins).toBe(90);
+  });
+
   it('clears account data on sign-out while keeping device preferences', () => {
     useProfile.setState({
       userId: 'previous-user',

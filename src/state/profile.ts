@@ -126,6 +126,11 @@ export function offlineCoins(won: boolean): number {
   return (won ? REWARD.win : REWARD.loss).coins;
 }
 
+/** What results still waiting to sync have paid — on top of any cloud total. */
+function unsyncedCoins(results: readonly PendingResult[]): number {
+  return results.reduce((sum, result) => sum + offlineCoins(result.won), 0);
+}
+
 export const useProfile = create<ProfileState>()(
   persist(
     (set, get) => ({
@@ -161,18 +166,28 @@ export const useProfile = create<ProfileState>()(
           if (!totals) return { pendingResults };
           // The server's totals, plus what the still-unsynced results pay —
           // which is coins only (BUG-010).
-          const unsyncedCoins = pendingResults.reduce((sum, result) => sum + offlineCoins(result.won), 0);
           return {
             pendingResults,
             rankPoints: totals.rankPoints,
-            coins: totals.coins + unsyncedCoins,
+            coins: totals.coins + unsyncedCoins(pendingResults),
             battlesPlayed: totals.battlesPlayed,
             battlesWon: totals.battlesWon,
           };
         }),
       markTutorialComplete: () => set({ hasCompletedTutorial: true }),
       resetTutorial: () => set({ hasCompletedTutorial: false }),
-      mergeRemote: (remote) => set(remote),
+      // A cloud row's coins don't include the results still waiting to sync;
+      // keep those on top, as settleResults does. Taken as they were, the
+      // balance dipped on every launch until the next sync (BUG-022).
+      mergeRemote: (remote) =>
+        set((s) =>
+          remote.coins === undefined
+            ? remote
+            : {
+                ...remote,
+                coins: remote.coins + unsyncedCoins(remote.pendingResults ?? s.pendingResults),
+              },
+        ),
       clearAccount: () =>
         set((state) => ({
           ...DEFAULT_PROFILE,
