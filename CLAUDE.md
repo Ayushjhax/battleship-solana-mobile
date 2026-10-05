@@ -295,8 +295,11 @@ that looks like a rectangle from a UI kit.
   (0008) closes the matches row and moves both profiles' `rank_points`, `coins`,
   `battles_played`, `battles_won` atomically, idempotently (a retry returns false and moves
   nothing), never the bot's row. `room.ts finish()` calls it once with `REWARD` from
-  `src/engine/ranks.ts` — the SQL never hard-codes 25/50/5/10. Offline results go through
-  `apply_offline_result` (0007) the same way.
+  `src/engine/ranks.ts` — the SQL never hard-codes 25/50/5/10. **Only matches the server
+  sees count toward the ladder:** offline AI and hot-seat results go through
+  `apply_offline_result` (0015) and pay coins only (passed in from `REWARD`) — no rank
+  points, not counted as battles played or won. The device reports them itself, so they
+  can't be trusted with anything the leaderboard ranks by.
 - Clients never write score columns to Supabase. The result screen mirrors an online
   match's `over.rewards` into the profile store once (`recordOnlineResult`, keyed by matchId
   in `settledMatchIds`) so the menu reads right at once; "before" is always "after minus

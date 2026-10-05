@@ -54,7 +54,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-007 | Medium | Fixed | Changing your avatar from Settings or Profile stacks a new menu on top instead of going back |
 | BUG-008 | Medium | Fixed | `npm run typecheck` fails and `npm run lint` crashes: root tooling sweeps in the nested video projects |
 | BUG-009 | Medium | Fixed (key rotation pending — yours) | The server's private Solana RPC key ships inside the APK (local `.env` config) |
-| BUG-010 | Medium | Needs decision | Self-reported offline and hot-seat results earn ladder points; hot-seat can be farmed |
+| BUG-010 | Medium | Fixed | Self-reported offline and hot-seat results earn ladder points; hot-seat can be farmed |
 | BUG-011 | Medium | Needs decision | Unwagered match: a Cancel that crosses `matched` becomes a 45 s forfeit loss |
 | BUG-012 | Low | Open | Misleading failure text ("…for 45 seconds… counted as a loss", every failure titled "No connection") |
 | BUG-013 | Low | Open | Hot-seat names screen's endless caret animation keeps running under the whole hot-seat match |
@@ -65,7 +65,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-018 | Low | Open | Signing out discards a won-but-unpaid offline wager |
 | BUG-019 | Low | Open | Store purchases made as "guest" can appear under the next account on the device |
 | BUG-020 | Low | Open | Leaderboard briefly shows the previous account's "you" row after switching accounts |
-| BUG-021 | Low | Open | Offline-result rewards are hard-coded in SQL (drift risk against `REWARD`) |
+| BUG-021 | Low | Fixed (with BUG-010) | Offline-result rewards are hard-coded in SQL (drift risk against `REWARD`) |
 | BUG-022 | Low | Open | The launch-time cloud merge ignores unsynced offline results, so rank and coins dip until the next sync |
 | BUG-023 | Low | Open | Every online match joins a Supabase Realtime channel even when the server relays emotes |
 
@@ -251,7 +251,12 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   rotate the server's key, and rebuild. Nothing in the repo changes.
 
 ### BUG-010 — Offline and hot-seat wins earn ladder points
-- **Severity:** Medium (ladder integrity) · **Status:** Needs decision
+- **Severity:** Medium (ladder integrity) · **Status:** Fixed — migration 0015 makes an offline
+  or hot-seat result pay coins only: no rank points, not counted as a battle played or won.
+  The app applies the same rule locally and the result screen shows "Ladder points · online
+  only". Points already earned this way stay on the ladder (no clawback was asked for).
+  Tests: `supabase/verify-offline.mjs` (0015 checks), `src/state/__tests__/profile.test.ts`
+  (updated to the new rule), `server/tests/regression/offline-results-coins-only.test.ts`.
 - **Where:** `server/src/index.ts:333` (`/offline-results`),
   `supabase/migrations/0007_offline_results.sql:45`, `src/state/battle.ts:239`.
 - **What's wrong:** offline AI and hot-seat results are self-reported and credited at the
@@ -359,6 +364,8 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 - **Proposed fix:** key the cache by user id, or clear it on sign-out.
 
 ### BUG-021 — Offline rewards hard-coded in SQL
+- **Status:** Fixed with BUG-010 — 0015's `apply_offline_result` takes the coin amounts as
+  parameters and the server passes `REWARD` from `src/engine/ranks.ts`.
 - **Where:** `supabase/migrations/0007_offline_results.sql:45-48` vs `src/engine/ranks.ts:21-24`.
 - **What's wrong:** `apply_offline_result` hard-codes 25/50/5/10. `CLAUDE.md` says the SQL
   never does that; it holds for `apply_match_result`, but not here. A future change to

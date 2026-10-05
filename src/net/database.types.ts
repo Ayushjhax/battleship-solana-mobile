@@ -545,8 +545,10 @@ export type Database = {
         Args: {
           p_completed_at: string
           p_id: string
+          p_loss_coins: number
           p_mode: string
           p_user_id: string
+          p_win_coins: number
           p_won: boolean
         }
         Returns: boolean

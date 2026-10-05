@@ -27,6 +27,8 @@ import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import { z } from 'zod';
 
+import { REWARD } from '@engine/ranks';
+
 import { verifyAccessToken } from './auth';
 import {
   applyOfflineResult,
@@ -303,7 +305,10 @@ app.post('/offline-results', async (request, reply) => {
 
   try {
     for (const result of parsed.data.results) {
-      await applyOfflineResult(verified.token.userId, result);
+      await applyOfflineResult(verified.token.userId, result, {
+        win: REWARD.win.coins,
+        loss: REWARD.loss.coins,
+      });
     }
     const profile = await fetchProfileRewardTotals(verified.token.userId);
     return {

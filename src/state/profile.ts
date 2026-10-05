@@ -68,9 +68,11 @@ export interface ProfileActions {
   ) => void;
   setSetting: (key: ProfileSetting, value: boolean) => void;
   setVolume: (key: ProfileVolume, value: number) => void;
-  /** Applies docs/brief.md 3.5 rewards: win +25/+50, loss +5/+10. */
-  recordResult: (won: boolean) => void;
-  /** Applies immediately and queues an idempotent server sync. */
+  /**
+   * An offline AI or hot-seat result: applies its coins immediately and queues
+   * an idempotent server sync. Only matches the server sees count toward the
+   * ladder, so it never moves rank points or battles played/won (BUG-010).
+   */
   queueResult: (result: PendingResult) => void;
   /**
    * An online match the SERVER settled (0008): mirror its rewards here so the
@@ -119,6 +121,11 @@ export const DEFAULT_PROFILE: ProfileData = {
   pendingResults: [],
 };
 
+/** What an offline result pays: the match reward's coins, and nothing the ladder ranks by. */
+export function offlineCoins(won: boolean): number {
+  return (won ? REWARD.win : REWARD.loss).coins;
+}
+
 export const useProfile = create<ProfileState>()(
   persist(
     (set, get) => ({
@@ -127,25 +134,11 @@ export const useProfile = create<ProfileState>()(
       setIdentity: (identity) => set(identity),
       setSetting: (key, value) => set({ [key]: value }),
       setVolume: (key, value) => set({ [key]: Math.max(0, Math.min(1, value)) }),
-      recordResult: (won) =>
-        set((s) => {
-          const reward = won ? REWARD.win : REWARD.loss;
-          return {
-            rankPoints: s.rankPoints + reward.points,
-            coins: s.coins + reward.coins,
-            battlesPlayed: s.battlesPlayed + 1,
-            battlesWon: s.battlesWon + (won ? 1 : 0),
-          };
-        }),
       queueResult: (result) =>
         set((s) => {
           if (s.pendingResults.some((pending) => pending.id === result.id)) return s;
-          const reward = result.won ? REWARD.win : REWARD.loss;
           return {
-            rankPoints: s.rankPoints + reward.points,
-            coins: s.coins + reward.coins,
-            battlesPlayed: s.battlesPlayed + 1,
-            battlesWon: s.battlesWon + (result.won ? 1 : 0),
+            coins: s.coins + offlineCoins(result.won),
             pendingResults: [...s.pendingResults, result],
           };
         }),
@@ -166,24 +159,15 @@ export const useProfile = create<ProfileState>()(
           const acknowledged = new Set(ids);
           const pendingResults = s.pendingResults.filter((result) => !acknowledged.has(result.id));
           if (!totals) return { pendingResults };
-          const unsynced = pendingResults.reduce(
-            (sum, result) => {
-              const reward = result.won ? REWARD.win : REWARD.loss;
-              return {
-                points: sum.points + reward.points,
-                coins: sum.coins + reward.coins,
-                played: sum.played + 1,
-                won: sum.won + (result.won ? 1 : 0),
-              };
-            },
-            { points: 0, coins: 0, played: 0, won: 0 },
-          );
+          // The server's totals, plus what the still-unsynced results pay —
+          // which is coins only (BUG-010).
+          const unsyncedCoins = pendingResults.reduce((sum, result) => sum + offlineCoins(result.won), 0);
           return {
             pendingResults,
-            rankPoints: totals.rankPoints + unsynced.points,
-            coins: totals.coins + unsynced.coins,
-            battlesPlayed: totals.battlesPlayed + unsynced.played,
-            battlesWon: totals.battlesWon + unsynced.won,
+            rankPoints: totals.rankPoints,
+            coins: totals.coins + unsyncedCoins,
+            battlesPlayed: totals.battlesPlayed,
+            battlesWon: totals.battlesWon,
           };
         }),
       markTutorialComplete: () => set({ hasCompletedTutorial: true }),

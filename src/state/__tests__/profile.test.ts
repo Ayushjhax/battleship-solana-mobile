@@ -20,7 +20,11 @@ describe('offline result queue', () => {
     useProfile.setState({ ...DEFAULT_PROFILE });
   });
 
-  it('awards immediately and remains idempotent for the same result id', () => {
+  // BUG-010: only matches the server sees count toward the ladder. Offline AI
+  // and hot-seat results are the device's word (a hot-seat player could hand
+  // themselves a win by resigning as player two), so they award coins only —
+  // no rank points, and they don't count as battles played or won.
+  it('awards coins at once, never ladder points, and stays idempotent for the same result id', () => {
     const result = {
       id: 'local-match-one',
       mode: 'ai' as const,
@@ -32,10 +36,10 @@ describe('offline result queue', () => {
     useProfile.getState().queueResult(result);
 
     const state = useProfile.getState();
-    expect(state.rankPoints).toBe(25);
+    expect(state.rankPoints).toBe(0);
     expect(state.coins).toBe(50);
-    expect(state.battlesPlayed).toBe(1);
-    expect(state.battlesWon).toBe(1);
+    expect(state.battlesPlayed).toBe(0);
+    expect(state.battlesWon).toBe(0);
     expect(state.pendingResults).toEqual([result]);
   });
 
@@ -64,9 +68,10 @@ describe('offline result queue', () => {
 
     const state = useProfile.getState();
     expect(state.pendingResults).toEqual([second]);
-    expect(state.rankPoints).toBe(130);
+    // The cloud's totals, plus only the coins of the loss still unsynced.
+    expect(state.rankPoints).toBe(125);
     expect(state.coins).toBe(260);
-    expect(state.battlesPlayed).toBe(6);
+    expect(state.battlesPlayed).toBe(5);
     expect(state.battlesWon).toBe(3);
   });
 

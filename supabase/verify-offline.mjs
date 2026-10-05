@@ -359,6 +359,27 @@ check(await fails_with(`select * from public.point_accounts`, [], '42501'), 'cli
 check(await fails_with(`select * from public.get_point_balances($1)`, [A], '42501'), 'clients cannot read the locked/sellable split directly either');
 check(await fails_with(`select * from public.reserve_point_wager($1, $2, 50)`, [A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4'], '42501'), 'clients cannot reserve or mutate wager points directly');
 
+// ---- 0015: offline and hot-seat results never touch the ladder ----
+// The device reports these itself, so they pay coins (cosmetics) and nothing
+// the leaderboard ranks by: no rank points, no battles played or won.
+{
+  await asServer();
+  const ladder = async (id) => (await q(`select rank_points, coins, battles_played, battles_won from public.profiles where id = $1`, [id])).rows[0];
+  const c0 = await ladder(C);
+  let ok = await q(`select public.apply_offline_result('hotseat-farm-1', $1, 'hotseat', true, now(), 50, 10) as ok`, [C]).then((x) => x.rows[0].ok, (e) => `error: ${e.message}`);
+  const c1 = await ladder(C);
+  check(ok === true && c1.coins === c0.coins + 50, `an offline win still pays its coins (${ok})`);
+  check(c1.rank_points === c0.rank_points && c1.battles_played === c0.battles_played && c1.battles_won === c0.battles_won, 'an offline win moves nothing the ladder ranks by');
+  ok = await q(`select public.apply_offline_result('hotseat-farm-1', $1, 'hotseat', true, now(), 50, 10) as ok`, [C]).then((x) => x.rows[0].ok, (e) => `error: ${e.message}`);
+  check(ok === false && (await ladder(C)).coins === c1.coins, 'replaying an offline result never pays twice');
+  ok = await q(`select public.apply_offline_result('ai-loss-1', $1, 'ai', false, now(), 50, 10) as ok`, [C]).then((x) => x.rows[0].ok, (e) => `error: ${e.message}`);
+  check(ok === true && (await ladder(C)).coins === c1.coins + 10, 'an offline loss pays the loss coins the server passes in');
+  check((await q(`select to_regprocedure('public.apply_offline_result(text,uuid,text,boolean,timestamptz)') as fn`)).rows[0].fn === null, 'the old offline settlement that paid ladder points is gone');
+  await asUser(C);
+  check(await fails_with(`select public.apply_offline_result('client-call', $1, 'ai', true, now(), 50, 10)`, [C], '42501'), 'clients still cannot report their own offline results');
+  await asServer();
+}
+
 // ---- 0014 backfill: balances that existed when welcome points were locked ----
 // A separate database, so these legacy captains can't disturb the counts and
 // the ladder checked above. Every history below was legal under 0010-0013.

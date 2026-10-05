@@ -42,7 +42,7 @@ import { playAgain as replay, returnToMenu } from '@/features/matchmaking/exits'
 import { useMatchClient } from '@/net/match-client';
 import { spendableCoins, useLocker, walletFor } from '@/state/locker';
 import { usePoints, WAGER_STAKE } from '@/state/points';
-import { useProfile } from '@/state/profile';
+import { offlineCoins, useProfile } from '@/state/profile';
 import { ArtImageButton } from '@/ui/ArtImageButton';
 import { BACKGROUNDS, MATCHMAKING_ART, RESULT_ART, SETTINGS_ART, type Asset } from '@/ui/assets';
 import { COIN_GOLD } from '@/ui/CurrencyChip';
@@ -130,7 +130,11 @@ function prepare(
   }
   const profile = useProfile.getState();
   const over = !local ? useMatchClient.getState().over : undefined;
-  const reward = over?.rewards ?? (won ? REWARD.win : REWARD.loss);
+  // Only matches the server sees count toward the ladder; an offline result
+  // pays its coins and no rank points (BUG-010).
+  const reward = local
+    ? { points: 0, coins: offlineCoins(won) }
+    : (over?.rewards ?? (won ? REWARD.win : REWARD.loss));
 
   // Offline results were already applied by the battle store before this route
   // opened, so the profile is the "after". An online one has not been applied
@@ -467,7 +471,9 @@ export default function ResultScreen() {
   const wagerLabel = won ? `Wager won · ${pointBalance} total` : `Stake lost · ${pointBalance} left`;
 
   const rows: { key: string; label: string; value: string; tone?: string }[] = [
-    { key: 'points', label: 'Points gained', value: `+${points}` },
+    local
+      ? { key: 'points', label: 'Ladder points', value: 'online only', tone: artColor.soft }
+      : { key: 'points', label: 'Points gained', value: `+${points}` },
     { key: 'coins', label: 'Coins', value: `${coins}`, tone: COIN_GOLD },
   ];
   if (totals.wager) {

@@ -152,6 +152,21 @@ export async function verifyDatabaseConnection(): Promise<void> {
   if (abandonProbe.error && isMissingFunction(abandonProbe.error)) {
     throw missingMigration('abandon_match', '0013_abandoned_matches.sql');
   }
+
+  // 0015's coins-only offline settlement. No profile carries this id, so the
+  // insert fails on its foreign key and nothing is written.
+  const offlineProbe = await db().rpc('apply_offline_result', {
+    p_id: 'readiness-probe',
+    p_user_id: unused,
+    p_mode: 'ai',
+    p_won: false,
+    p_completed_at: new Date(0).toISOString(),
+    p_win_coins: 0,
+    p_loss_coins: 0,
+  });
+  if (offlineProbe.error && isMissingFunction(offlineProbe.error)) {
+    throw missingMigration('apply_offline_result', '0015_offline_results_off_the_ladder.sql');
+  }
 }
 
 /** For matchmaking's rank window and the `matched` message's player cards. */
@@ -310,10 +325,15 @@ export interface OfflineResultInput {
   readonly completedAt: string;
 }
 
-/** Atomic and idempotent via public.apply_offline_result (0007). */
+/**
+ * Atomic and idempotent via public.apply_offline_result (0015). The device
+ * reports these itself, so they pay coins only and never touch the ladder;
+ * the coin amounts come from src/engine/ranks.ts through the caller.
+ */
 export async function applyOfflineResult(
   userId: string,
   result: OfflineResultInput,
+  coins: { win: number; loss: number },
 ): Promise<void> {
   const { error } = await db().rpc('apply_offline_result', {
     p_id: result.id,
@@ -321,6 +341,8 @@ export async function applyOfflineResult(
     p_mode: result.mode,
     p_won: result.won,
     p_completed_at: result.completedAt,
+    p_win_coins: coins.win,
+    p_loss_coins: coins.loss,
   });
   if (error) throw new Error(`apply_offline_result(${result.id}): ${error.message}`);
 }
