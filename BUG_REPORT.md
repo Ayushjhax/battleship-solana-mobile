@@ -46,7 +46,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | ID | Sev | Status | Summary |
 |---|---|---|---|
 | BUG-001 | Critical | Fixed | Points can be minted without playing (self-reported offline-wager wins) and sold for treasury SOL |
-| BUG-002 | High | Open | A late close of a player's old socket detaches their live match seat → forfeit |
+| BUG-002 | High | Fixed | A late close of a player's old socket detaches their live match seat → forfeit |
 | BUG-003 | High | Open | Re-queueing from a new socket: `matched` goes to the dead socket, or the player is silently dropped from the queue while the app shows "In line" |
 | BUG-004 | High | Open | Android back on "Finding an opponent" leaves the player queued in the background → silent forfeit (and stake) |
 | BUG-005 | Medium | Open | "Try again" after an opponent cancels a wagered match dead-ends on "Connecting…" |
@@ -104,7 +104,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 ## High
 
 ### BUG-002 — A late close of an old socket detaches the live match seat
-- **Severity:** High · **Status:** Open
+- **Severity:** High · **Status:** Fixed — `handleDisconnect` now takes the closing socket
+  and ignores it unless it is the seat's current one. Test:
+  `server/tests/regression/stale-socket-close.test.ts`.
 - **Where:** `server/src/ws.ts:124-134` (close handler), `server/src/room.ts:227`
   (`handleDisconnect`).
 - **What's wrong:** the close handler acts on the *player id*, never on the socket. When a

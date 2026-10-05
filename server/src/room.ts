@@ -224,9 +224,14 @@ export class Room {
     return true;
   }
 
-  handleDisconnect(playerId: string): void {
+  /**
+   * `socket` is the one that closed. A player who changed network has usually
+   * re-attached on a new socket long before the server notices the old one is
+   * dead, and that late close must not detach the live seat.
+   */
+  handleDisconnect(playerId: string, socket: WebSocket): void {
     const seat = this.seatOf(playerId);
-    if (!seat || this.finished) return;
+    if (!seat || this.finished || seat.socket !== socket) return;
     seat.socket = null;
     seat.connected = false;
     this.broadcastState();

@@ -126,7 +126,7 @@ export function attachWebSocketServer(server: Server, log: (msg: string) => void
         .then(async () => {
           if (!conn.playerId) return;
           await dequeue(conn.playerId);
-          findRoomForPlayer(conn.playerId)?.handleDisconnect(conn.playerId);
+          findRoomForPlayer(conn.playerId)?.handleDisconnect(conn.playerId, socket);
         })
         .catch((error: unknown) => {
           log(`[ws] close cleanup failed for player=${conn.playerId ?? 'unknown'}: ${String(error)}`);
