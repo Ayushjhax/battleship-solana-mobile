@@ -20,12 +20,8 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 
 import { FlagBadge } from '@/features/flags/FlagBadge';
-import {
-  getLeaderboard,
-  getMyLeaderboardRow,
-  type LeaderboardEntry,
-  type MyLeaderboardRow,
-} from '@/net/api';
+import { cachePage, cachedPage, type Page } from '@/features/leaderboard/pageCache';
+import { getLeaderboard, getMyLeaderboardRow, type LeaderboardEntry } from '@/net/api';
 import { ArtImageButton } from '@/ui/ArtImageButton';
 import { ArtPlate } from '@/ui/ArtPlate';
 import {
@@ -45,16 +41,6 @@ import { CANVAS_W, artColor, font } from '@/ui/tokens';
 
 const LOAD_BUDGET_MS = 400;
 
-interface Page {
-  readonly rows: readonly LeaderboardEntry[];
-  readonly me: MyLeaderboardRow | null;
-  readonly loadedAt: number;
-  readonly tookMs: number;
-}
-
-/** The last good page, so coming back to the screen paints immediately. */
-let cached: Page | null = null;
-
 async function loadPage(): Promise<{ page?: Page; error?: string }> {
   const t0 = Date.now();
   const [ladder, me] = await Promise.all([getLeaderboard(), getMyLeaderboardRow()]);
@@ -67,7 +53,7 @@ async function loadPage(): Promise<{ page?: Page; error?: string }> {
   };
   if (__DEV__ && page.tookMs > LOAD_BUDGET_MS)
     console.warn(`[leaderboard] loaded in ${page.tookMs} ms, over the ${LOAD_BUDGET_MS} ms budget`);
-  cached = page;
+  cachePage(page);
   return { page };
 }
 
@@ -156,7 +142,7 @@ const Row = memo(function Row({
 
 export default function LeaderboardScreen() {
   const router = useRouter();
-  const [page, setPage] = useState<Page | null>(cached);
+  const [page, setPage] = useState<Page | null>(cachedPage);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const alive = useRef(true);
