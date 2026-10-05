@@ -41,6 +41,37 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | Launch on a device or emulator | **Not done.** No device attached; this Mac had ~1.6 GB of reclaimable RAM with 6 of 7 GB of swap in use, so an emulator plus Metro would have thrashed. Needs doing in Phase 6 or by hand. |
 | Native Gradle/APK build | **Not done.** Only built on request (your standing instruction); the JS export above covers the bundle. |
 
+## Phase 6 — final verification
+
+Run on 2026-10-05 at `ba8aca6`, after every fix.
+
+| Check | Result |
+|---|---|
+| `npm test` (app, run with coverage) | 64 files, **677 passed** (Phase 2: 54 files, 628) |
+| `cd server && npm test` (run with coverage) | 23 files, **164 passed** (Phase 2: 16 files, 147) |
+| `npm run typecheck` | **clean** (Phase 2: 68 errors — BUG-008) |
+| `npm run lint` | **clean** (Phase 2: crashed — BUG-008) |
+| `cd server && npx tsc --noEmit` | clean |
+| `node supabase/verify-offline.mjs` | **all database checks passed** — every migration applied twice into PGlite, including 0014–0016 and the locked-points backfill |
+| `npx expo export --platform android` | builds: 4,693 modules, 12 MB Hermes bundle. It took 18 minutes (47 s in Phase 2): the Mac was deep in swap |
+| `node scripts/check-bundle-secrets.mjs` | **passes**: no server secret in 772 bundle files (Phase 2: failed — BUG-009) |
+| `npx expo-doctor` | 18/21. Failing: the six patch versions (BUG-015, deferred). Two checks couldn't reach Expo's servers (`getaddrinfo ENOTFOUND exp.host`); `app.json` is unchanged since the branch was cut |
+| Coverage, app (`src/**/*.ts`) | 64.9 % statements · 62.8 % branches · 57.5 % functions · 68.1 % lines (newly possible — BUG-024) |
+| Coverage, server | 67.5 % statements · 57.3 % branches · 69.5 % functions · 70.5 % lines |
+| `cd server && npm run verify:rls` | **Not run.** It creates and deletes users on the live Supabase project in the env. |
+| Launch on a device or emulator | **Not done.** About 60 MB of RAM free and 5 of 6 GB of swap in use; the emulator needs 2 GB on top of Metro. |
+| Native Gradle/APK build | **Not done.** Only built on request; the JS export above covers the bundle. |
+
+Tests: 49 more in the app and 17 more on the server. Twelve test cases were removed along
+with what they covered, both on your decisions: eleven for the offline-wager client and
+store (BUG-001, which `tests/regression/no-offline-wagers.test.ts` and
+`server/tests/regression/offline-wagers-removed.test.ts` now pin as gone), and one offline
+result test replaced by a coins-only version (BUG-010). No other assertion was loosened.
+
+One flake, not touched: `src/net/__tests__/match-client.test.ts` › "queues even when the
+launch-time discovery had to retry" timed out once (20 s) in a full run on the overloaded
+Mac. It passed three times on its own and in every full run since.
+
 ## Bugs by severity
 
 | ID | Sev | Status | Summary |
