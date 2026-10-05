@@ -44,6 +44,8 @@ export interface DbMockOptions {
   readonly profileDelayMs?: number;
   /** Rank points per player id; anyone not listed has 0. */
   readonly rankPoints?: Readonly<Record<string, number>>;
+  /** applyMatchResult throws this many times before it succeeds — a database outage. */
+  readonly settleFailures?: number;
 }
 
 export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } {
@@ -101,6 +103,9 @@ export function installDbMock(options: DbMockOptions = {}): { calls: DbCall[] } 
     }),
     applyMatchResult: vi.fn(async (...args: unknown[]) => {
       record('applyMatchResult')(...args);
+      if (calls.filter((call) => call.fn === 'applyMatchResult').length <= (options.settleFailures ?? 0)) {
+        throw new Error('applyMatchResult: database unavailable');
+      }
       if (options.settleDelayMs) {
         await new Promise((resolve) => setTimeout(resolve, options.settleDelayMs));
       }

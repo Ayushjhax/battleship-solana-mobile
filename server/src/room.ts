@@ -72,6 +72,10 @@ const BOT_THINK_SPREAD_MS = envMs('SEABATTLE_BOT_THINK_SPREAD_MS', 600);
 
 /** The shortest gap between two relayed emotes from one player. */
 const EMOTE_MIN_GAP_MS = 250;
+/** First wait before re-trying a wagered settlement the database refused; it doubles, capped at 12x. */
+const SETTLE_RETRY_MS = envMs('SEABATTLE_SETTLE_RETRY_MS', 5_000);
+/** After this many refusals the stakes stay held for apply_match_result to be run by hand. */
+const MAX_SETTLE_ATTEMPTS = 10;
 
 interface Seat {
   readonly playerId: string;
@@ -125,6 +129,9 @@ export class Room {
   /** Running while every human seat is disconnected. See ABANDON_GRACE_MS. */
   private abandonTimer: NodeJS.Timeout | null = null;
   private finished = false;
+  /** The room has left the registry (onFinished ran); its players may queue again. */
+  private released = false;
+  private settleAttempts = 0;
   private cancellingBeforeStart = false;
   /** A pre-game cancel that arrived while start() was still building the room. */
   private cancelOnStart: string | null = null;
@@ -602,11 +609,19 @@ export class Room {
     return structuredClone(this.state.players[index].board) as Board;
   }
 
+  /** Takes the room out of the registry once, so its players can queue again. */
+  private release(): void {
+    if (this.released) return;
+    this.released = true;
+    this.onFinished(this);
+  }
+
   private async settleAndNotify(
     winnerId: string,
     reason: GameOverReason,
     reveal: Board | null,
   ): Promise<void> {
+    this.settleAttempts += 1;
     try {
       await applyMatchResult(
         this.id,
@@ -615,17 +630,31 @@ export class Room {
         REWARD,
       );
     } catch (error) {
-      console.error(`[room ${this.id}] settlement failed`, error);
+      console.error(`[room ${this.id}] settlement failed (attempt ${this.settleAttempts})`, error);
       if (this.wager.wagered) {
-        for (const seat of this.seats) {
-          this.send(seat.playerId, {
-            t: 'error',
-            v: 1,
-            code: 'internal',
-            message: 'Wager settlement is delayed; the server is retrying safely.',
-          });
+        // A wager is retried, safely (apply_match_result is idempotent) — but
+        // never while holding the players: a room left in the registry told
+        // both "already in a match" for as long as the database was down.
+        if (this.settleAttempts === 1) {
+          for (const seat of this.seats) {
+            this.send(seat.playerId, {
+              t: 'error',
+              v: 1,
+              code: 'internal',
+              message: 'Wager settlement is delayed; the server is retrying safely.',
+            });
+          }
+          this.release();
         }
-        setTimeout(() => void this.settleAndNotify(winnerId, reason, reveal), 5_000).unref?.();
+        if (this.settleAttempts >= MAX_SETTLE_ATTEMPTS) {
+          console.error(
+            `[room ${this.id}] giving up after ${this.settleAttempts} settlement attempts; ` +
+              'both stakes stay held for apply_match_result to be run by hand',
+          );
+          return;
+        }
+        const delay = Math.min(SETTLE_RETRY_MS * 2 ** (this.settleAttempts - 1), SETTLE_RETRY_MS * 12);
+        setTimeout(() => void this.settleAndNotify(winnerId, reason, reveal), delay).unref?.();
         return;
       }
     }
@@ -655,7 +684,7 @@ export class Room {
         ...(!won && !seat.isBot && reveal ? { reveal } : {}),
       });
     }
-    this.onFinished(this);
+    this.release();
   }
 
   isFull(): boolean {

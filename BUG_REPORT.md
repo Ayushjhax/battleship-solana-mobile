@@ -60,7 +60,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-013 | Low | Fixed | Hot-seat names screen's endless caret animation keeps running under the whole hot-seat match |
 | BUG-014 | Low | Fixed | Android back on How to Play probably leaves the guide instead of turning back a page |
 | BUG-015 | Low | Won't fix (deferred) | expo-doctor 20/21: six Expo packages a patch version behind |
-| BUG-016 | Low | Open | A failing wagered settlement retries forever and blocks both players from queueing |
+| BUG-016 | Low | Fixed | A failing wagered settlement retries forever and blocks both players from queueing |
 | BUG-017 | Low | Open | With both captains away, the turn clock keeps running and can forfeit one of them inside the abandon window |
 | BUG-018 | Low | Fixed (by BUG-001) | Signing out discards a won-but-unpaid offline wager |
 | BUG-019 | Low | Open | Store purchases made as "guest" can appear under the next account on the device |
@@ -343,6 +343,12 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   so it's your call when.
 
 ### BUG-016 — A failing wagered settlement blocks both players
+- **Status:** Fixed — on the first refusal the room leaves the registry (both players can queue
+  at once) and the settlement keeps retrying in the background with doubling backoff, giving
+  up after 10 tries with a log line naming the match for a manual `apply_match_result`. Test:
+  `server/tests/regression/settlement-retry.test.ts` (the "queue again" case failed for the
+  right reason on the old code; the cap case pins the new bound, which the old fixed 5 s
+  retry could not be observed against in test time).
 - **Where:** `server/src/room.ts:572-585`.
 - **What's wrong:** when `apply_match_result` fails for a wagered match, the room retries
   every 5 s with no limit and stays registered. Until it succeeds, both players' `queue` is
