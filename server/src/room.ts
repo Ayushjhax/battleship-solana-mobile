@@ -232,6 +232,8 @@ export class Room {
       for (const other of this.seats) {
         if (!other.isBot && !other.connected) this.armForfeit(other);
       }
+      // The turn clock stopped while nobody was here; the turn starts afresh.
+      if (this.state.phase === 'playing') this.rearmTurnTimer();
     }
 
     this.sendMatched(playerId);
@@ -264,6 +266,12 @@ export class Room {
           clearTimeout(other.disconnectTimer);
           other.disconnectTimer = null;
         }
+      }
+      // Nobody is playing, so nobody's turn can time out: left running, the
+      // clock could forfeit a captain inside the abandon grace (BUG-017).
+      if (this.turnTimer) {
+        clearTimeout(this.turnTimer);
+        this.turnTimer = null;
       }
       this.abandonTimer = setTimeout(() => void this.abandonRoom(), ABANDON_GRACE_MS);
       return;

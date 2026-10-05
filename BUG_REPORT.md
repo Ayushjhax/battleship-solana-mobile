@@ -61,7 +61,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-014 | Low | Fixed | Android back on How to Play probably leaves the guide instead of turning back a page |
 | BUG-015 | Low | Won't fix (deferred) | expo-doctor 20/21: six Expo packages a patch version behind |
 | BUG-016 | Low | Fixed | A failing wagered settlement retries forever and blocks both players from queueing |
-| BUG-017 | Low | Open | With both captains away, the turn clock keeps running and can forfeit one of them inside the abandon window |
+| BUG-017 | Low | Fixed | With both captains away, the turn clock keeps running and can forfeit one of them inside the abandon window |
 | BUG-018 | Low | Fixed (by BUG-001) | Signing out discards a won-but-unpaid offline wager |
 | BUG-019 | Low | Open | Store purchases made as "guest" can appear under the next account on the device |
 | BUG-020 | Low | Open | Leaderboard briefly shows the previous account's "you" row after switching accounts |
@@ -358,6 +358,8 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   retrying, and give up and log loudly after a bounded number of tries.
 
 ### BUG-017 — Both captains away: the turn clock still runs
+- **Status:** Fixed — the turn timer stops while every human is away and a fresh turn starts
+  when one comes back. Test: `server/tests/regression/both-away-turn-clock.test.ts`.
 - **Where:** `server/src/room.ts:234-246` (abandon), `:483` (`rearmTurnTimer`).
 - **What's wrong:** when both humans disconnect, the room waits 20 s before abandoning, but
   the turn timer isn't paused. A player already on one timeout can be forfeited inside that
