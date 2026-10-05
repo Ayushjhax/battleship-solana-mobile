@@ -202,7 +202,7 @@ export default function SettingsScreen() {
           w={158}
           h={50}
           label="Change avatar"
-          onPress={() => router.push('/avatar')}
+          onPress={() => router.push({ pathname: '/avatar', params: { next: 'back' } })}
         />
       </View>
       <VSlicedImage

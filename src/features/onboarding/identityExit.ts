@@ -13,9 +13,8 @@ export function identityExit(
   next: string | undefined,
   canGoBack: boolean,
 ): IdentityExit {
-  if (step === 'name') {
-    if (next === 'back') return canGoBack ? 'back' : 'menu';
-    return 'avatar';
-  }
-  return 'menu';
+  // An edit goes back to where it was opened. The avatar step used to always
+  // replace itself with the menu, stacking a second one over Settings (BUG-007).
+  if (next === 'back') return canGoBack ? 'back' : 'menu';
+  return step === 'name' ? 'avatar' : 'menu';
 }

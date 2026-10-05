@@ -337,7 +337,7 @@ export default function ProfileScreen() {
             w={137}
             h={40}
             label="Change avatar"
-            onPress={() => router.push('/avatar')}
+            onPress={() => router.push({ pathname: '/avatar', params: { next: 'back' } })}
           />
         </View>
       </View>

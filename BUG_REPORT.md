@@ -51,7 +51,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-004 | High | Fixed | Android back on "Finding an opponent" leaves the player queued in the background → silent forfeit (and stake) |
 | BUG-005 | Medium | Fixed | "Try again" after an opponent cancels a wagered match dead-ends on "Connecting…" |
 | BUG-006 | Medium | Fixed | Double-tapping Battle! can open two searching/battle screens (double-speed turn clock; hot-seat skips player 2's placement) |
-| BUG-007 | Medium | Open | Changing your avatar from Settings or Profile stacks a new menu on top instead of going back |
+| BUG-007 | Medium | Fixed | Changing your avatar from Settings or Profile stacks a new menu on top instead of going back |
 | BUG-008 | Medium | Open | `npm run typecheck` fails and `npm run lint` crashes: root tooling sweeps in the nested video projects |
 | BUG-009 | Medium | Needs decision | The server's private Solana RPC key ships inside the APK (local `.env` config) |
 | BUG-010 | Medium | Needs decision | Self-reported offline and hot-seat results earn ladder points; hot-seat can be farmed |
@@ -206,7 +206,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   focused again.
 
 ### BUG-007 — Changing avatar from Settings/Profile stacks a new menu
-- **Severity:** Medium · **Status:** Open
+- **Severity:** Medium · **Status:** Fixed — Settings and Profile open the avatar screen with
+  `next=back`, and it goes back like the name screen does (`identityExit`, extracted in a
+  no-behaviour-change refactor first). Test: `tests/onboarding/identity-exit.test.ts`.
 - **Where:** `app/(onboarding)/avatar.tsx:260`, `app/settings.tsx:205`, `app/profile.tsx:340`.
 - **What's wrong:** the avatar screen always ends with `router.replace('/menu')`. Opened
   from Settings or Profile, that replaces it with a second menu on top of Settings:

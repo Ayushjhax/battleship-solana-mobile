@@ -15,7 +15,7 @@
  * springs onto the swatch, and the chosen card lifts before the screen moves on.
  */
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Image as RNImage, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -231,6 +231,9 @@ function initialTintFor(id: AvatarId, savedId: AvatarId, savedTint: string): num
 
 export default function AvatarScreen() {
   const router = useRouter();
+  // `next=back`: opened from Settings or Profile to change it, not onboarding.
+  const params = useLocalSearchParams<{ next?: string | string[] }>();
+  const next = Array.isArray(params.next) ? params.next[0] : params.next;
   const name = useProfile((state) => state.name);
   const savedId = useProfile((state) => state.avatarId);
   const savedTint = useProfile((state) => state.avatarColor);
@@ -259,12 +262,12 @@ export default function AvatarScreen() {
       profile.setIdentity({ avatarId, avatarColor });
       if (profile.userId) void pushProfile(profile.userId, { avatarId, avatarColor });
       setTimeout(() => {
-        const exit = identityExit('avatar', undefined, router.canGoBack());
+        const exit = identityExit('avatar', next, router.canGoBack());
         if (exit === 'back') router.back();
         else router.replace('/menu');
       }, CHOOSE_DELAY_MS);
     },
-    [router],
+    [next, router],
   );
 
   const cardsLeft = (CANVAS_W - (CARD.w * IDS.length + CARD.gap * (IDS.length - 1))) / 2;
