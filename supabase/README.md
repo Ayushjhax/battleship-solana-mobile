@@ -45,6 +45,8 @@ The secret key never appears under `app/` or `src/`; `server/src/db.ts` is the o
 | `privy_accounts` | server only | server-only verified Privy sync; clients have no grants or RLS policy |
 | `point_accounts`, `point_ledger` | server only | one balance per verified Privy DID (`locked_points` of it are welcome points: playable, never sellable — 0014); append-only welcome, wager and exchange ledger |
 | `point_wager_holds`, `point_trades` | server only | idempotent wager reservations and replay-protected SOL trades |
+| `offline_results` | server only | server only: one receipt per offline/hot-seat result; coins only since 0015 (`ladder_points` 0) |
+| `offline_ladder_corrections` | server only | 0017's log: the ladder points, battles and wins it took back per captain |
 | `ranks` | public | — |
 | `leaderboard` (view) | signed-in users; only `name, avatar_id, avatar_color, country_code, rank_points, battles_won` | — |
 | `realtime.messages` | `lobby:{mode}` presence for everyone signed in; `match:{id}` broadcast for the two players | same |

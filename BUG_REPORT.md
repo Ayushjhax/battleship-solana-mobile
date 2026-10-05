@@ -291,8 +291,11 @@ Mac. It passed three times on its own and in every full run since.
 - **Severity:** Medium (ladder integrity) · **Status:** Fixed — migration 0015 makes an offline
   or hot-seat result pay coins only: no rank points, not counted as a battle played or won.
   The app applies the same rule locally and the result screen shows "Ladder points · online
-  only". Points already earned this way stay on the ladder (no clawback was asked for).
-  Tests: `supabase/verify-offline.mjs` (0015 checks), `src/state/__tests__/profile.test.ts`
+  only". What offline results earned before the fix is taken back once by migration 0017,
+  on your decision: 25 per win and 5 per loss (0007's rates), and the battle and win each
+  added; coins stay. It never takes a captain below zero, and logs what it took per
+  captain in `offline_ladder_corrections`, so it can be checked or given back.
+  Tests: `supabase/verify-offline.mjs` (0015 and 0017 checks), `src/state/__tests__/profile.test.ts`
   (updated to the new rule), `server/tests/regression/offline-results-coins-only.test.ts`.
 - **Where:** `server/src/index.ts:333` (`/offline-results`),
   `supabase/migrations/0007_offline_results.sql:45`, `src/state/battle.ts:239`.
@@ -481,22 +484,17 @@ Mac. It passed three times on its own and in every full run since.
 
 ## Decisions I need from you
 
-Answered on 2026-10-05 and done as decided:
+All answered on 2026-10-05 and done as decided:
 
 1. **BUG-001:** offline wagers removed; welcome points are tracked apart and never sellable.
 2. **BUG-009:** you rotate the key; the app has its own restricted RPC variable.
 3. **BUG-010:** only server-verified online matches count toward the ladder.
 4. **BUG-011:** the match closes with no result; a wagered cancel refunds both stakes.
 5. **BUG-015:** the Expo upgrades go on a separate branch later.
-
-Still open:
-
 6. **BUG-023:** answered — skip the Realtime channel when the server relays emotes. Fixed.
 7. **Offline coins (follows BUG-010):** answered — offline games keep paying coins (+50 win,
    +10 loss). No change.
-8. **Ladder points already earned offline:** points that offline and hot-seat results
-   earned before the BUG-010 fix are still on the ladder. A one-off correction could subtract
-   them; I haven't written one. Want it?
+8. **Ladder points already earned offline:** answered — take them back. Migration 0017.
 
 ## Checked and found sound
 

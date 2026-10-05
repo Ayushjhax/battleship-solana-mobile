@@ -10,6 +10,13 @@
 -- The coin amounts are passed in by the match server, from
 -- src/engine/ranks.ts, the way apply_match_result's rewards are, instead of
 -- being hard-coded here as 0007 did.
+--
+-- offline_results.ladder_points records what each result counts for on the
+-- ladder: 0 for every result written from here. Rows written under 0007's
+-- rules are left null, so 0017 can tell exactly which results paid rank
+-- points and take those back once.
+
+alter table public.offline_results add column if not exists ladder_points integer;
 
 drop function if exists public.apply_offline_result(text, uuid, text, boolean, timestamptz);
 
@@ -30,8 +37,8 @@ as $$
 declare
   inserted_count integer;
 begin
-  insert into public.offline_results (id, user_id, mode, won, completed_at)
-  values (p_id, p_user_id, p_mode, p_won, p_completed_at)
+  insert into public.offline_results (id, user_id, mode, won, completed_at, ladder_points)
+  values (p_id, p_user_id, p_mode, p_won, p_completed_at, 0)
   on conflict (id) do nothing;
 
   get diagnostics inserted_count = row_count;

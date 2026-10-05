@@ -395,8 +395,11 @@ check(await fails_with(`select * from public.reserve_point_wager($1, $2, 50)`, [
   ok = await q(`select public.apply_offline_result('ai-loss-1', $1, 'ai', false, now(), 50, 10) as ok`, [C]).then((x) => x.rows[0].ok, (e) => `error: ${e.message}`);
   check(ok === true && (await ladder(C)).coins === c1.coins + 10, 'an offline loss pays the loss coins the server passes in');
   check((await q(`select to_regprocedure('public.apply_offline_result(text,uuid,text,boolean,timestamptz)') as fn`)).rows[0].fn === null, 'the old offline settlement that paid ladder points is gone');
+  const marked = await q(`select ladder_points from public.offline_results where id = 'hotseat-farm-1'`).then((x) => x.rows[0]?.ladder_points, (e) => `error: ${e.message}`);
+  check(marked === 0, `a result paid under the new rules is marked as counting 0 ladder points (${marked})`);
   await asUser(C);
   check(await fails_with(`select public.apply_offline_result('client-call', $1, 'ai', true, now(), 50, 10)`, [C], '42501'), 'clients still cannot report their own offline results');
+  check(await fails_with(`select * from public.offline_ladder_corrections`, [], '42501'), 'clients cannot read the ladder correction log (0017)');
   await asServer();
 }
 
@@ -489,6 +492,61 @@ check(await fails_with(`select * from public.reserve_point_wager($1, $2, 50)`, [
   await buy(L.welcome, 4);
   await applyMigrations(legacy, files, 'legacy, re-applied:');
   check((await split(L.welcome)) === '200/100/100', `backfill runs once: re-applying the migrations recomputes nothing (${await split(L.welcome)})`);
+}
+
+// ---- 0017: the ladder points offline results earned before 0015 ----
+// Another separate database: everything up to 0014, so the old settlement
+// that paid ladder points is still there; three captains play the old way;
+// then the rest is applied. 0007 paid 25 a win and 5 a loss, plus a battle
+// played (and won) each.
+{
+  const legacy = await freshDb();
+  const lq = (sql, params) => legacy.query(sql, params);
+  await applyMigrations(legacy, files.filter((f) => f < '0015'), 'ladder, before 0015:');
+
+  const P = {
+    farmer: '55555555-5555-4555-8555-555555555501', // a real online record, plus four offline results
+    low: '55555555-5555-4555-8555-555555555502', // has fewer points now than offline paid
+    clean: '55555555-5555-4555-8555-555555555503', // never played offline
+  };
+  for (const id of Object.values(P)) await lq(`insert into auth.users (id, email) values ($1, null)`, [id]);
+  const oldResult = (id, key, won) => lq(`select public.apply_offline_result($1, $2, 'hotseat', $3, now())`, [key, id, won]);
+  await lq(`update public.profiles set rank_points = 200, battles_played = 10, battles_won = 6, coins = 500 where id = $1`, [P.farmer]);
+  await oldResult(P.farmer, 'farm-1', true);
+  await oldResult(P.farmer, 'farm-2', true);
+  await oldResult(P.farmer, 'farm-3', true);
+  await oldResult(P.farmer, 'farm-4', false);
+  await oldResult(P.low, 'low-1', true);
+  await lq(`update public.profiles set rank_points = 10 where id = $1`, [P.low]);
+  await lq(`update public.profiles set rank_points = 120, battles_played = 4, battles_won = 2, coins = 90 where id = $1`, [P.clean]);
+
+  await applyMigrations(legacy, files.filter((f) => f >= '0015'), 'ladder, 0015 onwards:');
+  const totals = async (id) => {
+    const r = (await lq(`select rank_points, battles_played, battles_won, coins from public.profiles where id = $1`, [id])).rows[0];
+    return `${r.rank_points}/${r.battles_played}/${r.battles_won}/${r.coins}`;
+  };
+  const taken = async (id) => {
+    try {
+      const r = (await lq(`select results, rank_points, battles_played, battles_won from public.offline_ladder_corrections where user_id = $1`, [id])).rows[0];
+      return r ? `${r.results}:${r.rank_points}/${r.battles_played}/${r.battles_won}` : 'none';
+    } catch (e) {
+      return `error: ${e.message}`;
+    }
+  };
+  // rank points / battles played / battles won / coins
+  check((await totals(P.farmer)) === '200/10/6/660', `correction: offline results give back their ladder points, battles and wins, and keep their coins (${await totals(P.farmer)})`);
+  check((await taken(P.farmer)) === '4:80/4/3', `correction: what was taken is logged per captain (${await taken(P.farmer)})`);
+  check((await totals(P.low)) === '0/0/0/50', `correction: never takes a captain below zero (${await totals(P.low)})`);
+  check((await taken(P.low)) === '1:10/1/1', `correction: the log holds what was actually taken, not what was owed (${await taken(P.low)})`);
+  check((await totals(P.clean)) === '120/4/2/90' && (await taken(P.clean)) === 'none', 'correction: a captain who never played offline is untouched');
+  const unmarked = await lq(`select count(*)::int as n from public.offline_results where ladder_points is distinct from 0`).then((x) => x.rows[0].n, (e) => `error: ${e.message}`);
+  check(unmarked === 0, `correction: every offline result now counts 0 ladder points (${unmarked} left)`);
+
+  // A result paid under the new rules, then every migration again.
+  await lq(`select public.apply_offline_result('farm-5', $1, 'ai', true, now(), 50, 10)`, [P.farmer]);
+  await applyMigrations(legacy, files, 'ladder, re-applied:');
+  check((await totals(P.farmer)) === '200/10/6/710', `correction runs once: re-applying takes nothing twice, and a coins-only result is never reverted (${await totals(P.farmer)})`);
+  check((await taken(P.farmer)) === '4:80/4/3', `correction runs once: the log is unchanged (${await taken(P.farmer)})`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall database checks passed');

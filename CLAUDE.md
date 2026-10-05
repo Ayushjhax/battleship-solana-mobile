@@ -299,7 +299,8 @@ that looks like a rectangle from a UI kit.
   `src/engine/ranks.ts` — the SQL never hard-codes 25/50/5/10. **Only matches the server
   sees count toward the ladder:** offline AI and hot-seat results go through
   `apply_offline_result` (0015) and pay coins only (passed in from `REWARD`) — no rank
-  points, not counted as battles played or won. The device reports them itself, so they
+  points, not counted as battles played or won. 0017 took back what offline results put on
+  the ladder before that, once, and logged it per captain in `offline_ladder_corrections`. The device reports them itself, so they
   can't be trusted with anything the leaderboard ranks by.
 - Clients never write score columns to Supabase. The result screen mirrors an online
   match's `over.rewards` into the profile store once (`recordOnlineResult`, keyed by matchId

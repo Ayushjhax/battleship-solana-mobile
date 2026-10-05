@@ -123,10 +123,46 @@ export type Database = {
           },
         ]
       }
+      offline_ladder_corrections: {
+        Row: {
+          battles_played: number
+          battles_won: number
+          corrected_at: string
+          rank_points: number
+          results: number
+          user_id: string
+        }
+        Insert: {
+          battles_played: number
+          battles_won: number
+          corrected_at?: string
+          rank_points: number
+          results: number
+          user_id: string
+        }
+        Update: {
+          battles_played?: number
+          battles_won?: number
+          corrected_at?: string
+          rank_points?: number
+          results?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offline_ladder_corrections_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       offline_results: {
         Row: {
           completed_at: string
           id: string
+          ladder_points: number | null
           mode: string
           synced_at: string
           user_id: string
@@ -135,6 +171,7 @@ export type Database = {
         Insert: {
           completed_at: string
           id: string
+          ladder_points?: number | null
           mode: string
           synced_at?: string
           user_id: string
@@ -143,6 +180,7 @@ export type Database = {
         Update: {
           completed_at?: string
           id?: string
+          ladder_points?: number | null
           mode?: string
           synced_at?: string
           user_id?: string
