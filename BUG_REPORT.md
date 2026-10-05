@@ -58,7 +58,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-011 | Medium | Fixed | Unwagered match: a Cancel that crosses `matched` becomes a 45 s forfeit loss |
 | BUG-012 | Low | Fixed | Misleading failure text ("…for 45 seconds… counted as a loss", every failure titled "No connection") |
 | BUG-013 | Low | Fixed | Hot-seat names screen's endless caret animation keeps running under the whole hot-seat match |
-| BUG-014 | Low | Open | Android back on How to Play probably leaves the guide instead of turning back a page |
+| BUG-014 | Low | Fixed | Android back on How to Play probably leaves the guide instead of turning back a page |
 | BUG-015 | Low | Needs decision | expo-doctor 20/21: six Expo packages a patch version behind |
 | BUG-016 | Low | Open | A failing wagered settlement retries forever and blocks both players from queueing |
 | BUG-017 | Low | Open | With both captains away, the turn clock keeps running and can forfeit one of them inside the abandon window |
@@ -313,7 +313,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   test's list.
 
 ### BUG-014 — Back on How to Play probably exits instead of paging back
-- **Status:** Open (needs on-device confirmation)
+- **Status:** Fixed — `rootBackAction` now leaves `/how-to-play` to the screen. That is correct
+  whichever order the two listeners run in, so the on-device question no longer matters.
+  Test: `tests/navigation/root-back.test.ts`.
 - **Where:** `app/_layout.tsx:188-207`, `src/features/howToPlay/HowToPlayScreen.tsx:590-598`.
 - **What's wrong:** the root layout re-registers its back handler on every route change.
   That makes it the newest listener, and React Native calls the newest first. Battle,

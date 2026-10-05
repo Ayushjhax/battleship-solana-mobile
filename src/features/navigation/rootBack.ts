@@ -21,12 +21,14 @@ export function rootBackAction(pathname: string): RootBackAction {
   // Battle/tutorial, placement and the port city own richer back behaviour
   // (the city's plays its exit and returns home exactly once). Searching
   // cancels the search: popping it alone left the socket in line (BUG-004).
+  // How to Play turns back a page before it leaves (BUG-014).
   if (
     pathname.includes('battle') ||
     pathname === '/tutorial' ||
     pathname.includes('placement') ||
     pathname === '/city' ||
-    pathname === '/searching'
+    pathname === '/searching' ||
+    pathname === '/how-to-play'
   ) {
     return 'screen';
   }

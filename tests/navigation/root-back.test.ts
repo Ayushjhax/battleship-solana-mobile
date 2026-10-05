@@ -38,6 +38,13 @@ describe('rootBackAction', () => {
     expect(rootBackAction('/searching')).toBe('screen');
   });
 
+  // BUG-014: How to Play's own back handler turns back a page (or leaves from
+  // the first one), but the root handler — the newest listener — took the
+  // press first and left the guide from any page.
+  it('lets How to Play turn back a page before leaving', () => {
+    expect(rootBackAction('/how-to-play')).toBe('screen');
+  });
+
   it('the searching screen answers back by cancelling the search', () => {
     const source = readFileSync(join(ROOT, 'app/(game)/searching.tsx'), 'utf8');
     const handler = /BackHandler\.addEventListener\(\s*'hardwareBackPress',[\s\S]{0,200}?cancel/i;
