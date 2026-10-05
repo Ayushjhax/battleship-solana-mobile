@@ -64,7 +64,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-017 | Low | Fixed | With both captains away, the turn clock keeps running and can forfeit one of them inside the abandon window |
 | BUG-018 | Low | Fixed (by BUG-001) | Signing out discards a won-but-unpaid offline wager |
 | BUG-019 | Low | Fixed | Store purchases made as "guest" can appear under the next account on the device |
-| BUG-020 | Low | Open | Leaderboard briefly shows the previous account's "you" row after switching accounts |
+| BUG-020 | Low | Fixed | Leaderboard briefly shows the previous account's "you" row after switching accounts |
 | BUG-021 | Low | Fixed (with BUG-010) | Offline-result rewards are hard-coded in SQL (drift risk against `REWARD`) |
 | BUG-022 | Low | Open | The launch-time cloud merge ignores unsynced offline results, so rank and coins dip until the next sync |
 | BUG-023 | Low | Open | Every online match joins a Supabase Realtime channel even when the server relays emotes |
@@ -388,6 +388,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 - **Proposed fix:** adopt the guest wallet once, at first sync, or clear it on sign-out.
 
 ### BUG-020 — Leaderboard cache crosses accounts
+- **Status:** Fixed — the cached page is kept against the account it was read for and is only
+  shown to that account (none is kept without an account). Test:
+  `tests/leaderboard/page-cache.test.ts`.
 - **Where:** `app/leaderboard.tsx:56`.
 - **What's wrong:** the last page, including the "you" row, is cached in a module variable.
   After switching accounts, the previous account's row shows until the refresh lands.

@@ -22,6 +22,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View, type ImageStyle } f
 import { FlagBadge } from '@/features/flags/FlagBadge';
 import { cachePage, cachedPage, type Page } from '@/features/leaderboard/pageCache';
 import { getLeaderboard, getMyLeaderboardRow, type LeaderboardEntry } from '@/net/api';
+import { useProfile } from '@/state/profile';
 import { ArtImageButton } from '@/ui/ArtImageButton';
 import { ArtPlate } from '@/ui/ArtPlate';
 import {
@@ -41,7 +42,7 @@ import { CANVAS_W, artColor, font } from '@/ui/tokens';
 
 const LOAD_BUDGET_MS = 400;
 
-async function loadPage(): Promise<{ page?: Page; error?: string }> {
+async function loadPage(account: string | null): Promise<{ page?: Page; error?: string }> {
   const t0 = Date.now();
   const [ladder, me] = await Promise.all([getLeaderboard(), getMyLeaderboardRow()]);
   if (!ladder.ok) return { error: ladder.error.message };
@@ -53,7 +54,7 @@ async function loadPage(): Promise<{ page?: Page; error?: string }> {
   };
   if (__DEV__ && page.tookMs > LOAD_BUDGET_MS)
     console.warn(`[leaderboard] loaded in ${page.tookMs} ms, over the ${LOAD_BUDGET_MS} ms budget`);
-  cachePage(page);
+  cachePage(account, page);
   return { page };
 }
 
@@ -142,14 +143,14 @@ const Row = memo(function Row({
 
 export default function LeaderboardScreen() {
   const router = useRouter();
-  const [page, setPage] = useState<Page | null>(cachedPage);
+  const [page, setPage] = useState<Page | null>(() => cachedPage(useProfile.getState().userId));
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const alive = useRef(true);
 
   const load = useCallback(async (asRefresh: boolean) => {
     if (asRefresh) setRefreshing(true);
-    const result = await loadPage();
+    const result = await loadPage(useProfile.getState().userId);
     if (!alive.current) return;
     if (result.page) {
       setPage(result.page);
