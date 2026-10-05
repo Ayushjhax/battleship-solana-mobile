@@ -8,7 +8,8 @@
  * deducts atomically; until then a reinstall forgets what was bought.
  *
  * A player with no account id yet (offline, before the first sync) buys as
- * the device's guest; the first purchase under a real id carries that over.
+ * the device's guest; the account that signs in next takes those purchases
+ * over (`adoptGuestWallet`).
  */
 import 'expo-sqlite/localStorage/install';
 
@@ -73,6 +74,36 @@ export const useLocker = create<LockerState>()(
     },
   ),
 );
+
+/**
+ * Guest purchases belong to the account the device signs in to next: the
+ * moment the profile has an id, the guest wallet becomes that account's,
+ * added to anything it already bought here. Left unbound, it showed under
+ * every account that signed in on the device afterwards — their items and
+ * their coins spent — and the first of them to buy anything kept it (BUG-019).
+ */
+function adoptGuestWallet(account: string | null): void {
+  const { wallets } = useLocker.getState();
+  const guest = wallets[GUEST];
+  if (!account || !guest) return;
+  const own = wallets[account] ?? EMPTY;
+  const next = {
+    ...wallets,
+    [account]: {
+      spent: own.spent + guest.spent,
+      unlocks: [...own.unlocks, ...guest.unlocks.filter((id) => !own.unlocks.includes(id))],
+    },
+  };
+  delete next[GUEST];
+  useLocker.setState({ wallets: next });
+}
+
+// Both stores hydrate synchronously, so this also binds a guest wallet an
+// older version left beside an account that is already signed in.
+adoptGuestWallet(useProfile.getState().userId);
+useProfile.subscribe((state, prev) => {
+  if (state.userId !== prev.userId) adoptGuestWallet(state.userId);
+});
 
 /** The signed-in account's purchases. */
 export function useStoreWallet(): StoreWallet {

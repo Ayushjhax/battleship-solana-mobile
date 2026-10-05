@@ -63,7 +63,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-016 | Low | Fixed | A failing wagered settlement retries forever and blocks both players from queueing |
 | BUG-017 | Low | Fixed | With both captains away, the turn clock keeps running and can forfeit one of them inside the abandon window |
 | BUG-018 | Low | Fixed (by BUG-001) | Signing out discards a won-but-unpaid offline wager |
-| BUG-019 | Low | Open | Store purchases made as "guest" can appear under the next account on the device |
+| BUG-019 | Low | Fixed | Store purchases made as "guest" can appear under the next account on the device |
 | BUG-020 | Low | Open | Leaderboard briefly shows the previous account's "you" row after switching accounts |
 | BUG-021 | Low | Fixed (with BUG-010) | Offline-result rewards are hard-coded in SQL (drift risk against `REWARD`) |
 | BUG-022 | Low | Open | The launch-time cloud merge ignores unsynced offline results, so rank and coins dip until the next sync |
@@ -378,6 +378,9 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   account.
 
 ### BUG-019 — Guest store purchases leak to the next account
+- **Status:** Fixed — the guest wallet is bound to the account the device signs in to next
+  (added to anything it already bought there), including a guest wallet an older version left
+  beside an already signed-in account. Test: `src/state/__tests__/locker.test.ts`.
 - **Where:** `src/state/locker.ts:37-44`.
 - **What's wrong:** `walletFor` falls back to the device's guest wallet for any account that
   has none. Sign-out doesn't clear it, so purchases made as a guest (before the first sync)
