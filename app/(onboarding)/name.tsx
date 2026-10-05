@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { haptic } from '@/audio/haptics';
+import { identityExit } from '@/features/onboarding/identityExit';
 import { pushProfile } from '@/net/profileSync';
 import { useProfile } from '@/state/profile';
 import { ArtKeyboard, ART_KEYBOARD_W } from '@/ui/ArtKeyboard';
@@ -118,8 +119,9 @@ export default function NameScreen() {
   const valid = trimmed.length >= 1 && trimmed.length <= MAX_LEN;
 
   const leave = useCallback(() => {
-    if (next === 'back' && router.canGoBack()) router.back();
-    else if (next === 'back') router.replace('/menu');
+    const exit = identityExit('name', next, router.canGoBack());
+    if (exit === 'back') router.back();
+    else if (exit === 'menu') router.replace('/menu');
     else router.replace('/avatar');
   }, [next, router]);
 

@@ -31,6 +31,7 @@ import Animated, {
 
 import { haptic } from '@/audio/haptics';
 import { playSfx } from '@/audio/sfx';
+import { identityExit } from '@/features/onboarding/identityExit';
 import { pushProfile } from '@/net/profileSync';
 import { useProfile, type AvatarId } from '@/state/profile';
 import { AVATAR_SCREEN_ART, BACKGROUNDS, BRAND } from '@/ui/assets';
@@ -257,7 +258,11 @@ export default function AvatarScreen() {
       const profile = useProfile.getState();
       profile.setIdentity({ avatarId, avatarColor });
       if (profile.userId) void pushProfile(profile.userId, { avatarId, avatarColor });
-      setTimeout(() => router.replace('/menu'), CHOOSE_DELAY_MS);
+      setTimeout(() => {
+        const exit = identityExit('avatar', undefined, router.canGoBack());
+        if (exit === 'back') router.back();
+        else router.replace('/menu');
+      }, CHOOSE_DELAY_MS);
     },
     [router],
   );
