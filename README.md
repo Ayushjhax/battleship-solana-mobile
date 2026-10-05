@@ -50,7 +50,14 @@ Point the app at it with `EXPO_PUBLIC_WS_URL` in `.env`:
 - **Local network** (development build on a phone, dev machine running the server): `ws://<your-lan-ip>:8080/ws` — plain `ws://` is fine, the phone and server share a trusted network.
 - **Production / anything off your LAN**: `wss://<deployed-host>/ws` — never plain `ws://` once traffic leaves the local network; it carries the Supabase access token in the `hello` message.
 
-### Deploying the match server (Render)
+### Deploying the match server
+
+Production runs as a single AWS EC2 instance behind `api.empireofbits.xyz` — the
+`EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_WS_URL` in `eas.json`. The server reads its env from
+the process environment, or from a `.env` in its working directory; it needs the variables in
+step 3 below. Apply new `supabase/migrations` before deploying a server that uses them.
+The Render walkthrough below is how it was hosted before, kept for reference; its
+one-instance and `/health` rules apply on any host.
 
 `server/Dockerfile` + `render.yaml` (repo root — the build context has to include
 `../src/engine`, see the comment in the Dockerfile). `/health` returns

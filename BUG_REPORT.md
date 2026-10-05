@@ -18,7 +18,8 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   server runs the same code for online matches.
 - **Match server:** `server/` (Fastify + ws) owns every online match in memory
   (`room.ts`), runs matchmaking (`matchmaker.ts`), settles results and wagers in Postgres
-  (`db.ts`), and pays SOL out of a treasury (`points.ts`). Deployed as one Render instance.
+  (`db.ts`), and pays SOL out of a treasury (`points.ts`). Deployed as one AWS EC2 instance
+  behind `api.empireofbits.xyz` (it was on Render when this audit started).
 - **Battle loop:** server or local events → `src/fx/EventPlayer.ts` (animate, then commit)
   → `src/state/battle.ts` → `app/(game)/battle.tsx`. Input is locked while events play.
 - **State:** zustand stores persisted to expo-sqlite (`src/state/*`). Offline results are
@@ -84,7 +85,7 @@ Mac. It passed three times on its own and in every full run since.
 | BUG-006 | Medium | Fixed | Double-tapping Battle! can open two searching/battle screens (double-speed turn clock; hot-seat skips player 2's placement) |
 | BUG-007 | Medium | Fixed | Changing your avatar from Settings or Profile stacks a new menu on top instead of going back |
 | BUG-008 | Medium | Fixed | `npm run typecheck` fails and `npm run lint` crashes: root tooling sweeps in the nested video projects |
-| BUG-009 | Medium | Fixed (key rotation pending — yours) | The server's private Solana RPC key ships inside the APK (local `.env` config) |
+| BUG-009 | Medium | Fixed (existing key kept, your call) | The server's private Solana RPC key ships inside the APK (local `.env` config) |
 | BUG-010 | Medium | Fixed | Self-reported offline and hot-seat results earn ladder points; hot-seat can be farmed |
 | BUG-011 | Medium | Fixed | Unwagered match: a Cancel that crosses `matched` becomes a 45 s forfeit loss |
 | BUG-012 | Low | Fixed | Misleading failure text ("…for 45 seconds… counted as a loss", every failure titled "No connection") |
@@ -270,7 +271,13 @@ Mac. It passed three times on its own and in every full run since.
 - **Proposed fix:** exclude both folders in `tsconfig.json` and in the ESLint `ignores`.
 
 ### BUG-009 — The server's Solana RPC key ships in the APK
-- **Severity:** Medium (security) · **Status:** Fixed in code; key rotation pending (yours).
+- **Severity:** Medium (security) · **Status:** Fixed in code. You chose (2026-10-05) to keep
+  the existing Helius key instead of rotating it: the app reads it as
+  `EXPO_PUBLIC_SOLANA_APP_RPC_URL`, the server keeps it as `SOLANA_RPC_URL`, and the server's
+  copy is out of the app's `.env.local` (the local server reads `server/.env` first), so both
+  guards pass. The key is public either way — it is in shipped APKs and in git history — so
+  anyone can spend its Helius credits, the server's included; a second key for the server
+  would separate the two.
   The app now reads its own `EXPO_PUBLIC_SOLANA_APP_RPC_URL` (public endpoint when unset) and
   never the old shared name; `metro.config.js` refuses to bundle when a public variable the
   app reads carries a server-only value (`scripts/env-guard.cjs`); the bundle secrets check
@@ -487,7 +494,7 @@ Mac. It passed three times on its own and in every full run since.
 All answered on 2026-10-05 and done as decided:
 
 1. **BUG-001:** offline wagers removed; welcome points are tracked apart and never sellable.
-2. **BUG-009:** you rotate the key; the app has its own restricted RPC variable.
+2. **BUG-009:** the app has its own RPC variable; you kept the existing Helius key in it.
 3. **BUG-010:** only server-verified online matches count toward the ladder.
 4. **BUG-011:** the match closes with no result; a wagered cancel refunds both stakes.
 5. **BUG-015:** the Expo upgrades go on a separate branch later.

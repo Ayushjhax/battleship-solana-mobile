@@ -56,7 +56,7 @@ Expo inlines only the `EXPO_PUBLIC_*` names into the app bundle; the server read
 | `TREASURY_PUBLIC_KEY` | server | point-exchange treasury address |
 | `TREASURY_PRIVATE_KEY` | server | JSON 64-byte signing key; never public or committed |
 | `SELL_POINTS_COST` / `SELL_SOL_PAYOUT` | server | fixed supported quote: `100` / `0.001` |
-| `PORT` | server | default 8080; Render injects its own |
+| `PORT` | server | default 8080; set it if your host needs another |
 
 Never put the secret key in an `EXPO_PUBLIC_*` name. Metro refuses to bundle when a public
 variable the app reads carries a server-only value (`scripts/env-guard.cjs`), and
@@ -95,9 +95,10 @@ project, `npm --prefix server run verify:rls`.
 (never copies it). It owns both boards; clients only ever receive `projectView()` output.
 `GET /health` → `{ok, rooms, queued, uptime}`; the socket is `/ws`.
 
-Run locally with `npm run server` from the root. Deploy with `server/Dockerfile` +
-`render.yaml` (Render, one always-on **Starter** instance, never Free and never two — match
-state lives in process memory; the root README has the dashboard walkthrough). Set
+Run locally with `npm run server` from the root. Production is one always-on AWS EC2
+instance behind `api.empireofbits.xyz` — never two: match state lives in process memory.
+`server/Dockerfile` builds it anywhere (`render.yaml` is the earlier Render setup; the root
+README has both). Set
 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `PRIVY_APP_ID`, `PRIVY_APP_SECRET`,
 `SOLANA_RPC_URL`, `TREASURY_PUBLIC_KEY`, and `TREASURY_PRIVATE_KEY` in the
 service's environment. Once live, the
