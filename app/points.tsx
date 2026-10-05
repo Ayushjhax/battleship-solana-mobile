@@ -38,7 +38,14 @@ import { InkSpinner } from '@/ui/InkSpinner';
 import { Scale } from '@/ui/Scale';
 import { GridSlicedImage } from '@/ui/SlicedImage';
 import { CANVAS_W, artColor, color, font } from '@/ui/tokens';
-import { readBalanceAtLeastSlot, solanaConfig } from '@/wallet/solana';
+import {
+  formatLamports,
+  isRentError,
+  readBalanceAtLeastSlot,
+  solanaConfig,
+  SOL_TRANSFER_FEE_LAMPORTS,
+  transferShortfall,
+} from '@/wallet/solana';
 
 /** The panel frame's grid (points-panel): corners and crown fixed, the rest stretch. */
 const PANEL_GRID = {
@@ -65,12 +72,16 @@ function Art({ source, style }: { source: Asset; style: ImageStyle }) {
 }
 
 type DeskTab = 'buy' | 'sell';
-const NETWORK_FEE_RESERVE = 20_000;
 
 function friendlyError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (/cancel|reject|declin/i.test(message)) return 'The wallet request was cancelled.';
-  if (/insufficient.*sol|attempt to debit|fund/i.test(message)) return 'Your wallet does not have enough SOL.';
+  if (isRentError(message)) {
+    return 'Solana needs a small minimum (about 0.00065 SOL) left in your wallet. Add a little more SOL.';
+  }
+  if (/insufficient (funds|lamports|sol)|attempt to debit/i.test(message)) {
+    return 'Your wallet does not have enough SOL.';
+  }
   if (/insufficient points/i.test(message)) return 'You need at least 100 points to sell.';
   if (/confirming/i.test(message)) return 'The transfer is still confirming. Tap “Finish credit” shortly.';
   return message.length <= 130 ? message : 'The transaction could not be completed. Please try again.';
@@ -88,6 +99,7 @@ export default function PointsScreen() {
   const [tab, setTab] = useState<DeskTab>('buy');
   const [quote, setQuote] = useState<PointQuote | null>(null);
   const [solBalance, setSolBalance] = useState<number | null>(null);
+  const [rentExemptMinimum, setRentExemptMinimum] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -124,6 +136,13 @@ export default function PointsScreen() {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    connection
+      .getMinimumBalanceForRentExemption(0, 'confirmed')
+      .then(setRentExemptMinimum)
+      .catch(() => {});
+  }, [connection]);
+
   const finishBuyCredit = useCallback(async () => {
     const pending = usePoints.getState().pendingBuy;
     if (!pending || busy) return;
@@ -146,10 +165,24 @@ export default function PointsScreen() {
 
   const buy = useCallback(async () => {
     if (!wallet || !quote || busy) return;
-    if (solBalance !== null && solBalance < quote.lamports + NETWORK_FEE_RESERVE) {
+    // The treasury account already exists, so only the payer's side of the rent
+    // rule can bite: paying must not leave dust below the rent-exempt minimum.
+    const shortfall =
+      solBalance === null
+        ? null
+        : transferShortfall({
+            balance: solBalance,
+            lamports: quote.lamports,
+            rentExemptMinimum: rentExemptMinimum ?? 0,
+          });
+    if (shortfall) {
+      const needed = quote.lamports + SOL_TRANSFER_FEE_LAMPORTS + (rentExemptMinimum ?? 0);
       Alert.alert(
         'Add SOL first',
-        `You need ${quote.sol} SOL plus a small network fee in your embedded wallet.`,
+        shortfall.kind === 'sender-rent'
+          ? `Paying ${quote.sol} SOL would leave less than the ${formatLamports(rentExemptMinimum ?? 0)} SOL ` +
+              `Solana requires to stay in a wallet. Top up to at least ${formatLamports(needed)} SOL.`
+          : `You need ${quote.sol} SOL plus a small network fee in your embedded wallet.`,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Open wallet', onPress: () => router.push('/wallet') },
@@ -203,7 +236,7 @@ export default function PointsScreen() {
     } finally {
       setBusy(false);
     }
-  }, [busy, connection, quote, refresh, router, solBalance, wallet]);
+  }, [busy, connection, quote, refresh, rentExemptMinimum, router, solBalance, wallet]);
 
   const sell = useCallback(async () => {
     if (!quote || busy) return;

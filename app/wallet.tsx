@@ -41,19 +41,26 @@ import { CANVAS_W, color, font } from '@/ui/tokens';
 import {
   explorerAddressUrl,
   explorerTransactionUrl,
+  formatLamports,
+  isRentError,
   parseSolToLamports,
   readBalanceAtLeastSlot,
   shortAddress,
   solanaConfig,
+  transferShortfall,
 } from '@/wallet/solana';
 
 type WalletTab = 'receive' | 'send' | 'activity';
-const FEE_RESERVE_LAMPORTS = 10_000n;
 
 function errorText(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (/cancel|reject|declin/i.test(message)) return 'The wallet request was cancelled.';
-  if (/insufficient|fund/i.test(message)) return 'This wallet does not have enough SOL.';
+  if (isRentError(message)) {
+    return 'Solana needs a small minimum (about 0.00065 SOL) left in each wallet. Lower the amount.';
+  }
+  if (/insufficient (funds|lamports)|attempt to debit/i.test(message)) {
+    return 'This wallet does not have enough SOL.';
+  }
   if (/blockhash|expired/i.test(message)) return 'The transaction expired. Please try again.';
   if (/network|fetch|timeout/i.test(message)) return 'The Solana network could not be reached.';
   return message.length < 110 ? message : 'The wallet request failed. Please try again.';
@@ -149,13 +156,36 @@ export default function WalletScreen() {
       setError('Enter a positive SOL amount with at most 9 decimal places.');
       return;
     }
-    if (balance !== null && lamports + FEE_RESERVE_LAMPORTS > BigInt(balance)) {
-      setError('Not enough SOL after reserving the network fee.');
-      return;
-    }
 
     setActionBusy(true);
     try {
+      if (balance !== null) {
+        const [rentExemptMinimum, recipientBalance] = await Promise.all([
+          connection.getMinimumBalanceForRentExemption(0, 'confirmed'),
+          connection.getBalance(destination, 'confirmed'),
+        ]);
+        const shortfall = transferShortfall({
+          balance,
+          lamports: Number(lamports),
+          rentExemptMinimum,
+          recipientBalance,
+        });
+        if (shortfall?.kind === 'balance') {
+          setError(`Not enough SOL. After the network fee you can send up to ${formatLamports(shortfall.maxLamports)} SOL.`);
+          return;
+        }
+        if (shortfall?.kind === 'sender-rent') {
+          setError(
+            `Solana must keep ${formatLamports(rentExemptMinimum)} SOL in the wallet. Send up to ` +
+              `${formatLamports(shortfall.maxLamports)} SOL, or exactly ${formatLamports(shortfall.emptyLamports)} to empty it.`,
+          );
+          return;
+        }
+        if (shortfall?.kind === 'recipient-rent') {
+          setError(`That address is new on Solana, so it must receive at least ${formatLamports(shortfall.minLamports)} SOL.`);
+          return;
+        }
+      }
       const latest = await connection.getLatestBlockhash('confirmed');
       const transaction = new Transaction({
         feePayer: new PublicKey(wallet.address),

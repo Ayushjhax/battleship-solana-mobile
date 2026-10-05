@@ -121,3 +121,59 @@ function isUnsupportedSlotFilter(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /minContextSlot|unsupported|invalid param|-32602/i.test(message);
 }
+
+/** Base fee of a one-signature transaction; Privy signs ours as-is, with no priority fee. */
+export const SOL_TRANSFER_FEE_LAMPORTS = 5_000;
+
+export function formatLamports(lamports: number): string {
+  return (Math.max(0, lamports) / 1_000_000_000).toFixed(9).replace(/\.?0+$/, '');
+}
+
+export type TransferShortfall =
+  /** The amount plus the fee is more than the wallet holds. */
+  | { kind: 'balance'; maxLamports: number }
+  /**
+   * The transfer would leave dust behind. Solana rejects any transaction that
+   * leaves a system account above zero but below the rent-exempt minimum
+   * (InsufficientFundsForRent, account 0) — this is the "not enough SOL" a
+   * wallet showing a healthy balance still got, e.g. sending all but the fee
+   * reserve, or paying 0.001 SOL from a wallet holding 0.0015.
+   */
+  | { kind: 'sender-rent'; maxLamports: number; emptyLamports: number }
+  /** Same rule on the receiving side: a brand-new address must be funded to the minimum. */
+  | { kind: 'recipient-rent'; minLamports: number };
+
+/**
+ * Mirror of the runtime's rent check for a plain SOL transfer, so the screen can
+ * explain the problem instead of letting the RPC's preflight reject it.
+ * `recipientBalance` null means unknown (skip the recipient check).
+ */
+export function transferShortfall(options: {
+  balance: number;
+  lamports: number;
+  rentExemptMinimum: number;
+  recipientBalance?: number | null;
+  fee?: number;
+}): TransferShortfall | null {
+  const { balance, lamports, rentExemptMinimum, recipientBalance = null } = options;
+  const fee = options.fee ?? SOL_TRANSFER_FEE_LAMPORTS;
+  const emptyLamports = Math.max(0, balance - fee);
+  const remaining = balance - lamports - fee;
+  if (remaining < 0) return { kind: 'balance', maxLamports: emptyLamports };
+  if (remaining > 0 && remaining < rentExemptMinimum) {
+    return {
+      kind: 'sender-rent',
+      maxLamports: Math.max(0, balance - fee - rentExemptMinimum),
+      emptyLamports,
+    };
+  }
+  if (recipientBalance === 0 && lamports < rentExemptMinimum) {
+    return { kind: 'recipient-rent', minLamports: rentExemptMinimum };
+  }
+  return null;
+}
+
+/** The RPC preflight's wording for the rent rule above. */
+export function isRentError(message: string): boolean {
+  return /insufficient ?funds ?for ?rent/i.test(message);
+}
