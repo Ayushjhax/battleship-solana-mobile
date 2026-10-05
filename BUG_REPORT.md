@@ -68,6 +68,7 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
 | BUG-021 | Low | Fixed (with BUG-010) | Offline-result rewards are hard-coded in SQL (drift risk against `REWARD`) |
 | BUG-022 | Low | Fixed | The launch-time cloud merge ignores unsynced offline results, so rank and coins dip until the next sync |
 | BUG-023 | Low | Needs decision | Every online match joins a Supabase Realtime channel even when the server relays emotes |
+| BUG-024 | Low | Fixed | `npm run test:coverage` (app) fails: the coverage provider was never a dependency |
 
 ---
 
@@ -429,6 +430,19 @@ Status values: **Open** (not started) · **Fixed** · **Won't fix** · **Needs d
   channel. `CLAUDE.md` says a phone whose server relays emotes never touches Realtime, but
   every online match opens a channel it never uses.
 - **Proposed fix:** open the Realtime channel only when the server doesn't relay emotes.
+
+### BUG-024 — The app's coverage command never worked
+- **Status:** Fixed — found in Phase 6 (Phase 2 didn't run coverage). `@vitest/coverage-v8`
+  is now an app devDependency, on the same version as the app's vitest (5.0.0; the provider
+  pins vitest's exact version), and `coverage/` is git-ignored in both packages. Installing it
+  with npm 11 also dropped seven optional peer entries from `package-lock.json` (nested
+  `utf-8-validate` copies and one nested `typescript`); none of them is required. Test:
+  `tests/tooling/coverage-provider.test.ts`.
+- **Where:** `package.json`, `vitest.config.ts:35`.
+- **What's wrong:** `tests/README.md` gives `npm run test:coverage` for the app's coverage,
+  and `vitest.config.ts` configures the v8 provider, but `@vitest/coverage-v8` was only a
+  devDependency of the server. The command stopped at once with `MISSING DEPENDENCY`.
+- **Proposed fix:** add the provider to the app's devDependencies.
 
 ---
 

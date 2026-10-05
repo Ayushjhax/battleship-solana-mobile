@@ -36,6 +36,9 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# test coverage (npm run test:coverage, in both packages)
+coverage/
+
 example
 
 # generated native folders
