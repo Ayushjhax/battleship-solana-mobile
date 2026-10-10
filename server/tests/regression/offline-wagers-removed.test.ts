@@ -36,6 +36,7 @@ vi.mock('../../src/db', () => ({
   fetchPointBalances: mocks.fetchPointBalances,
   fetchPointBalance: mocks.fetchPointBalance,
   fetchVerifiedWalletAddress: vi.fn(),
+  fetchPaymentWallet: vi.fn(async () => ({ address: null, kind: null, chosen: false, problem: 'no_payment_wallet' })),
   completePointBuy: vi.fn(),
   beginPointSell: vi.fn(),
   completePointSell: vi.fn(),

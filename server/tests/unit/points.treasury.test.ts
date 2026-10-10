@@ -12,8 +12,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getParsedTransaction: vi.fn(),
+  getGenesisHash: vi.fn(),
   fetchPointBalances: vi.fn(),
   fetchVerifiedWalletAddress: vi.fn(),
+  fetchPaymentWallet: vi.fn(),
+  fetchPointTrade: vi.fn(),
   completePointBuy: vi.fn(),
 }));
 
@@ -25,6 +28,7 @@ vi.mock('@solana/web3.js', async (importOriginal) => {
     ...actual,
     Connection: class {
       getParsedTransaction = mocks.getParsedTransaction;
+      getGenesisHash = mocks.getGenesisHash;
     },
   };
 });
@@ -32,10 +36,17 @@ vi.mock('@solana/web3.js', async (importOriginal) => {
 vi.mock('../../src/db', () => ({
   fetchPointBalances: mocks.fetchPointBalances,
   fetchVerifiedWalletAddress: mocks.fetchVerifiedWalletAddress,
+  fetchPaymentWallet: mocks.fetchPaymentWallet,
   completePointBuy: mocks.completePointBuy,
   beginPointSell: vi.fn(),
+  beginPointSellTo: vi.fn(),
   completePointSell: vi.fn(),
-  fetchPointTrade: vi.fn(),
+  createPointBuyOrder: vi.fn(),
+  creditPointBuyOrder: vi.fn(),
+  fetchPointBalance: vi.fn(),
+  fetchPointTrade: mocks.fetchPointTrade,
+  isSignatureCredited: vi.fn(),
+  listVerifiedWallets: vi.fn(),
   markPointSellBroadcast: vi.fn(),
   refundPointSell: vi.fn(),
 }));
@@ -91,6 +102,10 @@ beforeEach(() => {
   // 150 of the 250 are welcome points (0014): playable, never sellable.
   mocks.fetchPointBalances.mockResolvedValue({ balance: 250, locked: 150, sellable: 100 });
   mocks.fetchVerifiedWalletAddress.mockResolvedValue(PLAYER_WALLET);
+  mocks.fetchPaymentWallet.mockResolvedValue({ address: PLAYER_WALLET, kind: 'embedded', chosen: false, problem: null });
+  mocks.getGenesisHash.mockResolvedValue('5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d');
+  // No order: these purchases come from an app that predates 0018.
+  mocks.fetchPointTrade.mockResolvedValue(null);
   mocks.completePointBuy.mockResolvedValue(350);
   setEnv();
 });
@@ -107,7 +122,16 @@ describe('treasury configuration', () => {
       lamports: 1_000_000,
       sol: '0.001',
       treasuryAddress: TREASURY_ADDRESS,
+      network: 'mainnet-beta',
+      paymentWallet: { address: PLAYER_WALLET, kind: 'embedded', chosen: false, problem: null },
     });
+  });
+
+  it('still serves balances when the RPC cannot say which network it is on', async () => {
+    mocks.getGenesisHash.mockRejectedValue(new Error('fetch failed'));
+    const { getPointQuote } = await loadPoints();
+
+    await expect(getPointQuote('profile-1')).resolves.toMatchObject({ balance: 250, network: 'unknown' });
   });
 
   it('refuses to run with SOLANA_RPC_URL missing', async () => {

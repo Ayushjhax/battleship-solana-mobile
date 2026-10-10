@@ -3,6 +3,20 @@ import { z } from 'zod';
 import { getAccessToken } from './api';
 import { ensureSession } from './auth';
 
+const NetworkSchema = z.enum(['mainnet-beta', 'devnet', 'testnet', 'unknown']);
+
+/**
+ * The wallet that pays for points and receives a sale (0018): the embedded
+ * wallet, or an external one Privy verified. `problem` set means none can be
+ * used, and the server refuses payments until the player chooses again.
+ */
+const PaymentWalletSchema = z.object({
+  address: z.string().nullable(),
+  kind: z.enum(['embedded', 'external']).nullable(),
+  chosen: z.boolean(),
+  problem: z.enum(['payment_wallet_unavailable', 'payment_wallet_not_chosen', 'no_payment_wallet']).nullable(),
+});
+
 const QuoteSchema = z.object({
   quote: z.object({
     balance: z.number().int().nonnegative(),
@@ -17,13 +31,72 @@ const QuoteSchema = z.object({
     lamports: z.literal(1_000_000),
     sol: z.string(),
     treasuryAddress: z.string().min(32),
+    /** Optional: a server from before 0018 sends neither. */
+    network: NetworkSchema.optional(),
+    paymentWallet: PaymentWalletSchema.optional(),
   }),
+});
+
+const OrderSchema = z.object({
+  order: z.object({
+    requestId: z.string().uuid(),
+    status: z.enum(['awaiting_payment', 'confirmed']),
+    points: z.literal(100),
+    lamports: z.literal(1_000_000),
+    sol: z.string(),
+    treasuryAddress: z.string().min(32),
+    network: NetworkSchema,
+    payer: z.object({ address: z.string().min(32), kind: z.enum(['embedded', 'external']) }),
+    expiresAt: z.string(),
+    signature: z.string().nullable(),
+  }),
+});
+
+const ReconcileSchema = z.object({
+  status: z.enum(['confirmed', 'awaiting_payment']),
+  balance: z.number().int().nonnegative(),
+  signature: z.string().nullable(),
+});
+
+const TradeHistorySchema = z.object({
+  trades: z.array(
+    z.object({
+      requestId: z.string(),
+      kind: z.enum(['buy', 'sell']),
+      status: z.enum(['awaiting_payment', 'processing', 'broadcasting', 'confirmed', 'refunded']),
+      points: z.number().int(),
+      lamports: z.number().int(),
+      signature: z.string().nullable(),
+      payer: z.string().nullable(),
+      destination: z.string().nullable(),
+      error: z.string().nullable(),
+      expiresAt: z.string().nullable(),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+    }),
+  ),
+  network: NetworkSchema,
+});
+
+const WalletsSchema = z.object({
+  wallets: z.array(
+    z.object({
+      address: z.string(),
+      kind: z.enum(['embedded', 'external']),
+      walletClient: z.string().nullable(),
+      verifiedAt: z.string(),
+    }),
+  ),
+  paymentWallet: PaymentWalletSchema,
+  network: NetworkSchema,
 });
 
 const TradeSchema = z.object({
   status: z.enum(['confirmed', 'pending', 'refunded']),
   balance: z.number().int().nonnegative(),
   signature: z.string().nullable().optional(),
+  /** Where a sale's SOL goes, fixed when its points were reserved (0018). */
+  destination: z.string().nullable().optional(),
 });
 
 const WagerCancellationSchema = z.object({
@@ -33,6 +106,25 @@ const WagerCancellationSchema = z.object({
 });
 
 export type PointQuote = z.infer<typeof QuoteSchema>['quote'];
+export type PointNetwork = z.infer<typeof NetworkSchema>;
+export type PaymentWallet = z.infer<typeof PaymentWalletSchema>;
+export type PointBuyOrder = z.infer<typeof OrderSchema>['order'];
+export type PointPurchaseReconcile = z.infer<typeof ReconcileSchema>;
+export type PointTradeHistory = z.infer<typeof TradeHistorySchema>;
+export type PointTrade = PointTradeHistory['trades'][number];
+export type AccountWallets = z.infer<typeof WalletsSchema>;
+
+/** A refusal the server explained with a code the app can act on (409/422). */
+export class PointsRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | null,
+  ) {
+    super(message);
+    this.name = 'PointsRequestError';
+  }
+}
 export type PointTradeResult = z.infer<typeof TradeSchema>;
 export type WagerCancellation = z.infer<typeof WagerCancellationSchema>;
 
@@ -65,6 +157,20 @@ async function message(response: Response): Promise<string> {
   } catch {
     return `Server returned ${response.status}.`;
   }
+}
+
+async function refusal(response: Response): Promise<PointsRequestError> {
+  let body: { error?: unknown; code?: unknown } = {};
+  try {
+    body = (await response.json()) as typeof body;
+  } catch {
+    // An empty or non-JSON body still gets the status.
+  }
+  return new PointsRequestError(
+    typeof body.error === 'string' ? body.error : `Server returned ${response.status}.`,
+    response.status,
+    typeof body.code === 'string' ? body.code : null,
+  );
 }
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
@@ -100,6 +206,66 @@ export async function fetchPointQuote(): Promise<PointQuote> {
   return parsed.data.quote;
 }
 
+/**
+ * Makes (or fetches) the order a purchase pays: its payer and expiry are the
+ * server's. Null when the server predates orders (0018) and only takes the
+ * older pay-then-confirm purchase.
+ */
+export async function createPointBuyOrder(requestId: string): Promise<PointBuyOrder | null> {
+  const response = await request('/points/buy/order', {
+    method: 'POST',
+    body: JSON.stringify({ requestId }),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw await refusal(response);
+  const parsed = OrderSchema.safeParse(await response.json());
+  if (!parsed.success) throw new Error('The purchase order was invalid.');
+  return parsed.data.order;
+}
+
+/** Asks the server to find and credit an order's payment the app never reported. */
+export async function reconcilePointBuy(requestId: string): Promise<PointPurchaseReconcile> {
+  const response = await request('/points/buy/reconcile', {
+    method: 'POST',
+    body: JSON.stringify({ requestId }),
+  });
+  if (!response.ok) throw await refusal(response);
+  const parsed = ReconcileSchema.safeParse(await response.json());
+  if (!parsed.success) throw new Error('The purchase check was invalid.');
+  return parsed.data;
+}
+
+/** The account's latest buys and sales, newest first. Null on a server without history. */
+export async function fetchPointTrades(): Promise<PointTradeHistory | null> {
+  const response = await request('/points/trades');
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(await message(response));
+  const parsed = TradeHistorySchema.safeParse(await response.json());
+  if (!parsed.success) throw new Error('The transaction history was invalid.');
+  return parsed.data;
+}
+
+/** The account's verified wallets and its payment wallet, as the server has them from Privy. */
+export async function fetchAccountWallets(): Promise<AccountWallets> {
+  const response = await request('/wallets');
+  if (!response.ok) throw await refusal(response);
+  const parsed = WalletsSchema.safeParse(await response.json());
+  if (!parsed.success) throw new Error('The wallet list was invalid.');
+  return parsed.data;
+}
+
+/** Chooses one of the account's verified wallets for payments, or null for the default. */
+export async function choosePaymentWallet(address: string | null): Promise<PaymentWallet> {
+  const response = await request('/wallets/payment', {
+    method: 'POST',
+    body: JSON.stringify({ address }),
+  });
+  if (!response.ok) throw await refusal(response);
+  const parsed = z.object({ paymentWallet: PaymentWalletSchema }).safeParse(await response.json());
+  if (!parsed.success) throw new Error('The payment wallet response was invalid.');
+  return parsed.data.paymentWallet;
+}
+
 export async function confirmPointBuy(
   requestId: string,
   signature: string,
@@ -119,7 +285,7 @@ export async function requestPointSell(requestId: string): Promise<PointTradeRes
     method: 'POST',
     body: JSON.stringify({ requestId }),
   });
-  if (!response.ok) throw new Error(await message(response));
+  if (!response.ok) throw await refusal(response);
   const parsed = TradeSchema.safeParse(await response.json());
   if (!parsed.success) throw new Error('The sale response was invalid.');
   return parsed.data;

@@ -242,6 +242,7 @@ function AuthenticatedApp() {
         <Stack.Screen name="profile" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="store" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="points" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="wallets" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="(onboarding)/name" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="(onboarding)/progress" options={{ animation: 'slide_from_right' }} />
         {/* Nothing on the reveal goes back: no swipe either. */}

@@ -377,6 +377,22 @@ that looks like a rectangle from a UI kit.
   it again with `expo-screen-orientation`. Rotating the device must never change layout.
 - Android is the primary target; Privy's configured native client also supports iOS. Web
   is unsupported.
+- **Login identity and payment wallet are separate** (docs/SOLANA_WALLETS.md, migration 0018). The
+  server records every Solana wallet Privy verified for an identity in `verified_wallets` (read from
+  Privy, never from the app; one owner per address, conflicts never move anything) and the payment
+  wallet — embedded by default, or a chosen verified external one — pays for points and receives
+  sales. A buy is an order made first (`POST /points/buy/order`) whose payer is fixed; a sale's
+  destination is fixed when its points are reserved. Never pay an order for an external wallet
+  from the embedded one, and never let a chosen wallet fall back to another.
+- **Mobile Wallet Adapter** (wallet login, linking, external-wallet purchases) is
+  `src/wallet/mwaCore.ts` — pure, tested in `tests/wallet/mwaCore.test.ts`. The MWA package loads a
+  native module on import, so it is imported ONLY from `src/wallet/mwaTransport.android.ts` (and
+  required lazily there); everything else goes through `mwaTransport`, whose non-Android twin
+  refuses. `tests/tooling/mwa-imports.test.ts` enforces it — a static import elsewhere crashes iOS
+  at startup. Sign-in signatures are verified locally before Privy sees them; a transfer goes
+  through `signAndSendTransactions`, and a failure that may have sent keeps the purchase for
+  `reconcile` rather than paying again. `app/wallets.tsx` keeps choosing the payment wallet,
+  disconnecting the wallet app and unlinking apart.
 - Privy authentication and the embedded Solana wallet are isolated under `src/features/auth`,
   `src/wallet`, and the `wallet`/`profile` routes. The pure engine and frozen gameplay wire
   protocol never import or depend on wallet code. No wagering or gameplay-token logic.

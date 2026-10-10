@@ -33,15 +33,28 @@ import { verifyAccessToken } from './auth';
 import {
   applyOfflineResult,
   checkDatabaseSchema,
+  fetchPaymentWallet,
   fetchProfileRewardTotals,
+  listPointTrades,
+  listVerifiedWallets,
+  selectPaymentWallet,
   upsertPrivyAccount,
   verifyAuthAdminAccess,
   verifyDatabaseConnection,
+  WalletSelectionError,
   type ReadinessCheck,
 } from './db';
 import { AuthFailure, detailOf, isAuthFailure } from './errors';
 import { cancelBeforeMatchStart, totalQueued } from './matchmaker';
-import { creditConfirmedPointPurchase, getPointQuote, sellPoints } from './points';
+import {
+  createPointBuyOrder,
+  creditConfirmedPointPurchase,
+  getPointQuote,
+  PaymentWalletError,
+  reconcilePointPurchase,
+  sellPoints,
+  treasuryNetwork,
+} from './points';
 import { verifyAndLoadPrivyUser } from './privy';
 import { bootstrapPrivySession } from './privySession';
 import { rooms } from './room';
@@ -230,6 +243,140 @@ app.post('/points/wager/cancel', async (request, reply) => {
   }
 });
 
+/** A refusal the player can act on: their wallet state, not a server fault. */
+function walletProblem(error: unknown): { status: number; body: { error: string; code: string } } | null {
+  if (error instanceof PaymentWalletError) {
+    return { status: 409, body: { error: error.message, code: error.reason } };
+  }
+  if (error instanceof WalletSelectionError) {
+    return {
+      status: 409,
+      body: {
+        error: error.message,
+        code: error.reason === 'conflict' ? 'wallet_conflict' : 'wallet_not_verified',
+      },
+    };
+  }
+  return null;
+}
+
+/**
+ * The account's wallets as the server has them from Privy (0018): which are
+ * verified, which one pays, and the network payments are checked on. The app
+ * never tells the server which wallets it holds; a Privy sync reads them.
+ */
+app.get('/wallets', async (request, reply) => {
+  const profileId = await verifiedProfileId(request.headers.authorization);
+  if (!profileId) return reply.code(401).send({ error: 'valid gameplay session required' });
+  try {
+    const [wallets, paymentWallet, network] = await Promise.all([
+      listVerifiedWallets(profileId),
+      fetchPaymentWallet(profileId),
+      treasuryNetwork().catch(() => 'unknown' as const),
+    ]);
+    return {
+      wallets: wallets.map((wallet) => ({
+        address: wallet.address,
+        kind: wallet.kind,
+        walletClient: wallet.wallet_client,
+        verifiedAt: wallet.verified_at,
+      })),
+      paymentWallet,
+      network,
+    };
+  } catch (error) {
+    request.log.error(error);
+    return reply.code(503).send({ error: 'could not read your wallets' });
+  }
+});
+
+const PaymentWalletBody = z.object({ address: z.string().min(32).max(64).nullable() });
+
+app.post('/wallets/payment', async (request, reply) => {
+  const profileId = await verifiedProfileId(request.headers.authorization);
+  if (!profileId) return reply.code(401).send({ error: 'valid gameplay session required' });
+  const parsed = PaymentWalletBody.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: 'invalid wallet choice' });
+  try {
+    return { paymentWallet: await selectPaymentWallet(profileId, parsed.data.address) };
+  } catch (error) {
+    const problem = walletProblem(error);
+    if (problem) return reply.code(problem.status).send(problem.body);
+    request.log.error(error);
+    return reply.code(503).send({ error: 'could not change the payment wallet' });
+  }
+});
+
+const PointOrderBody = z.object({ requestId: z.string().uuid() });
+
+/** Makes the order a purchase pays, before anything is paid (0018). */
+app.post('/points/buy/order', async (request, reply) => {
+  const profileId = await verifiedProfileId(request.headers.authorization);
+  if (!profileId) return reply.code(401).send({ error: 'valid gameplay session required' });
+  const parsed = PointOrderBody.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: 'invalid purchase order' });
+  try {
+    return { order: await createPointBuyOrder(profileId, parsed.data.requestId) };
+  } catch (error) {
+    const problem = walletProblem(error);
+    if (problem) return reply.code(problem.status).send(problem.body);
+    request.log.error(error);
+    const message = error instanceof Error ? error.message : '';
+    if (/conflicts/i.test(message)) return reply.code(422).send({ error: message });
+    return reply.code(503).send({ error: 'could not create the purchase order' });
+  }
+});
+
+/** Finds and credits an order's payment the app never reported. */
+app.post('/points/buy/reconcile', async (request, reply) => {
+  const profileId = await verifiedProfileId(request.headers.authorization);
+  if (!profileId) return reply.code(401).send({ error: 'valid gameplay session required' });
+  const parsed = PointOrderBody.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: 'invalid purchase order' });
+  try {
+    return await reconcilePointPurchase(profileId, parsed.data.requestId);
+  } catch (error) {
+    request.log.error(error);
+    const message = error instanceof Error ? error.message : '';
+    if (/not found|conflicts/i.test(message)) {
+      return reply.code(404).send({ error: 'purchase order was not found' });
+    }
+    return reply.code(503).send({ error: 'could not check the purchase' });
+  }
+});
+
+/** The account's latest buys and sales, pending ones included, newest first. */
+app.get('/points/trades', async (request, reply) => {
+  const profileId = await verifiedProfileId(request.headers.authorization);
+  if (!profileId) return reply.code(401).send({ error: 'valid gameplay session required' });
+  try {
+    const [trades, network] = await Promise.all([
+      listPointTrades(profileId),
+      treasuryNetwork().catch(() => 'unknown' as const),
+    ]);
+    return {
+      trades: trades.map((trade) => ({
+        requestId: trade.request_id,
+        kind: trade.kind,
+        status: trade.status,
+        points: trade.points,
+        lamports: trade.lamports,
+        signature: trade.signature,
+        payer: trade.payer_address,
+        destination: trade.destination_address,
+        error: trade.status === 'refunded' ? trade.error : null,
+        expiresAt: trade.expires_at,
+        createdAt: trade.created_at,
+        updatedAt: trade.updated_at,
+      })),
+      network,
+    };
+  } catch (error) {
+    request.log.error(error);
+    return reply.code(503).send({ error: 'could not read your transactions' });
+  }
+});
+
 app.post('/points/buy', async (request, reply) => {
   const profileId = await verifiedProfileId(request.headers.authorization);
   if (!profileId) return reply.code(401).send({ error: 'valid gameplay session required' });
@@ -248,7 +395,7 @@ app.post('/points/buy', async (request, reply) => {
     if (/not confirmed yet/i.test(message)) {
       return reply.code(409).send({ error: 'transaction is still confirming' });
     }
-    if (/already credited|conflicts|does not match|failed/i.test(message)) {
+    if (/already credited|already paid|conflicts|does not match|another wallet|failed/i.test(message)) {
       return reply.code(422).send({ error: message });
     }
     return reply.code(503).send({ error: 'could not verify the point purchase' });
@@ -274,6 +421,8 @@ app.post('/points/sell', async (request, reply) => {
     if (/welcome points cannot be exchanged/i.test(message)) {
       return reply.code(409).send({ error: 'welcome points cannot be exchanged for SOL' });
     }
+    const problem = walletProblem(error);
+    if (problem) return reply.code(problem.status).send(problem.body);
     return reply.code(503).send({ error: 'could not process the point sale' });
   }
 });

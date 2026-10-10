@@ -9,12 +9,20 @@ import { useCloud } from '@/state/cloud';
 import { usePrivySync } from '@/state/privySync';
 import { usePoints } from '@/state/points';
 import { useProfile } from '@/state/profile';
+import { mwa } from '@/wallet/mwa';
 
 export function PrivyProfileSync() {
   const { user, getAccessToken } = usePrivy();
   const walletState = useEmbeddedSolanaWallet();
   const retryNonce = usePrivySync((state) => state.retryNonce);
   const lastCompletedKey = useRef('');
+  const priorUser = useRef<string | null>(null);
+  // A different Privy user (or none) must never reuse the last one's wallet-app
+  // connection; sign-out clears it too (app/profile.tsx).
+  useEffect(() => {
+    if (priorUser.current && priorUser.current !== user?.id) void mwa.clear();
+    priorUser.current = user?.id ?? null;
+  }, [user?.id]);
   const walletAddress = walletState.wallets?.[0]?.address ?? '';
 
   useEffect(

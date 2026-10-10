@@ -549,5 +549,125 @@ check(await fails_with(`select * from public.reserve_point_wager($1, $2, 50)`, [
   check((await taken(P.farmer)) === '4:80/4/3', `correction runs once: the log is unchanged (${await taken(P.farmer)})`);
 }
 
+// ---- 0018: payment wallets — which verified wallet pays and gets paid ----
+// A fresh database: a wallet-only player (W), a Google player with an
+// embedded wallet who links an external one (G), and a stranger (X).
+{
+  const pw = await freshDb();
+  const pq = (sql, params) => pw.query(sql, params);
+  const pfails = async (sql, params, code) => {
+    try { await pq(sql, params); return false; } catch (e) { return String(e.code ?? '') === code || String(e.message).includes(code); }
+  };
+  await applyMigrations(pw, files, 'payment wallets:');
+  const W = '66666666-6666-4666-8666-666666666601';
+  const G = '66666666-6666-4666-8666-666666666602';
+  const X = '66666666-6666-4666-8666-666666666603';
+  const DID = { [W]: 'did:privy:wallet-only', [G]: 'did:privy:google', [X]: 'did:privy:stranger' };
+  for (const [id, provider, embedded] of [[W, 'solana_wallet', null], [G, 'google', 'EmbeddedG'], [X, 'email', null]]) {
+    await pq(`insert into auth.users (id, email) values ($1, null)`, [id]);
+    await pq(`select public.sync_privy_account($1, $2, null, null, $3, $4, null, '[]'::jsonb, now())`, [id, DID[id], provider, embedded]);
+    await pq(`select * from public.ensure_point_account($1, $2)`, [id, DID[id]]);
+  }
+  const external = (address) => ({ address, kind: 'external', walletClient: 'seed_vault', connectorType: 'mobile_wallet_adapter' });
+  const embedded = (address) => ({ address, kind: 'embedded', walletClient: 'privy', connectorType: 'embedded' });
+  const sync = async (id, wallets) => {
+    try {
+      return (await pq(`select * from public.sync_verified_wallets($1, $2, $3::jsonb)`, [id, DID[id], JSON.stringify(wallets)])).rows
+        .map((row) => `${row.wallet_address}:${row.wallet_status}`).join(',');
+    } catch (e) { return `error: ${e.message}`; }
+  };
+  const payer = async (id) => {
+    try {
+      const row = (await pq(`select * from public.payment_wallet_for($1)`, [id])).rows[0];
+      return `${row.wallet_address}/${row.wallet_kind}/${row.chosen}/${row.problem}`;
+    } catch (e) { return `error: ${e.message}`; }
+  };
+
+  check((await sync(W, [external('ExternalW')])) === 'ExternalW:verified', 'wallets: a wallet-only player\'s sign-in wallet is recorded as verified');
+  check((await payer(W)) === 'ExternalW/external/false/null', `wallets: a wallet-only player pays with their own wallet, no embedded wallet needed (${await payer(W)})`);
+  check((await sync(G, [embedded('EmbeddedG')])) === 'EmbeddedG:verified', 'wallets: an embedded wallet is recorded too');
+  check((await payer(G)) === 'EmbeddedG/embedded/false/null', 'wallets: a Google player pays with the embedded wallet by default');
+  await sync(G, [embedded('EmbeddedG'), external('ExternalG')]);
+  check((await payer(G)) === 'EmbeddedG/embedded/false/null', 'wallets: linking an external wallet never switches payments to it by itself');
+  const chose = await pq(`select public.select_payment_wallet($1, 'ExternalG') as kind`, [G]).then((x) => x.rows[0].kind, (e) => `error: ${e.message}`);
+  check(chose === 'external' && (await payer(G)) === 'ExternalG/external/true/null', 'wallets: the player can choose the linked external wallet for payments');
+
+  check((await sync(X, [external('ExternalW')])) === 'ExternalW:conflict', 'wallets: a wallet owned by another account is a conflict, not a transfer');
+  const owner = (await pq(`select privy_user_id from public.verified_wallets where address = 'ExternalW'`)).rows[0]?.privy_user_id;
+  check(owner === DID[W], 'wallets: …and its owner is unchanged');
+  check(await pfails(`select public.select_payment_wallet($1, 'ExternalW')`, [X], '23505'), 'wallets: choosing another account\'s wallet is refused as a conflict');
+  check(await pfails(`select public.select_payment_wallet($1, 'NeverVerified')`, [X], '42501'), 'wallets: choosing a wallet the account never verified is refused');
+  check((await payer(X)).endsWith('/no_payment_wallet'), 'wallets: an account with no verified wallet has nothing to pay with');
+
+  // Buying: the order fixes its payer before anything is paid.
+  const ORDER = '77777777-7777-4777-8777-777777777701';
+  const ORDER2 = '77777777-7777-4777-8777-777777777702';
+  const SIG = '5'.repeat(88);
+  const later = new Date(Date.now() + 10 * 60_000).toISOString();
+  await pq(`select public.create_point_buy_order($1, $2, 'ExternalW', $3)`, [W, ORDER, later]);
+  await pq(`select public.create_point_buy_order($1, $2, 'EmbeddedG', $3)`, [W, ORDER, later]).catch(() => {});
+  const order = (await pq(`select status, payer_address, points, lamports from public.point_trades where request_id = $1`, [ORDER])).rows[0];
+  check(order?.status === 'awaiting_payment' && order?.payer_address === 'ExternalW', 'buy: an order is made for the payment wallet, awaiting payment');
+  check(await pfails(`select public.create_point_buy_order($1, $2, 'EmbeddedG', $3)`, [W, ORDER2, later], '42501'), 'buy: an order cannot name a wallet the account does not hold');
+  check(await pfails(`select public.credit_point_buy_order($1, $2, $3, 'EmbeddedG')`, [W, ORDER, SIG], '22023'), 'buy: a payment from another wallet does not credit the order');
+  const credited = Number((await pq(`select public.credit_point_buy_order($1, $2, $3, 'ExternalW') as b`, [W, ORDER, SIG])).rows[0].b);
+  check(credited === 200, `buy: the order's own payment credits 100 points (${credited})`);
+  const again = Number((await pq(`select public.credit_point_buy_order($1, $2, $3, 'ExternalW') as b`, [W, ORDER, SIG])).rows[0].b);
+  check(again === 200, 'buy: crediting the same payment again changes nothing');
+  await pq(`select public.create_point_buy_order($1, $2, 'ExternalW', $3)`, [W, ORDER2, later]);
+  check(await pfails(`select public.credit_point_buy_order($1, $2, $3, 'ExternalW')`, [W, ORDER2, SIG], '23505'), 'buy: one transaction can never credit two orders');
+  check(await pfails(`select public.complete_point_buy($1, $2, $3, 100, 1000000)`, [W, '77777777-7777-4777-8777-777777777703', SIG], '23505'), 'buy: …nor the older, order-less purchase path');
+  check(Number((await pq(`select public.get_point_balance($1) as b`, [W])).rows[0].b) === 200, 'buy: the balance moved exactly once');
+
+  // Selling: the destination is fixed when the points are reserved.
+  const SELL = '88888888-8888-4888-8888-888888888801';
+  const sold = (await pq(`select * from public.begin_point_sell_to($1, $2, 100, 1000000, 'ExternalW')`, [W, SELL])).rows[0];
+  check(sold.ok === true && Number(sold.balance) === 100, 'sell: bought points can be sold to the verified payment wallet');
+  await pq(`select * from public.begin_point_sell_to($1, $2, 100, 1000000, 'EmbeddedG')`, [W, SELL]).catch(() => {});
+  const saleRow = (await pq(`select destination_address, status from public.point_trades where request_id = $1`, [SELL])).rows[0];
+  check(saleRow?.destination_address === 'ExternalW' && saleRow?.status === 'processing', 'sell: a retried sale keeps the destination it was made with');
+  check(Number((await pq(`select public.get_point_balance($1) as b`, [W])).rows[0].b) === 100, 'sell: …and reserves its points only once');
+  check(await pfails(`select * from public.begin_point_sell_to($1, $2, 100, 1000000, 'NeverVerified')`, [G, '88888888-8888-4888-8888-888888888802'], '42501'), 'sell: a payout cannot go to a wallet the account does not hold');
+  const welcomeOnly = (await pq(`select * from public.begin_point_sell_to($1, $2, 100, 1000000, 'EmbeddedG')`, [G, '88888888-8888-4888-8888-888888888803'])).rows[0];
+  check(welcomeOnly.ok === false && welcomeOnly.reason === 'locked_points', 'sell: welcome points still cannot be sold, whatever the wallet');
+
+  // Unlinking: no silent fallback, and the address is free for its next owner.
+  check((await sync(G, [embedded('EmbeddedG')])).includes('EmbeddedG:verified'), 'wallets: a re-sync without the external wallet keeps the embedded one');
+  check((await payer(G)) === 'ExternalG/null/true/payment_wallet_unavailable', `wallets: a chosen wallet that was unlinked makes payments refuse, never fall back (${await payer(G)})`);
+  check(await pfails(`select public.create_point_buy_order($1, $2, 'ExternalG', $3)`, [G, '77777777-7777-4777-8777-777777777704', later], '42501'), 'wallets: an unlinked wallet cannot be ordered from');
+  await pq(`select public.select_payment_wallet($1, null)`, [G]);
+  check((await payer(G)) === 'EmbeddedG/embedded/false/null', 'wallets: clearing the choice goes back to the default wallet');
+  check((await sync(X, [external('ExternalG')])) === 'ExternalG:verified', 'wallets: a released wallet can be verified by the account that now holds it');
+  check(Number((await pq(`select public.get_point_balance($1) as b`, [G])).rows[0].b) === 100, 'wallets: …and no balance moved with it');
+
+  await pw.exec(`set role authenticated`);
+  check(await pfails(`select * from public.verified_wallets`, [], '42501'), 'wallets: clients cannot read verified wallets');
+  check(await pfails(`select public.select_payment_wallet($1, 'ExternalW')`, [W], '42501'), 'wallets: clients cannot choose a payment wallet directly');
+  await pw.exec(`reset role`);
+}
+
+// ---- 0018 backfill: wallets that existed before the migration ----
+{
+  const legacy = await freshDb();
+  const lq = (sql, params) => legacy.query(sql, params);
+  await applyMigrations(legacy, files.filter((f) => f < '0018'), 'wallet backfill, before 0018:');
+  const L = '99999999-9999-4999-8999-999999999901';
+  await lq(`insert into auth.users (id, email) values ($1, null)`, [L]);
+  const linked = [
+    { type: 'wallet', address: 'LegacyEmbedded', chainType: 'solana', connectorType: 'embedded', walletClient: 'privy' },
+    { type: 'wallet', address: 'LegacyExternal', chainType: 'solana', connectorType: 'mobile_wallet_adapter', walletClient: 'phantom' },
+    { type: 'wallet', address: '0xEthereum', chainType: 'ethereum', connectorType: 'injected', walletClient: 'metamask' },
+  ];
+  await lq(`select public.sync_privy_account($1, 'did:privy:legacy-wallets', null, null, 'google', 'LegacyEmbedded', null, $2::jsonb, now())`, [L, JSON.stringify(linked)]);
+  await lq(`select * from public.ensure_point_account($1, 'did:privy:legacy-wallets')`, [L]);
+  await applyMigrations(legacy, files.filter((f) => f >= '0018'), 'wallet backfill, 0018 onwards:');
+  const rows = async () => (await lq(`select address, kind from public.verified_wallets order by address`).catch(() => ({ rows: [] }))).rows.map((r) => `${r.address}:${r.kind}`).join(',');
+  check((await rows()) === 'LegacyEmbedded:embedded,LegacyExternal:external', `backfill: existing embedded and external Solana wallets are recorded, nothing else (${await rows()})`);
+  const pay = (await lq(`select * from public.payment_wallet_for($1)`, [L]).catch(() => ({ rows: [] }))).rows[0];
+  check(pay?.wallet_address === 'LegacyEmbedded' && pay?.wallet_kind === 'embedded', 'backfill: an existing account keeps paying with its embedded wallet');
+  await applyMigrations(legacy, files, 'wallet backfill, re-applied:');
+  check((await rows()) === 'LegacyEmbedded:embedded,LegacyExternal:external', 'backfill: re-applying the migrations changes nothing');
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall database checks passed');
 process.exit(fails ? 1 : 0);

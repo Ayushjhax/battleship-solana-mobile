@@ -11,7 +11,7 @@ import type { GameOverReason, MatchEvent, MatchMode } from '@engine/types';
 import type { Database, Json } from '../../src/net/database.types';
 import { envMs } from './env';
 import type { OpponentSummary } from './protocol';
-import type { TrustedPrivyAccount } from './privy';
+import type { TrustedPrivyAccount, VerifiedWallet } from './privy';
 
 /** The fixed system profile from supabase/migrations/0006_bots.sql. */
 export const BOT_PLAYER_ID = 'b0000000-0000-4000-8000-000000000001';
@@ -175,6 +175,13 @@ export async function verifyDatabaseConnection(): Promise<void> {
   });
   if (cancelProbe.error && isMissingFunction(cancelProbe.error)) {
     throw missingMigration('cancel_match_before_start', '0016_cancelled_before_start.sql');
+  }
+
+  // 0018's payment wallets. No profile carries this id, so it raises before it
+  // reads anything.
+  const walletProbe = await db().rpc('payment_wallet_for', { p_profile_id: unused });
+  if (walletProbe.error && isMissingFunction(walletProbe.error)) {
+    throw missingMigration('payment_wallet_for', '0018_payment_wallets.sql');
   }
 }
 
@@ -386,6 +393,9 @@ export async function fetchProfileRewardTotals(userId: string): Promise<ProfileR
 export interface SyncedPrivyAccountResult extends TrustedPrivyAccount {
   readonly pointBalance: number;
   readonly welcomeAwarded: boolean;
+  /** Wallets Privy reports for this identity that another account already holds (0018). */
+  readonly walletConflicts: readonly string[];
+  readonly paymentWallet: PaymentWallet;
 }
 
 /** Server-only upsert after both the Supabase and Privy tokens are verified. */
@@ -413,11 +423,195 @@ export async function upsertPrivyAccount(
   if (pointError || !point) {
     throw new Error(`point account init(${profileId}): ${pointError?.message ?? 'no result'}`);
   }
+  const synced = await syncVerifiedWallets(profileId, account.privyUserId, account.wallets);
   return {
     ...account,
     pointBalance: Number(point.balance),
     welcomeAwarded: point.welcome_awarded,
+    walletConflicts: synced.filter((wallet) => wallet.status === 'conflict').map((wallet) => wallet.address),
+    paymentWallet: await fetchPaymentWallet(profileId),
   };
+}
+
+export interface WalletSyncStatus {
+  readonly address: string;
+  readonly kind: 'embedded' | 'external';
+  /** 'conflict': another account holds this address; nothing about it changed. */
+  readonly status: 'verified' | 'conflict';
+}
+
+/**
+ * Records the wallets Privy reports for the identity (0018). Only ever called
+ * with what the server itself read from Privy — never with addresses the app
+ * sent — so a row here means Privy verified the wallet for this identity.
+ */
+export async function syncVerifiedWallets(
+  profileId: string,
+  privyUserId: string,
+  wallets: readonly VerifiedWallet[],
+): Promise<WalletSyncStatus[]> {
+  const { data, error } = await db().rpc('sync_verified_wallets', {
+    p_profile_id: profileId,
+    p_privy_user_id: privyUserId,
+    p_wallets: wallets.map((wallet) => ({ ...wallet })) as unknown as Json,
+  });
+  if (error) throw new Error(`verified wallets sync(${profileId}): ${error.message}`);
+  return (data ?? []).map((row) => ({
+    address: row.wallet_address,
+    kind: row.wallet_kind === 'embedded' ? 'embedded' : 'external',
+    status: row.wallet_status === 'conflict' ? 'conflict' : 'verified',
+  }));
+}
+
+/**
+ * The wallet that pays for points and receives a sale's SOL. `problem` is set
+ * when none can be used; a chosen wallet that is no longer verified never
+ * falls back to another one.
+ */
+export interface PaymentWallet {
+  readonly address: string | null;
+  readonly kind: 'embedded' | 'external' | null;
+  /** True when the player chose it; false for the default. */
+  readonly chosen: boolean;
+  readonly problem:
+    | 'payment_wallet_unavailable'
+    | 'payment_wallet_not_chosen'
+    | 'no_payment_wallet'
+    | null;
+}
+
+export async function fetchPaymentWallet(profileId: string): Promise<PaymentWallet> {
+  const { data, error } = await db().rpc('payment_wallet_for', { p_profile_id: profileId });
+  const row = data?.[0];
+  if (error || !row) throw new Error(`payment wallet(${profileId}): ${error?.message ?? 'no result'}`);
+  const kind = row.wallet_kind === 'embedded' || row.wallet_kind === 'external' ? row.wallet_kind : null;
+  const problem =
+    row.problem === 'payment_wallet_unavailable' ||
+    row.problem === 'payment_wallet_not_chosen' ||
+    row.problem === 'no_payment_wallet'
+      ? row.problem
+      : null;
+  return { address: row.wallet_address, kind, chosen: row.chosen, problem };
+}
+
+/** Why a payment wallet could not be chosen. */
+export class WalletSelectionError extends Error {
+  constructor(
+    readonly reason: 'conflict' | 'not_verified',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'WalletSelectionError';
+  }
+}
+
+/** Chooses one of the identity's verified wallets, or null for the default. */
+export async function selectPaymentWallet(
+  profileId: string,
+  address: string | null,
+): Promise<PaymentWallet> {
+  const { error } = await db().rpc('select_payment_wallet', {
+    p_profile_id: profileId,
+    p_address: address,
+  });
+  if (error) {
+    if (error.code === '23505') {
+      throw new WalletSelectionError('conflict', 'That wallet belongs to another account.');
+    }
+    if (error.code === '42501') {
+      throw new WalletSelectionError('not_verified', 'That wallet is not verified for this account.');
+    }
+    throw new Error(`select payment wallet(${profileId}): ${error.message}`);
+  }
+  return fetchPaymentWallet(profileId);
+}
+
+export type VerifiedWalletRow = Database['public']['Tables']['verified_wallets']['Row'];
+
+async function identityOf(profileId: string): Promise<string> {
+  const { data, error } = await db()
+    .from('privy_accounts')
+    .select('privy_user_id')
+    .eq('profile_id', profileId)
+    .single<{ privy_user_id: string }>();
+  if (error || !data) throw new Error(`privy identity(${profileId}): ${error?.message ?? 'not found'}`);
+  return data.privy_user_id;
+}
+
+/** The identity's wallets that Privy still reports (released ones are left out). */
+export async function listVerifiedWallets(profileId: string): Promise<VerifiedWalletRow[]> {
+  const privyUserId = await identityOf(profileId);
+  const { data, error } = await db()
+    .from('verified_wallets')
+    .select('*')
+    .eq('privy_user_id', privyUserId)
+    .is('released_at', null)
+    .order('verified_at', { ascending: true });
+  if (error) throw new Error(`verified wallets(${profileId}): ${error.message}`);
+  return (data ?? []) as VerifiedWalletRow[];
+}
+
+/** The identity's latest point trades, newest first, for the history list. */
+export async function listPointTrades(profileId: string, limit = 30): Promise<PointTradeRow[]> {
+  const privyUserId = await identityOf(profileId);
+  const { data, error } = await db()
+    .from('point_trades')
+    .select('*')
+    .eq('privy_user_id', privyUserId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`point trades(${profileId}): ${error.message}`);
+  return (data ?? []) as PointTradeRow[];
+}
+
+export async function isSignatureCredited(signature: string): Promise<boolean> {
+  const { data, error } = await db()
+    .from('point_trades')
+    .select('request_id')
+    .eq('signature', signature)
+    .maybeSingle<{ request_id: string }>();
+  if (error) throw new Error(`trade by signature: ${error.message}`);
+  return data !== null;
+}
+
+/** A buy order made before payment, its payer fixed (0018). Idempotent per request. */
+export async function createPointBuyOrder(
+  profileId: string,
+  requestId: string,
+  payer: string,
+  expiresAt: string,
+): Promise<void> {
+  const { error } = await db().rpc('create_point_buy_order', {
+    p_profile_id: profileId,
+    p_request_id: requestId,
+    p_payer: payer,
+    p_expires_at: expiresAt,
+  });
+  if (error) {
+    if (error.code === '42501') {
+      throw new WalletSelectionError('not_verified', 'The payment wallet is not verified for this account.');
+    }
+    throw new Error(`create point buy order(${requestId}): ${error.message}`);
+  }
+}
+
+/** Credits an order once, for a transfer whose source the server read on chain. */
+export async function creditPointBuyOrder(
+  profileId: string,
+  requestId: string,
+  signature: string,
+  payer: string,
+): Promise<number> {
+  const { data, error } = await db().rpc('credit_point_buy_order', {
+    p_profile_id: profileId,
+    p_request_id: requestId,
+    p_signature: signature,
+    p_payer: payer,
+  });
+  if (error || data === null) {
+    throw new Error(`credit point buy order(${requestId}): ${error?.message ?? 'no result'}`);
+  }
+  return Number(data);
 }
 
 export async function fetchPointBalance(profileId: string): Promise<number> {
@@ -567,6 +761,29 @@ export async function beginPointSell(
 }
 
 export type PointTradeRow = Database['public']['Tables']['point_trades']['Row'];
+
+/** 0014's sale, with the payout's destination fixed on the trade (0018). */
+export async function beginPointSellTo(
+  profileId: string,
+  requestId: string,
+  points: number,
+  lamports: number,
+  destination: string,
+): Promise<PointSellStart> {
+  const { data, error } = await db().rpc('begin_point_sell_to', {
+    p_profile_id: profileId,
+    p_request_id: requestId,
+    p_points: points,
+    p_lamports: lamports,
+    p_destination: destination,
+  });
+  const row = data?.[0];
+  if (error?.code === '42501') {
+    throw new WalletSelectionError('not_verified', 'The payout wallet is not verified for this account.');
+  }
+  if (error || !row) throw new Error(`begin point sell(${requestId}): ${error?.message ?? 'no result'}`);
+  return { ok: row.ok, balance: Number(row.balance), status: row.status, reason: row.reason };
+}
 
 export async function fetchPointTrade(requestId: string): Promise<PointTradeRow | null> {
   const { data, error } = await db()

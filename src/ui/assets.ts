@@ -65,6 +65,14 @@ export interface VSlices {
  * and fields are the cut versions in assets/login/, which carry no baked label.
  */
 export const LOGIN_ART = {
+  /** The navy "Connect Solana wallet" plate (scripts/wallet-button-assets.sh); its label is live, in artColor.ivory. */
+  wallet: {
+    left: require('../../assets/login/wallet-button-l.png'),
+    mid: require('../../assets/login/wallet-button-m.png'),
+    right: require('../../assets/login/wallet-button-r.png'),
+  } as Slices,
+  walletMark: require('../../assets/login/wallet-solana-icon.png') as Asset,
+  walletArrow: require('../../assets/login/wallet-arrow-right.png') as Asset,
   panel: require('../../assets/images/login-assets/login-panel.png') as Asset,
   logo: require('../../assets/images/login-assets/empire-of-bits-logo.png') as Asset,
   title: require('../../assets/images/login-assets/captains-login-title.png') as Asset,

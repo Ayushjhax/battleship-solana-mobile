@@ -201,6 +201,7 @@ export type Database = {
           balance: number
           created_at: string
           locked_points: number
+          payment_wallet_address: string | null
           privy_user_id: string
           updated_at: string
           welcome_awarded_at: string
@@ -209,6 +210,7 @@ export type Database = {
           balance?: number
           created_at?: string
           locked_points?: number
+          payment_wallet_address?: string | null
           privy_user_id: string
           updated_at?: string
           welcome_awarded_at?: string
@@ -217,6 +219,7 @@ export type Database = {
           balance?: number
           created_at?: string
           locked_points?: number
+          payment_wallet_address?: string | null
           privy_user_id?: string
           updated_at?: string
           welcome_awarded_at?: string
@@ -260,10 +263,13 @@ export type Database = {
         Row: {
           blockhash: string | null
           created_at: string
+          destination_address: string | null
           error: string | null
+          expires_at: string | null
           kind: string
           lamports: number
           last_valid_block_height: number | null
+          payer_address: string | null
           points: number
           privy_user_id: string
           profile_id: string
@@ -276,10 +282,13 @@ export type Database = {
         Insert: {
           blockhash?: string | null
           created_at?: string
+          destination_address?: string | null
           error?: string | null
+          expires_at?: string | null
           kind: string
           lamports: number
           last_valid_block_height?: number | null
+          payer_address?: string | null
           points: number
           privy_user_id: string
           profile_id: string
@@ -292,10 +301,13 @@ export type Database = {
         Update: {
           blockhash?: string | null
           created_at?: string
+          destination_address?: string | null
           error?: string | null
+          expires_at?: string | null
           kind?: string
           lamports?: number
           last_valid_block_height?: number | null
+          payer_address?: string | null
           points?: number
           privy_user_id?: string
           profile_id?: string
@@ -465,6 +477,42 @@ export type Database = {
         }
         Relationships: []
       }
+      verified_wallets: {
+        Row: {
+          address: string
+          connector_type: string | null
+          kind: string
+          last_seen_at: string
+          privy_user_id: string
+          profile_id: string | null
+          released_at: string | null
+          verified_at: string
+          wallet_client: string | null
+        }
+        Insert: {
+          address: string
+          connector_type?: string | null
+          kind: string
+          last_seen_at?: string
+          privy_user_id: string
+          profile_id?: string | null
+          released_at?: string | null
+          verified_at?: string
+          wallet_client?: string | null
+        }
+        Update: {
+          address?: string
+          connector_type?: string | null
+          kind?: string
+          last_seen_at?: string
+          privy_user_id?: string
+          profile_id?: string | null
+          released_at?: string | null
+          verified_at?: string
+          wallet_client?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       leaderboard: {
@@ -480,6 +528,41 @@ export type Database = {
       }
     }
     Functions: {
+      begin_point_sell_to: {
+        Args: {
+          p_destination: string
+          p_lamports: number
+          p_points: number
+          p_profile_id: string
+          p_request_id: string
+        }
+        Returns: { balance: number; ok: boolean; reason: string | null; status: string }[]
+      }
+      create_point_buy_order: {
+        Args: { p_expires_at: string; p_payer: string; p_profile_id: string; p_request_id: string }
+        Returns: undefined
+      }
+      credit_point_buy_order: {
+        Args: { p_payer: string; p_profile_id: string; p_request_id: string; p_signature: string }
+        Returns: number
+      }
+      payment_wallet_for: {
+        Args: { p_profile_id: string }
+        Returns: {
+          chosen: boolean
+          problem: string | null
+          wallet_address: string | null
+          wallet_kind: string | null
+        }[]
+      }
+      select_payment_wallet: {
+        Args: { p_address: string | null; p_profile_id: string }
+        Returns: string | null
+      }
+      sync_verified_wallets: {
+        Args: { p_privy_user_id: string; p_profile_id: string; p_wallets: Json }
+        Returns: { wallet_address: string; wallet_kind: string; wallet_status: string }[]
+      }
       begin_point_sell: {
         Args: {
           p_lamports: number

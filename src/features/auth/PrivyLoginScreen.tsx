@@ -2,22 +2,29 @@
  * Captain's log-in, drawn to its mockup on BACKGROUNDS.login:
  *   left    the logo, the "Captain's log-in" title, the pitch, the anchor rule
  *           and the Privy note, with a sailing ship in the waves below
- *   right   the sign-in panel: Google, then email + one-time code
+ *   right   the sign-in panel: Google, then a Solana wallet app (Mobile Wallet
+ *           Adapter, Android), then email + one-time code
  *   around  the mockup's handwriting, gulls, crown, compass, bottle and scroll —
  *           pointerEvents none, clear of every control
  *
- * Every control is art from LOGIN_ART with a live label (LoginArt.tsx).
+ * Every control is art from LOGIN_ART with a live label (LoginArt.tsx). The
+ * rows are laid out inside the panel's paper — between the wheel ornament and
+ * the hatched bottom border, in both the email and the code state — so no
+ * decoration sits over a control.
  */
 import { useLoginWithEmail, useLoginWithOAuth } from '@privy-io/expo';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 
-import { ArtButton, ArtInput } from '@/features/auth/LoginArt';
+import { ArtButton, ArtInput, WalletConnectButton } from '@/features/auth/LoginArt';
+import { useWalletAuth } from '@/features/auth/useWalletAuth';
+import { walletAuthError } from '@/features/auth/walletAuth';
 import { BACKGROUNDS, LOGIN_ART, type Asset } from '@/ui/assets';
 import { InkSpinner } from '@/ui/InkSpinner';
 import { Scale } from '@/ui/Scale';
 import { artColor, color, font, menuFont, type as typeScale } from '@/ui/tokens';
+import { mwaSupported } from '@/wallet/mwa';
 
 const RESEND_SECONDS = 30;
 
@@ -26,6 +33,18 @@ const PANEL = { x: 448, y: 14, w: 312, h: Math.round((312 * 699) / 656) } as con
 const INSET = 22;
 const ROW_W = PANEL.w - INSET * 2;
 const GAP = 10;
+/** Row tops inside the panel; the paper ends ~314 units down, under the hatched border. */
+const ROW = {
+  google: 78,
+  wallet: 118,
+  or: 157,
+  email: 174,
+  action: 214,
+  secondary: 254,
+  status: 254,
+  statusAfterCode: 286,
+} as const;
+const ROW_H = 36;
 
 function readableError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -57,6 +76,7 @@ export function PrivyLoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const emailLogin = useLoginWithEmail();
   const oauth = useLoginWithOAuth();
+  const walletAuth = useWalletAuth();
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -69,7 +89,7 @@ export function PrivyLoginScreen() {
   const codeValid = /^\d{6}$/.test(code);
   const emailBusy = emailLogin.state.status === 'sending-code' || emailLogin.state.status === 'submitting-code';
   const googleBusy = oauth.state.status === 'loading';
-  const busy = emailBusy || googleBusy;
+  const busy = emailBusy || googleBusy || walletAuth.busy;
 
   const sendCode = useCallback(async () => {
     if (!emailValid || emailBusy || cooldown > 0) return;
@@ -103,6 +123,18 @@ export function PrivyLoginScreen() {
     }
   }, [busy, oauth]);
 
+  const connectWallet = useCallback(async () => {
+    if (busy || !mwaSupported) return;
+    setError(null);
+    try {
+      // On success Privy's new session replaces this screen; the account sync
+      // and the usual route after sign-in follow from there.
+      await walletAuth.connect('login');
+    } catch (caught) {
+      setError(walletAuthError(caught).message);
+    }
+  }, [busy, walletAuth]);
+
   const changeEmail = useCallback(() => {
     if (busy) return;
     setCodeSent(false);
@@ -134,20 +166,20 @@ export function PrivyLoginScreen() {
         <Art source={LOGIN_ART.logo} style={styles.logo} />
         <Art source={LOGIN_ART.title} style={styles.title} />
         <Text style={styles.copy}>
-          Sign in before setting sail. Your secure Solana wallet is created automatically.
+          Sign in with Google or email, or connect your Solana wallet.
         </Text>
         <Art source={LOGIN_ART.anchorDivider} style={styles.divider} />
-        <Text style={styles.note}>No seed phrase to manage. Privy keeps the signing key protected.</Text>
+        <Text style={styles.note}>Your account stays with Privy. Your external wallet approves its own signatures.</Text>
 
         <View style={styles.panel}>
           <Image source={LOGIN_ART.panel} style={StyleSheet.absoluteFill} contentFit="fill" />
           <Art source={LOGIN_ART.chooseTitle} style={styles.chooseTitle} />
 
-          <View style={[styles.row, { top: 87 }]}>
+          <View style={[styles.row, { top: ROW.google }]}>
             <ArtButton
               slices={LOGIN_ART.google}
               w={ROW_W}
-              h={40}
+              h={ROW_H}
               label={googleBusy ? 'Opening Google…' : 'Continue with Google'}
               clear="both"
               disabled={busy}
@@ -155,17 +187,32 @@ export function PrivyLoginScreen() {
             />
           </View>
 
-          <View style={[styles.row, styles.orRow, { top: 132 }]}>
+          <View style={[styles.row, { top: ROW.wallet }]}>
+            <WalletConnectButton
+              w={ROW_W}
+              h={ROW_H}
+              label={walletAuth.busy ? 'Waiting for your wallet…' : 'Connect Solana wallet'}
+              busy={walletAuth.busy}
+              disabled={(busy && !walletAuth.busy) || !mwaSupported}
+              accessibilityHint={
+                mwaSupported
+                  ? 'Opens your Solana wallet app to sign in. It asks you to approve a sign-in message; nothing is paid.'
+                  : 'Wallet sign-in needs the Android version of the game.'
+              }
+              onPress={() => void connectWallet()}
+            />
+          </View>
+          <View style={[styles.row, styles.orRow, { top: ROW.or }]}>
             <View style={styles.orRule} />
             <Text style={styles.or}>or use email + one-time code</Text>
             <View style={styles.orRule} />
           </View>
 
-          <View style={[styles.row, { top: 151 }]}>
+          <View style={[styles.row, { top: ROW.email }]}>
             <ArtInput
               slices={LOGIN_ART.emailInput}
               w={ROW_W}
-              h={38}
+              h={ROW_H}
               value={email}
               onChangeText={setEmail}
               placeholder="captain@example.com"
@@ -183,11 +230,11 @@ export function PrivyLoginScreen() {
 
           {codeSent ? (
             <>
-              <View style={[styles.row, styles.pair, { top: 196 }]}>
+              <View style={[styles.row, styles.pair, { top: ROW.action }]}>
                 <ArtInput
                   slices={LOGIN_ART.codeInput}
                   w={152}
-                  h={38}
+                  h={ROW_H}
                   value={code}
                   onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="6-digit code"
@@ -202,17 +249,17 @@ export function PrivyLoginScreen() {
                 <ArtButton
                   slices={LOGIN_ART.confirm}
                   w={ROW_W - 152 - GAP}
-                  h={38}
+                  h={ROW_H}
                   label={emailBusy ? 'Checking…' : 'Sign in'}
                   disabled={!codeValid || busy}
                   onPress={() => void submitCode()}
                 />
               </View>
-              <View style={[styles.row, styles.pair, { top: 241 }]}>
+              <View style={[styles.row, styles.pair, { top: ROW.secondary }]}>
                 <ArtButton
                   slices={LOGIN_ART.changeEmail}
                   w={(ROW_W - GAP) / 2}
-                  h={34}
+                  h={30}
                   label="Change email"
                   clear="left"
                   fontSize={typeScale.xs}
@@ -222,7 +269,7 @@ export function PrivyLoginScreen() {
                 <ArtButton
                   slices={LOGIN_ART.resend}
                   w={(ROW_W - GAP) / 2}
-                  h={34}
+                  h={30}
                   label={cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
                   clear="left"
                   fontSize={typeScale.xs}
@@ -233,11 +280,11 @@ export function PrivyLoginScreen() {
               </View>
             </>
           ) : (
-            <View style={[styles.row, { top: 196 }]}>
+            <View style={[styles.row, { top: ROW.action }]}>
               <ArtButton
                 slices={LOGIN_ART.confirm}
                 w={ROW_W}
-                h={40}
+                h={ROW_H}
                 label={emailBusy ? 'Sending…' : 'Email me a code'}
                 disabled={!emailValid || busy}
                 onPress={() => void sendCode()}
@@ -246,12 +293,19 @@ export function PrivyLoginScreen() {
           )}
 
           <View
-            style={[styles.row, styles.status, { top: codeSent ? 281 : 244 }]}
+            style={[styles.row, styles.status, { top: codeSent ? ROW.statusAfterCode : ROW.status }]}
             accessibilityLiveRegion="polite"
           >
             {busy ? <InkSpinner size={16} seedKey="login-action" /> : null}
             <Text style={[styles.statusText, error ? styles.error : null]} numberOfLines={2}>
-              {error ?? (codeSent ? `Code sent to ${normalizedEmail}` : 'Your email is never shown to other players.')}
+              {error ??
+                (walletAuth.busy
+                  ? 'Approve the connection, then the sign-in message, in your wallet app.'
+                  : codeSent
+                    ? `Code sent to ${normalizedEmail}`
+                    : mwaSupported
+                      ? 'Your email is never shown to other players.'
+                      : 'Wallet sign-in needs the Android app. Google and email work here.')}
             </Text>
           </View>
         </View>
@@ -307,10 +361,10 @@ const styles = StyleSheet.create({
   compass: { left: 760, top: 4, width: 38, height: 38 },
   ship: { left: 2, top: 236, width: 104, height: 104 },
   bottle: { left: 330, top: 314, width: 58, height: 44 },
-  scroll: { left: 726, top: 290, width: 74, height: 63 },
+  scroll: { left: 772, top: 292, width: 28, height: 48 },
 
   panel: { position: 'absolute', left: PANEL.x, top: PANEL.y, width: PANEL.w, height: PANEL.h },
-  chooseTitle: { left: (PANEL.w - 222) / 2, top: 56, width: 222, height: 24 },
+  chooseTitle: { left: (PANEL.w - 222) / 2, top: 53, width: 222, height: 22 },
   row: { position: 'absolute', left: INSET, width: ROW_W },
   pair: { flexDirection: 'row', gap: GAP },
   orRow: { height: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },

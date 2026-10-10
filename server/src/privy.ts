@@ -8,13 +8,31 @@ import { PrivyClient, type User } from '@privy-io/node';
 import { AuthFailure, detailOf } from './errors';
 import type { Json } from '../../src/net/database.types';
 
+/** A Solana wallet Privy has verified for the identity, as Privy's own server reports it. */
+export interface VerifiedWallet {
+  readonly address: string;
+  /** 'embedded': Privy holds the key. 'external': the player's own wallet app. */
+  readonly kind: 'embedded' | 'external';
+  /** The wallet's name as Privy recorded it (`wallet_client_type`), when it has one. */
+  readonly walletClient: string | null;
+  readonly connectorType: string | null;
+}
+
+export type LoginMethod = 'google' | 'email' | 'solana_wallet';
+
 export interface TrustedPrivyAccount {
   readonly privyUserId: string;
   readonly email: string | null;
   readonly displayName: string | null;
+  /** The one label privy_accounts keeps: Google, then email, then a Solana wallet. */
   readonly authProvider: string;
+  /** Every way this identity can sign in — a player may have several. */
+  readonly loginMethods: readonly LoginMethod[];
+  /** The embedded wallet only. External wallets are in `wallets`, never here. */
   readonly solanaWalletAddress: string | null;
   readonly solanaWalletId: string | null;
+  /** Every Solana wallet Privy has verified for the identity, embedded and external. */
+  readonly wallets: readonly VerifiedWallet[];
   readonly linkedAccounts: Json;
   readonly privyCreatedAt: string;
 }
@@ -50,10 +68,29 @@ function compactLinkedAccount(account: User['linked_accounts'][number]): Json {
       chainType: account.chain_type,
       connectorType: 'connector_type' in account ? (account.connector_type ?? null) : null,
       walletClient: account.wallet_client,
+      walletClientType: 'wallet_client_type' in account ? (account.wallet_client_type ?? null) : null,
       walletId: 'id' in account ? (account.id ?? null) : null,
     };
   }
   return { type: account.type };
+}
+
+type LinkedAccount = User['linked_accounts'][number];
+
+function solanaWalletOf(account: LinkedAccount): VerifiedWallet | null {
+  if (account.type !== 'wallet' || account.chain_type !== 'solana' || !('address' in account)) return null;
+  const address = String(account.address ?? '');
+  if (!address) return null;
+  const connectorType = 'connector_type' in account ? (account.connector_type ?? null) : null;
+  const clientType = 'wallet_client_type' in account ? (account.wallet_client_type ?? null) : null;
+  // Privy's own markers for a key it holds; anything else is the player's wallet.
+  const embedded = connectorType === 'embedded' || clientType === 'privy';
+  return {
+    address,
+    kind: embedded ? 'embedded' : 'external',
+    walletClient: clientType,
+    connectorType,
+  };
 }
 
 /** Pure and exported so account-shape selection is covered by tests. */
@@ -67,16 +104,27 @@ export function normalizePrivyUser(user: User): TrustedPrivyAccount {
       'connector_type' in account &&
       account.connector_type === 'embedded',
   );
+  const wallets = user.linked_accounts
+    .map(solanaWalletOf)
+    .filter((wallet): wallet is VerifiedWallet => wallet !== null);
+  const hasExternalWallet = wallets.some((wallet) => wallet.kind === 'external');
+  const loginMethods: LoginMethod[] = [];
+  if (google) loginMethods.push('google');
+  if (emailAccount) loginMethods.push('email');
+  // A Solana wallet Privy verified with Sign In With Solana is one more way in.
+  if (hasExternalWallet) loginMethods.push('solana_wallet');
 
   const email = google?.email ?? emailAccount?.address ?? null;
   return {
     privyUserId: user.id,
     email,
     displayName: google?.name ?? null,
-    authProvider: google ? 'google' : emailAccount ? 'email' : 'unknown',
+    authProvider: loginMethods[0] ?? 'unknown',
+    loginMethods,
     solanaWalletAddress:
       solanaWallet && 'address' in solanaWallet ? String(solanaWallet.address) : null,
     solanaWalletId: solanaWallet && 'id' in solanaWallet ? (solanaWallet.id ?? null) : null,
+    wallets,
     linkedAccounts: user.linked_accounts.map(compactLinkedAccount),
     privyCreatedAt: new Date(user.created_at * 1000).toISOString(),
   };

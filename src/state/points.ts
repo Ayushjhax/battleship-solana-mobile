@@ -3,9 +3,17 @@ import 'expo-sqlite/localStorage/install';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+/**
+ * A purchase in flight, kept across restarts. Saved before anything is paid:
+ * with no signature yet, the server is asked to find the payment instead
+ * (reconcile), so a payment is never lost because the app closed mid-send.
+ */
 export interface PendingPointBuy {
   readonly requestId: string;
-  readonly signature: string;
+  /** Null until the wallet returned one — or when an older app never sent one. */
+  readonly signature: string | null;
+  /** The order's expiry; past it (plus slack), an unpaid order is given up. */
+  readonly expiresAt?: string | null;
 }
 
 /**

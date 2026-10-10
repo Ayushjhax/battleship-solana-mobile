@@ -15,6 +15,7 @@ const AccountSchema = z.object({
   privyCreatedAt: z.string().min(1),
   pointBalance: z.number().int().nonnegative(),
   welcomeAwarded: z.boolean(),
+  walletConflicts: z.array(z.string()).optional(),
 });
 
 /**

@@ -98,6 +98,8 @@ export const artColor = {
   green: '#25803B',
   /** The winner's-base reveal pack's lettering (its name, rank and label art), sampled. */
   revealInk: '#03068A',
+  /** Light lettering on the navy wallet plate, sampled from its label art. */
+  ivory: '#FDFAF2',
 } as const;
 
 /**

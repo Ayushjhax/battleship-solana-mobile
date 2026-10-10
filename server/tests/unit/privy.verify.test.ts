@@ -203,6 +203,75 @@ describe('normalizePrivyUser', () => {
     expect(account.solanaWalletId).toBeNull();
   });
 
+  // A player who signed in with only their own Solana wallet (Privy's Sign In
+  // With Solana): no email, no Google, no embedded wallet. They were labelled
+  // 'unknown' and their wallet appeared nowhere the treasury could use it.
+  it('represents a wallet-only player by their verified external wallet', async () => {
+    const { normalizePrivyUser } = await load();
+
+    const account = normalizePrivyUser(
+      privyUser({
+        linked_accounts: [
+          {
+            type: 'wallet',
+            chain_type: 'solana',
+            address: 'SeekerWallet',
+            wallet_client: 'unknown',
+            wallet_client_type: 'seed_vault',
+            connector_type: 'mobile_wallet_adapter',
+          },
+        ],
+      }) as never,
+    );
+
+    expect(account.authProvider).toBe('solana_wallet');
+    expect(account.loginMethods).toEqual(['solana_wallet']);
+    expect(account.email).toBeNull();
+    expect(account.solanaWalletAddress).toBeNull();
+    expect(account.wallets).toEqual([
+      { address: 'SeekerWallet', kind: 'external', walletClient: 'seed_vault', connectorType: 'mobile_wallet_adapter' },
+    ]);
+  });
+
+  it('keeps every way in, and both kinds of wallet apart, for a player with several', async () => {
+    const { normalizePrivyUser } = await load();
+
+    const account = normalizePrivyUser(
+      privyUser({
+        linked_accounts: [
+          { type: 'google_oauth', email: 'ada@gmail.com', name: 'Ada', subject: 'g-1' },
+          { type: 'email', address: 'ada@example.com' },
+          {
+            type: 'wallet',
+            chain_type: 'solana',
+            connector_type: 'embedded',
+            address: 'EmbeddedSolWallet',
+            wallet_client: 'privy',
+            wallet_client_type: 'privy',
+            id: 'sol-1',
+          },
+          {
+            type: 'wallet',
+            chain_type: 'solana',
+            address: 'PhantomWallet',
+            wallet_client: 'unknown',
+            wallet_client_type: 'phantom',
+            connector_type: 'mobile_wallet_adapter',
+          },
+          { type: 'wallet', chain_type: 'ethereum', connector_type: 'injected', address: '0xbeef', wallet_client: 'unknown' },
+        ],
+      }) as never,
+    );
+
+    expect(account.authProvider).toBe('google');
+    expect(account.loginMethods).toEqual(['google', 'email', 'solana_wallet']);
+    expect(account.solanaWalletAddress).toBe('EmbeddedSolWallet');
+    expect(account.wallets).toEqual([
+      { address: 'EmbeddedSolWallet', kind: 'embedded', walletClient: 'privy', connectorType: 'embedded' },
+      { address: 'PhantomWallet', kind: 'external', walletClient: 'phantom', connectorType: 'mobile_wallet_adapter' },
+    ]);
+  });
+
   it('converts the Privy epoch timestamp to an ISO string', async () => {
     const { normalizePrivyUser } = await load();
 

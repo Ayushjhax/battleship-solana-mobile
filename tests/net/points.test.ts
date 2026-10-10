@@ -256,3 +256,92 @@ describe('API base resolution', () => {
     await expect(fetchPointQuote()).rejects.toThrow(/points quote was invalid/);
   });
 });
+
+// 0018: orders, reconcile, history and the payment wallet.
+describe('payment-wallet calls', () => {
+  const ORDER = {
+    requestId: REQUEST_ID,
+    status: 'awaiting_payment',
+    points: 100,
+    lamports: 1_000_000,
+    sol: '0.001',
+    treasuryAddress: 'Treasury111111111111111111111111111111111',
+    network: 'devnet',
+    payer: { address: 'External1111111111111111111111111111111111', kind: 'external' },
+    expiresAt: '2026-10-10T12:10:00.000Z',
+    signature: null,
+  };
+
+  it('creates an order with the request id and returns it', async () => {
+    mocks.fetch.mockResolvedValue(jsonResponse({ order: ORDER }));
+    const { createPointBuyOrder } = await import('../../src/net/points');
+
+    await expect(createPointBuyOrder(REQUEST_ID)).resolves.toEqual(ORDER);
+    expect(sentUrl()).toBe('https://api.example.test/points/buy/order');
+    expect(sentBody()).toEqual({ requestId: REQUEST_ID });
+  });
+
+  it('reads a server without orders as null, so the app can pay the older way', async () => {
+    mocks.fetch.mockResolvedValue(jsonResponse({ message: 'Route POST:/points/buy/order not found' }, 404));
+    const { createPointBuyOrder } = await import('../../src/net/points');
+
+    await expect(createPointBuyOrder(REQUEST_ID)).resolves.toBeNull();
+  });
+
+  it('keeps the server’s code on a refusal the player can act on', async () => {
+    mocks.fetch.mockResolvedValue(
+      jsonResponse({ error: 'Choose a payment wallet again.', code: 'payment_wallet_unavailable' }, 409),
+    );
+    const { createPointBuyOrder, PointsRequestError } = await import('../../src/net/points');
+
+    const attempt = createPointBuyOrder(REQUEST_ID);
+    await expect(attempt).rejects.toBeInstanceOf(PointsRequestError);
+    await expect(attempt).rejects.toMatchObject({ status: 409, code: 'payment_wallet_unavailable' });
+  });
+
+  it('rejects an order whose payer is malformed', async () => {
+    mocks.fetch.mockResolvedValue(jsonResponse({ order: { ...ORDER, payer: { address: 'x', kind: 'external' } } }));
+    const { createPointBuyOrder } = await import('../../src/net/points');
+
+    await expect(createPointBuyOrder(REQUEST_ID)).rejects.toThrow(/order was invalid/);
+  });
+
+  it('asks the server to reconcile an order by its id', async () => {
+    mocks.fetch.mockResolvedValue(jsonResponse({ status: 'confirmed', balance: 300, signature: 'sig-1' }));
+    const { reconcilePointBuy } = await import('../../src/net/points');
+
+    await expect(reconcilePointBuy(REQUEST_ID)).resolves.toEqual({ status: 'confirmed', balance: 300, signature: 'sig-1' });
+    expect(sentUrl()).toBe('https://api.example.test/points/buy/reconcile');
+    expect(sentBody()).toEqual({ requestId: REQUEST_ID });
+  });
+
+  it('parses a quote with and without the payment wallet', async () => {
+    const base = { balance: 250, points: 100, lamports: 1_000_000, sol: '0.001', treasuryAddress: ORDER.treasuryAddress };
+    mocks.fetch.mockResolvedValueOnce(jsonResponse({ quote: base }));
+    mocks.fetch.mockResolvedValueOnce(
+      jsonResponse({
+        quote: {
+          ...base,
+          network: 'devnet',
+          paymentWallet: { address: ORDER.payer.address, kind: 'external', chosen: true, problem: null },
+        },
+      }),
+    );
+    const { fetchPointQuote } = await import('../../src/net/points');
+
+    await expect(fetchPointQuote()).resolves.toEqual(base);
+    await expect(fetchPointQuote()).resolves.toMatchObject({ network: 'devnet', paymentWallet: { kind: 'external' } });
+  });
+
+  it('chooses a payment wallet, and reports a conflict with its code', async () => {
+    mocks.fetch.mockResolvedValueOnce(
+      jsonResponse({ paymentWallet: { address: ORDER.payer.address, kind: 'external', chosen: true, problem: null } }),
+    );
+    mocks.fetch.mockResolvedValueOnce(jsonResponse({ error: 'That wallet belongs to another account.', code: 'wallet_conflict' }, 409));
+    const { choosePaymentWallet } = await import('../../src/net/points');
+
+    await expect(choosePaymentWallet(ORDER.payer.address)).resolves.toMatchObject({ kind: 'external', chosen: true });
+    expect(sentBody()).toEqual({ address: ORDER.payer.address });
+    await expect(choosePaymentWallet(ORDER.payer.address)).rejects.toMatchObject({ code: 'wallet_conflict' });
+  });
+});

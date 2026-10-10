@@ -5,7 +5,8 @@
 # assets/keyboard/ and the rest of the screens' folders; placement and the
 # battle (assets/fx, assets/fleet, assets/battle) are scripts/battle-assets.sh,
 # the store and the flags (assets/shop, assets/flags) scripts/store-assets.sh,
-# the Captain's wallet (assets/wallet) scripts/wallet-assets.sh, the battle's
+# the Captain's wallet (assets/wallet) scripts/wallet-assets.sh, the sign-in
+# screen's Solana wallet button scripts/wallet-button-assets.sh, the battle's
 # Attack deck (assets/deck) scripts/deck-assets.sh, the winner's-base reveal
 # (assets/reveal) scripts/reveal-assets.sh, the port city (assets/city)
 # scripts/city-assets.py.
@@ -504,6 +505,9 @@ bash scripts/store-assets.sh
 
 echo "the Captain's wallet"
 bash scripts/wallet-assets.sh
+
+echo "the sign-in screen's Solana wallet button"
+bash scripts/wallet-button-assets.sh
 
 echo "the battle's Attack deck"
 bash scripts/deck-assets.sh

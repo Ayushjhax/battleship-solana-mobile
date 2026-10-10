@@ -13,7 +13,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View, type ImageStyle } from 'react-native';
 
 import { ArtButton } from '@/features/auth/LoginArt';
-import { privyDisplayName, privyEmail, privyLoginMethods } from '@/features/auth/privyUser';
+import { externalSolanaWallets, privyDisplayName, privyEmail, privyLoginMethods } from '@/features/auth/privyUser';
 import { countryName } from '@/features/flags/countries';
 import { FlagBadge } from '@/features/flags/FlagBadge';
 import { FlagPicker } from '@/features/flags/FlagPicker';
@@ -34,6 +34,7 @@ import { portraitFor } from '@/ui/portraits';
 import { Scale } from '@/ui/Scale';
 import { VSlicedImage } from '@/ui/SlicedImage';
 import { CANVAS_H, CANVAS_W, artColor, color, font } from '@/ui/tokens';
+import { mwa } from '@/wallet/mwa';
 import { shortAddress } from '@/wallet/solana';
 
 const LEFT = { x: 20, y: 66, w: 378, h: 282 } as const;
@@ -103,11 +104,14 @@ function Detail({
   value,
   danger = false,
   last = false,
+  link,
 }: {
   label: string;
   value: string;
   danger?: boolean;
   last?: boolean;
+  /** A small text action after the value, e.g. "Manage". */
+  link?: { label: string; accessibilityLabel: string; onPress: () => void };
 }) {
   return (
     <View style={styles.detailRow}>
@@ -115,6 +119,11 @@ function Detail({
       <Text style={[styles.detailValue, danger ? styles.danger : null]} numberOfLines={1} selectable>
         {value}
       </Text>
+      {link ? (
+        <Pressable accessibilityRole="link" accessibilityLabel={link.accessibilityLabel} hitSlop={8} onPress={link.onPress}>
+          <Text style={styles.detailLink}>{link.label}</Text>
+        </Pressable>
+      ) : null}
       {last ? null : (
         <Image source={SETTINGS_ART.dashedDivider} style={styles.detailRule} contentFit="fill" />
       )}
@@ -216,7 +225,10 @@ export default function ProfileScreen() {
   const email = privyEmail(user) ?? sync.account?.email ?? 'Not available';
   const displayName = privyDisplayName(user) ?? sync.account?.displayName ?? '—';
   const methods = privyLoginMethods(user);
-  const walletAddress = walletState.wallets?.[0]?.address ?? sync.account?.solanaWalletAddress ?? '';
+  // The game wallet, or — for an account that signed in with its own wallet
+  // and has none — that wallet.
+  const walletAddress =
+    walletState.wallets?.[0]?.address ?? sync.account?.solanaWalletAddress ?? externalSolanaWallets(user)[0]?.address ?? '';
   const created = useMemo(
     () => (user ? new Date(user.created_at * 1000).toLocaleDateString() : '—'),
     [user],
@@ -229,6 +241,7 @@ export default function ProfileScreen() {
     useMatchClient.getState().disconnect();
     const gameplaySignOut = signOutGameplaySession();
     try {
+      await mwa.clear();
       await logout();
       clearSignedInState();
       // Park the router on boot so the next sign-in runs the handoff before any
@@ -359,8 +372,13 @@ export default function ProfileScreen() {
         <Detail label="Joined" value={created} />
         <Detail
           label="Solana wallet"
-          value={walletAddress ? shortAddress(walletAddress, 9) : walletState.status.replace('-', ' ')}
+          value={walletAddress ? shortAddress(walletAddress, 7) : walletState.status.replace('-', ' ')}
           last
+          link={{
+            label: 'Manage',
+            accessibilityLabel: 'Manage wallets: link a wallet or choose which one pays',
+            onPress: () => router.push('/wallets' as Href),
+          }}
         />
 
         <View style={styles.syncRow} accessibilityLiveRegion="polite">
@@ -508,6 +526,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'right',
   },
+  detailLink: { color: artColor.soft, fontFamily: font.label, fontSize: 12, textDecorationLine: 'underline' },
   actions: { flexDirection: 'row', justifyContent: 'space-between' },
   syncRow: { minHeight: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   verified: { width: 17, height: 17 },

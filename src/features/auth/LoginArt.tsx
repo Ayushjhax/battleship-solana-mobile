@@ -5,11 +5,13 @@
  * "Checking…", "Resend in 24s". Press feel matches InkButton: light haptic,
  * a 1-unit drop.
  */
+import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 
 import { haptic } from '@/audio/haptics';
-import type { Slices } from '@/ui/assets';
+import { LOGIN_ART, type Slices } from '@/ui/assets';
+import { InkSpinner } from '@/ui/InkSpinner';
 import { SlicedImage, sliceCaps } from '@/ui/SlicedImage';
 import { artColor, font } from '@/ui/tokens';
 
@@ -83,6 +85,87 @@ export function ArtButton({
             adjustsFontSizeToFit
             minimumFontScale={0.8}
           >
+            {label}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * "Connect Solana wallet": the navy plate with the Solana mark on the left cap,
+ * the chevron on the right and a live ivory label. While the wallet app is
+ * open it shows a spinner in place of the chevron and says so; disabled, it
+ * fades and says why through `accessibilityHint`.
+ */
+export function WalletConnectButton({
+  w,
+  h,
+  label,
+  onPress,
+  busy = false,
+  disabled = false,
+  accessibilityHint,
+}: {
+  w: number;
+  h: number;
+  label: string;
+  onPress: () => void;
+  busy?: boolean;
+  disabled?: boolean;
+  accessibilityHint?: string;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const caps = sliceCaps(LOGIN_ART.wallet, h);
+  const mark = h * 0.42;
+  const arrow = h * 0.32;
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => {
+        setPressed(true);
+        haptic('buttonPress');
+      }}
+      onPressOut={() => setPressed(false)}
+      disabled={disabled || busy}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: disabled || busy, busy }}
+    >
+      <View
+        style={{
+          width: w,
+          height: h,
+          opacity: disabled ? 0.55 : 1,
+          transform: [{ translateY: pressed ? 1 : 0 }],
+        }}
+      >
+        <SlicedImage slices={LOGIN_ART.wallet} w={w} h={h} style={StyleSheet.absoluteFill} />
+        <Image
+          source={LOGIN_ART.walletMark}
+          style={{ position: 'absolute', left: caps.left * 0.55, top: (h - mark) / 2, width: mark * (95 / 72), height: mark }}
+          contentFit="contain"
+          pointerEvents="none"
+        />
+        {busy ? (
+          <InkSpinner
+            size={arrow * 1.4}
+            stroke={artColor.ivory}
+            seedKey="wallet-connect"
+            style={{ position: 'absolute', right: caps.right * 0.6, top: (h - arrow * 1.4) / 2 }}
+          />
+        ) : (
+          <Image
+            source={LOGIN_ART.walletArrow}
+            style={{ position: 'absolute', right: caps.right * 0.75, top: (h - arrow) / 2, width: arrow * (29 / 48), height: arrow }}
+            contentFit="contain"
+            pointerEvents="none"
+          />
+        )}
+        <View style={[styles.labelBox, { paddingLeft: caps.left + mark * 0.9, paddingRight: caps.right + 4 }]}>
+          <Text style={[styles.label, { fontSize: 15, color: artColor.ivory }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
             {label}
           </Text>
         </View>

@@ -11,6 +11,7 @@ export interface SyncedPrivyAccount {
   readonly privyCreatedAt: string;
   readonly pointBalance: number;
   readonly welcomeAwarded: boolean;
+  readonly walletConflicts?: readonly string[];
 }
 
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error';
