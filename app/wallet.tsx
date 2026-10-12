@@ -4,6 +4,13 @@
  * Copy / Explorer / Refresh / Sign proof), Receive / Send / Activity on the
  * right. Text is live throughout; the art only carries labels that never
  * change. The network line doubles as the place errors and notices appear.
+ *
+ * The wallet is created for every player at sign-in (EnsureGameWallet), so
+ * there is no Create button. Receive states the deposit one purchase needs —
+ * the server's price, plus the rent-exempt minimum Solana keeps in the wallet,
+ * plus the network fee — and Send never takes the wallet below that rent
+ * reserve: the most it withdraws is balance − rent reserve − fee, spelled out
+ * under the amount (src/wallet/solana.ts depositNeeded / maxWithdrawal).
  */
 import { useEmbeddedSolanaWallet } from '@privy-io/expo';
 import {
@@ -33,24 +40,35 @@ import {
   WALLET_GREEN,
   WALLET_INK,
 } from '@/features/wallet/WalletParts';
+import { buildTransferTransaction } from '@/features/points/transfer';
+import { fetchPointQuote, POINT_PRICE_LAMPORTS } from '@/net/points';
 import { ArtImageButton } from '@/ui/ArtImageButton';
 import { BACKGROUNDS, PROFILE_ART, SETTINGS_ART, WALLET_ART } from '@/ui/assets';
 import { InkSpinner } from '@/ui/InkSpinner';
 import { Scale } from '@/ui/Scale';
 import { CANVAS_W, color, font } from '@/ui/tokens';
 import {
+  depositNeeded,
   explorerAddressUrl,
   explorerTransactionUrl,
   formatLamports,
   isRentError,
+  maxWithdrawal,
   parseSolToLamports,
   readBalanceAtLeastSlot,
   shortAddress,
   solanaConfig,
+  SOL_TRANSFER_FEE_LAMPORTS,
   transferShortfall,
 } from '@/wallet/solana';
 
 type WalletTab = 'receive' | 'send' | 'activity';
+
+/** The rent-exempt minimum that stays in the wallet, and a transfer's network fee. */
+interface WalletLimits {
+  readonly rentExemptMinimum: number;
+  readonly feeLamports: number;
+}
 
 function errorText(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -80,6 +98,60 @@ export default function WalletScreen() {
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [limits, setLimits] = useState<WalletLimits | null>(null);
+  const [priceLamports, setPriceLamports] = useState(POINT_PRICE_LAMPORTS);
+
+  /**
+   * What stays in the wallet and what a transfer costs: the rent-exempt
+   * minimum from the RPC and the network's own fee estimate for a transfer
+   * from this wallet (the protocol's per-signature base fee if it gives none).
+   */
+  const loadLimits = useCallback(async (): Promise<WalletLimits | null> => {
+    if (!address) return null;
+    try {
+      const [rentExemptMinimum, latest] = await Promise.all([
+        connection.getMinimumBalanceForRentExemption(0, 'confirmed'),
+        connection.getLatestBlockhash('confirmed'),
+      ]);
+      let feeLamports = SOL_TRANSFER_FEE_LAMPORTS;
+      try {
+        const fee = await connection.getFeeForMessage(
+          buildTransferTransaction({ from: address, to: address, lamports: 1 }, latest).compileMessage(),
+          'confirmed',
+        );
+        if (typeof fee.value === 'number') feeLamports = fee.value;
+      } catch {
+        // The base fee stands.
+      }
+      const next = { rentExemptMinimum, feeLamports };
+      setLimits(next);
+      return next;
+    } catch {
+      return null;
+    }
+  }, [address, connection]);
+
+  useEffect(() => {
+    void loadLimits();
+    // The price is the server's; the app's quote schema already pins it, so a
+    // failed read keeps that same figure.
+    fetchPointQuote()
+      .then((quote) => setPriceLamports(quote.lamports))
+      .catch(() => {});
+  }, [loadLimits]);
+
+  const deposit =
+    limits &&
+    depositNeeded({
+      priceLamports,
+      rentExemptMinimum: limits.rentExemptMinimum,
+      feeLamports: limits.feeLamports,
+      balance,
+    });
+  const withdrawable =
+    limits && balance !== null
+      ? maxWithdrawal({ balance, rentExemptMinimum: limits.rentExemptMinimum, feeLamports: limits.feeLamports })
+      : null;
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -157,34 +229,35 @@ export default function WalletScreen() {
       return;
     }
 
+    if (balance === null) {
+      setError('Refresh your balance before withdrawing.');
+      return;
+    }
+
     setActionBusy(true);
     try {
-      if (balance !== null) {
-        const [rentExemptMinimum, recipientBalance] = await Promise.all([
-          connection.getMinimumBalanceForRentExemption(0, 'confirmed'),
-          connection.getBalance(destination, 'confirmed'),
-        ]);
-        const shortfall = transferShortfall({
-          balance,
-          lamports: Number(lamports),
-          rentExemptMinimum,
-          recipientBalance,
-        });
-        if (shortfall?.kind === 'balance') {
-          setError(`Not enough SOL. After the network fee you can send up to ${formatLamports(shortfall.maxLamports)} SOL.`);
-          return;
-        }
-        if (shortfall?.kind === 'sender-rent') {
-          setError(
-            `Solana must keep ${formatLamports(rentExemptMinimum)} SOL in the wallet. Send up to ` +
-              `${formatLamports(shortfall.maxLamports)} SOL, or exactly ${formatLamports(shortfall.emptyLamports)} to empty it.`,
-          );
-          return;
-        }
-        if (shortfall?.kind === 'recipient-rent') {
-          setError(`That address is new on Solana, so it must receive at least ${formatLamports(shortfall.minLamports)} SOL.`);
-          return;
-        }
+      // Fresh figures, not the ones on screen: the limit is checked as sent.
+      const [current, recipientBalance] = await Promise.all([
+        loadLimits(),
+        connection.getBalance(destination, 'confirmed'),
+      ]);
+      if (!current) throw new Error('The Solana network could not be reached.');
+      const max = maxWithdrawal({ balance, rentExemptMinimum: current.rentExemptMinimum, feeLamports: current.feeLamports });
+      if (Number(lamports) > max) {
+        // One line in the footer; the Send tab spells out the breakdown.
+        setError(`Max withdrawal is ${formatLamports(max)} SOL (rent reserve stays).`);
+        return;
+      }
+      const shortfall = transferShortfall({
+        balance,
+        lamports: Number(lamports),
+        rentExemptMinimum: current.rentExemptMinimum,
+        recipientBalance,
+        fee: current.feeLamports,
+      });
+      if (shortfall?.kind === 'recipient-rent') {
+        setError(`That address is new on Solana, so it must receive at least ${formatLamports(shortfall.minLamports)} SOL.`);
+        return;
       }
       const latest = await connection.getLatestBlockhash('confirmed');
       const transaction = new Transaction({
@@ -221,7 +294,7 @@ export default function WalletScreen() {
     } finally {
       setActionBusy(false);
     }
-  }, [actionBusy, amount, balance, connection, recipient, refresh, wallet]);
+  }, [actionBusy, amount, balance, connection, loadLimits, recipient, refresh, wallet]);
 
   const walletUnavailable = !wallet;
   const connected = walletState.status === 'connected';
@@ -353,15 +426,18 @@ export default function WalletScreen() {
                 ? walletState.error
                 : walletState.status === 'needs-recovery'
                   ? 'Your wallet needs recovery before it can sign.'
-                  : 'Privy is preparing your wallet.'}
+                  : walletState.status === 'not-created' || walletState.status === 'creating'
+                    ? 'Creating your game wallet…'
+                    : 'Privy is preparing your wallet.'}
             </Text>
-            {walletState.status === 'not-created' && walletState.create ? (
+            {/* Created automatically (EnsureGameWallet); a button only when that failed. */}
+            {walletState.status === 'error' && walletState.create ? (
               <PlateButton
                 plate={WALLET_ART.tabOn}
                 w={170}
                 h={49}
-                label="Create wallet"
-                onPress={() => void walletState.create?.()}
+                label="Try again"
+                onPress={() => void walletState.create?.().catch((caught: unknown) => setError(errorText(caught)))}
               />
             ) : null}
             {walletState.status === 'needs-recovery' ? (
@@ -429,12 +505,32 @@ export default function WalletScreen() {
                   backgroundColor="#FFFFFF"
                 />
               </View>
-              <Text style={styles.instructions}>
-                Share this QR or the address below. Only send Solana assets to this wallet.
-              </Text>
-              <Text style={styles.fullAddress} selectable>
-                {address}
-              </Text>
+              <View style={styles.receiveColumn}>
+                <Text style={styles.instructions}>
+                  {deposit ? (
+                    <>
+                      To buy 100 points, deposit at least{' '}
+                      <Text style={styles.strong}>{formatLamports(deposit.minimumDeposit)} SOL</Text>
+                      {deposit.topUp === null
+                        ? '.'
+                        : deposit.topUp === 0
+                          ? ' — your balance covers it.'
+                          : ` (${formatLamports(deposit.topUp)} SOL more).`}
+                    </>
+                  ) : (
+                    'Share this QR or the address below.'
+                  )}
+                </Text>
+                {deposit && limits ? (
+                  <Text style={styles.breakdown}>
+                    = {formatLamports(priceLamports)} price + {formatLamports(limits.rentExemptMinimum)} rent reserve +{' '}
+                    {formatLamports(limits.feeLamports)} network fee. Solana keeps the rent reserve in your wallet.
+                  </Text>
+                ) : null}
+                <Text style={styles.fullAddress} selectable>
+                  {address}
+                </Text>
+              </View>
               <View style={styles.copyAddress}>
                 <LabelledArtButton
                   source={WALLET_ART.btnCopyAddress}
@@ -502,6 +598,36 @@ export default function WalletScreen() {
                   keyboardType="decimal-pad"
                   accessibilityLabel="SOL amount"
                 />
+              </View>
+              <View style={styles.withdrawable} accessibilityLiveRegion="polite">
+                <View style={styles.withdrawableRow}>
+                  <Text style={styles.withdrawableText}>
+                    {withdrawable === null ? (
+                      'Reading what you can withdraw…'
+                    ) : (
+                      <>
+                        You can withdraw up to{' '}
+                        <Text style={styles.strong}>{formatLamports(withdrawable)} SOL</Text>
+                      </>
+                    )}
+                  </Text>
+                  {withdrawable ? (
+                    <Pressable
+                      onPress={() => setAmount(formatLamports(withdrawable))}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Withdraw the maximum, ${formatLamports(withdrawable)} SOL`}
+                    >
+                      <Text style={styles.maxLink}>Max</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                {withdrawable !== null && limits && balance !== null ? (
+                  <Text style={styles.breakdown} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                    = balance {formatLamports(balance)} − rent reserve {formatLamports(limits.rentExemptMinimum)} (kept in
+                    wallet) − fee {formatLamports(limits.feeLamports)}
+                  </Text>
+                ) : null}
               </View>
               <View style={styles.sendButton}>
                 <PlateButton
@@ -725,26 +851,32 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   qrMarks: { position: 'absolute', left: 24 - 12, top: 99 - 12 },
+  /** Deposit guide, breakdown and address beside the QR, above the copy button (top 212). */
+  receiveColumn: { position: 'absolute', left: 152, right: 18, top: 96, gap: 3 },
   instructions: {
-    position: 'absolute',
-    left: 152,
-    right: 18,
-    top: 104,
     color: WALLET_BLUE,
     fontFamily: font.body,
-    fontSize: 12.5,
-    lineHeight: 17,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  strong: { color: WALLET_INK, fontFamily: font.display },
+  breakdown: {
+    color: WALLET_BLUE,
+    fontFamily: font.body,
+    fontSize: 10,
+    lineHeight: 13,
   },
   fullAddress: {
-    position: 'absolute',
-    left: 152,
-    right: 18,
-    top: 160,
     color: WALLET_INK,
     fontFamily: font.body,
-    fontSize: 10.5,
-    lineHeight: 14,
+    fontSize: 10,
+    lineHeight: 13,
   },
+  /** Under the amount field (ends 218.5), clear of the footer (from ~258). */
+  withdrawable: { position: 'absolute', left: 22, right: 18, top: 222, gap: 1 },
+  withdrawableRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  withdrawableText: { color: WALLET_BLUE, fontFamily: font.body, fontSize: 12, lineHeight: 16 },
+  maxLink: { color: WALLET_INK, fontFamily: font.display, fontSize: 12, textDecorationLine: 'underline' },
   copyAddress: { position: 'absolute', left: 150, top: 212 },
   fieldLabel: {
     position: 'absolute',

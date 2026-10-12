@@ -297,7 +297,8 @@ export function PrivyLoginScreen() {
             accessibilityLiveRegion="polite"
           >
             {busy ? <InkSpinner size={16} seedKey="login-action" /> : null}
-            <Text style={[styles.statusText, error ? styles.error : null]} numberOfLines={2}>
+            {/* Three lines fit above the border until the code row takes the space. */}
+            <Text style={[styles.statusText, error ? styles.error : null]} numberOfLines={codeSent ? 2 : 3}>
               {error ??
                 (walletAuth.busy
                   ? 'Approve the connection, then the sign-in message, in your wallet app.'

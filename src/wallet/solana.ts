@@ -176,6 +176,34 @@ export function transferShortfall(options: {
   return null;
 }
 
+/**
+ * What a deposit to the game wallet must cover for one purchase: the price,
+ * the transfer's network fee, and the rent-exempt minimum Solana keeps in the
+ * wallet afterwards. `topUp` is what is still missing given the balance
+ * (null while the balance is unknown; 0 when it already covers it).
+ */
+export function depositNeeded(options: {
+  priceLamports: number;
+  rentExemptMinimum: number;
+  feeLamports: number;
+  balance: number | null;
+}): { minimumDeposit: number; topUp: number | null } {
+  const minimumDeposit = options.priceLamports + options.rentExemptMinimum + options.feeLamports;
+  return {
+    minimumDeposit,
+    topUp: options.balance === null ? null : Math.max(0, minimumDeposit - options.balance),
+  };
+}
+
+/**
+ * The most that can be withdrawn: the balance less the rent-exempt minimum,
+ * which always stays in the wallet, and the withdrawal's own network fee.
+ * Solana would let a wallet be emptied to zero; the game wallet never is.
+ */
+export function maxWithdrawal(options: { balance: number; rentExemptMinimum: number; feeLamports: number }): number {
+  return Math.max(0, options.balance - options.rentExemptMinimum - options.feeLamports);
+}
+
 /** The RPC preflight's wording for the rent rule above. */
 export function isRentError(message: string): boolean {
   return /insufficient ?funds ?for ?rent/i.test(message);

@@ -7,6 +7,8 @@ import {
   shortAddress,
   solanaConfig,
   transferShortfall,
+  depositNeeded,
+  maxWithdrawal,
 } from '../solana';
 
 describe('Solana wallet helpers', () => {
@@ -99,5 +101,33 @@ describe('solanaConfig', () => {
     delete process.env.EXPO_PUBLIC_SOLANA_APP_RPC_URL;
     process.env.EXPO_PUBLIC_SOLANA_RPC_URL = 'https://rpc.example.test/?api-key=server-secret';
     expect(solanaConfig().rpcUrl).toBe('https://api.mainnet-beta.solana.com');
+  });
+});
+
+/** The game wallet's deposit and withdrawal limits, shown on the wallet screen. */
+describe('deposit and withdrawal limits', () => {
+  // Mainnet's figures on 2026-10-11 for a plain system account (read live by the app).
+  const rentExemptMinimum = 650_240;
+  const feeLamports = 5_000;
+
+  it('a deposit must cover the price, the fee and the rent reserve', () => {
+    expect(depositNeeded({ priceLamports: 1_000_000, rentExemptMinimum, feeLamports, balance: null })).toEqual({
+      minimumDeposit: 1_655_240,
+      topUp: null,
+    });
+  });
+
+  it('names only what is still missing', () => {
+    expect(depositNeeded({ priceLamports: 1_000_000, rentExemptMinimum, feeLamports, balance: 1_000_000 }).topUp).toBe(655_240);
+    expect(depositNeeded({ priceLamports: 1_000_000, rentExemptMinimum, feeLamports, balance: 2_000_000 }).topUp).toBe(0);
+  });
+
+  it('a withdrawal leaves the rent reserve behind and pays its fee', () => {
+    expect(maxWithdrawal({ balance: 10_000_000, rentExemptMinimum, feeLamports })).toBe(9_344_760);
+  });
+
+  it('never empties the wallet, and never goes negative', () => {
+    expect(maxWithdrawal({ balance: 655_240, rentExemptMinimum, feeLamports })).toBe(0);
+    expect(maxWithdrawal({ balance: 100, rentExemptMinimum, feeLamports })).toBe(0);
   });
 });

@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   AUTHORIZATION_MAX_AGE_MS,
+  chainsRuleOut,
   createMwaService,
   detachedSignature,
   MwaError,
@@ -554,5 +555,127 @@ describe('the cached connection', () => {
     const service = createMwaService(failing);
     await expect(service.disconnect('privy-user-1')).resolves.toEqual({ revoked: false });
     expect(h.stored()).toBeNull();
+  });
+});
+
+/**
+ * Phantom and Solflare on ordinary Android phones would not connect while the
+ * Seeker's Seed Vault did. Wallets name Solana's clusters differently in an
+ * account's `chains` — Seed Vault `solana:mainnet`, Phantom's own APIs
+ * `solana:101`, WalletConnect-style wallets CAIP-2 — and sign-in refused any
+ * account whose list lacked the exact `solana:mainnet`. Third-party wallets
+ * also start slower than Seed Vault, and the native module gives a wallet only
+ * 10 s to connect back.
+ */
+describe('wallets beyond the Seeker', () => {
+  const PHANTOM_STYLE = ['solana:101', 'solana:102', 'solana:103'];
+  const CAIP2_MAINNET = ['solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'];
+
+  it.each([
+    ['Phantom-style numbered chains', PHANTOM_STYLE],
+    ['CAIP-2 chains', CAIP2_MAINNET],
+    ['a devnet-only account (sign-in involves no cluster)', ['solana:devnet']],
+    ['no chains at all', undefined],
+  ])('signs in with %s', async (_name, chains) => {
+    const key = walletKey();
+    const { wallet } = fakeWallet(key, { accounts: [{ base64: key.base64, chains }] });
+    const flow = privy();
+    await expect(harness(wallet).service.signIn({ userId: null, ...flow })).resolves.toMatchObject({ address: key.address });
+    expect(flow.complete).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['solana:mainnet', ['solana:mainnet'], false],
+    ['Phantom-style', PHANTOM_STYLE, false],
+    ['CAIP-2 mainnet', CAIP2_MAINNET, false],
+    ['MWA 1.x cluster name', ['mainnet-beta'], false],
+    ['an unknown name', ['solana:something-new'], false],
+    ['nothing listed', [], false],
+    ['devnet only', ['solana:devnet'], true],
+    ['devnet and testnet, numbered', ['solana:103', 'solana:102'], true],
+  ])('a payment account listing %s is ruled out: %s', (_name, chains, ruledOut) => {
+    expect(chainsRuleOut(chains, 'solana:mainnet')).toBe(ruledOut);
+  });
+
+  it('pays from a Phantom-style account', async () => {
+    const key = walletKey();
+    const { wallet, calls } = fakeWallet(key, { accounts: [{ base64: key.base64, chains: PHANTOM_STYLE }] });
+    const { service } = harness(wallet);
+    await expect(
+      service.signAndSend({ userId: 'u', payer: key.address, prepare: async () => ({ transaction: transferFrom(key.address), minContextSlot: 1 }) }),
+    ).resolves.toBe('wallet-signature-1');
+    expect(calls.signAndSend).toHaveLength(1);
+  });
+
+  it('accepts a signature sent before the message', async () => {
+    const key = walletKey();
+    const message = new TextEncoder().encode('Sign in to Empire of Bits');
+    const signature = ed25519.sign(message, key.secret);
+    expect(detachedSignature(Uint8Array.from([...signature, ...message]), message, key.address)).toEqual(signature);
+  });
+
+  function flakyTransact(first: () => Promise<never>, wallet: ReturnType<typeof fakeWallet>['wallet'], sessions: (string | undefined)[]) {
+    let attempt = 0;
+    return (async (run: (w: unknown) => Promise<unknown>, baseUri?: string) => {
+      attempt += 1;
+      sessions.push(baseUri);
+      if (attempt === 1) return first();
+      return run(wallet);
+    }) as MwaDeps['transact'];
+  }
+
+  it('tries once more when the wallet app did not connect back in time', async () => {
+    const key = walletKey();
+    const { wallet } = fakeWallet(key);
+    const sessions: (string | undefined)[] = [];
+    const timeout = () =>
+      Promise.reject(Object.assign(new Error('Timed out waiting for local association to be ready'), { code: 'Timed out waiting for local association to be ready' }));
+    const { service } = harness(wallet, { transact: flakyTransact(timeout, wallet, sessions) });
+    const flow = privy();
+    await expect(service.signIn({ userId: null, ...flow })).resolves.toMatchObject({ address: key.address });
+    expect(sessions).toHaveLength(2);
+    expect(flow.complete).toHaveBeenCalledOnce();
+  });
+
+  it('tries once more when the launch came straight back as cancelled', async () => {
+    const key = walletKey();
+    const { wallet } = fakeWallet(key);
+    const sessions: (string | undefined)[] = [];
+    const instantCancel = () =>
+      Promise.reject(Object.assign(new Error('cancelled'), { code: 'Session not established: Local association cancelled by user' }));
+    const { service } = harness(wallet, { transact: flakyTransact(instantCancel, wallet, sessions) });
+    await expect(service.signIn({ userId: null, ...privy() })).resolves.toMatchObject({ address: key.address });
+    expect(sessions).toHaveLength(2);
+  });
+
+  it('does not reopen the wallet after a person closed it', async () => {
+    let now = NOW;
+    const key = walletKey();
+    const { wallet } = fakeWallet(key);
+    const sessions: (string | undefined)[] = [];
+    const humanCancel = () => {
+      now += 4_000;
+      return Promise.reject(Object.assign(new Error('cancelled'), { code: 'Session not established: Local association cancelled by user' }));
+    };
+    const { service } = harness(wallet, { now: () => now, transact: flakyTransact(humanCancel, wallet, sessions) });
+    await expect(service.signIn({ userId: null, ...privy() })).rejects.toMatchObject({ kind: 'cancelled' });
+    expect(sessions).toHaveLength(1);
+  });
+
+  it('never retries once the wallet was reached', async () => {
+    const key = walletKey();
+    const { wallet } = fakeWallet(key, {
+      authorize: () => {
+        throw Object.assign(new Error('Timed out waiting for response'), { code: 'Timed out waiting for response' });
+      },
+    });
+    const { service, sessions } = harness(wallet);
+    await expect(service.signIn({ userId: null, ...privy() })).rejects.toMatchObject({ kind: 'timeout' });
+    expect(sessions).toHaveLength(1);
+  });
+
+  it('keeps the wallet’s own words for the screen and the log', () => {
+    const error = toMwaError(Object.assign(new Error('Session closed by wallet'), { code: 'ERROR_SESSION_CLOSED' }), false);
+    expect(error.detail).toBe('ERROR_SESSION_CLOSED: Session closed by wallet');
   });
 });

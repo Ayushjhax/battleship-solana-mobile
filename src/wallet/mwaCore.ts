@@ -82,11 +82,19 @@ export class MwaError extends Error {
     readonly kind: MwaErrorKind,
     message: string,
     readonly nothingSent = true,
+    /** The wallet's or the native module's own code and words, for the screen and the log. */
+    readonly detail: string | null = null,
   ) {
     super(message);
     this.name = 'MwaError';
     this.mayHaveSent = !nothingSent;
   }
+}
+
+/** "code: message", short: what the wallet itself said went wrong. */
+function errorDetail(code: number | string | null, message: string): string | null {
+  const text = [code === null ? '' : String(code), message].filter(Boolean).join(': ').replace(/\s+/g, ' ').trim();
+  return text ? text.slice(0, 120) : null;
 }
 
 /** The protocol error code, from either shape the React Native module produces. */
@@ -113,27 +121,55 @@ export function toMwaError(error: unknown, sending: boolean): MwaError {
   if (error instanceof MwaError) return error;
   const code = mwaErrorCode(error);
   const message = error instanceof Error ? error.message : String(error ?? '');
+  const detail = errorDetail(code, message);
   if (code === 'ERROR_WALLET_NOT_FOUND') {
-    return new MwaError('no_wallet', 'No Solana wallet app that supports Mobile Wallet Adapter was found on this phone. Install one, then try again.');
+    return new MwaError(
+      'no_wallet',
+      'No Solana wallet app that supports Mobile Wallet Adapter was found on this phone. Install one, then try again.',
+      true,
+      detail,
+    );
   }
   // The native module reports a closed association as the code "Session not
   // established: Local association cancelled by user"; on the web it is
   // ERROR_ASSOCIATION_CANCELLED. Both are before any request reached the wallet.
-  if (code === 'ERROR_ASSOCIATION_CANCELLED' || (typeof code === 'string' && /association cancelled/i.test(code))) {
-    return new MwaError('cancelled', 'The wallet was closed before connecting.');
+  if (isAssociationCancel(code)) {
+    return new MwaError('cancelled', 'The wallet was closed before connecting.', true, detail);
   }
-  if (code === ERROR_NOT_SIGNED) return new MwaError('declined', 'The request was declined in the wallet.');
+  if (code === ERROR_NOT_SIGNED) return new MwaError('declined', 'The request was declined in the wallet.', true, detail);
   if (code === ERROR_AUTHORIZATION_FAILED) {
-    return new MwaError('authorization_failed', 'The wallet did not authorize this app. Connect again to continue.');
+    return new MwaError('authorization_failed', 'The wallet did not authorize this app. Connect again to continue.', true, detail);
   }
   if (code === ERROR_INVALID_PAYLOADS || code === ERROR_TOO_MANY_PAYLOADS) {
-    return new MwaError('invalid_response', 'The wallet could not accept this request.');
+    return new MwaError('invalid_response', 'The wallet could not accept this request.', true, detail);
   }
   if (code === 'ERROR_SESSION_TIMEOUT' || /timed out/i.test(message) || (typeof code === 'string' && /timed out/i.test(code))) {
-    return new MwaError('timeout', 'The wallet did not answer in time.', !sending);
+    return new MwaError('timeout', 'The wallet did not answer in time.', !sending, detail);
   }
-  return new MwaError('failed', 'The wallet request did not complete.', !sending);
+  return new MwaError('failed', 'The wallet request did not complete.', !sending, detail);
 }
+
+function isAssociationCancel(code: number | string | null): boolean {
+  return code === 'ERROR_ASSOCIATION_CANCELLED' || (typeof code === 'string' && /association cancelled/i.test(code));
+}
+
+/**
+ * The session never got going: the wallet app did not connect back within the
+ * native module's fixed 10 s (a wallet still starting up, or waiting at its
+ * own unlock screen), or the launch came straight back as "cancelled" before a
+ * person could have cancelled it. Nothing reached the wallet, so one retry is
+ * safe — by then the wallet app is running and connects at once.
+ */
+function associationFailed(error: unknown, elapsedMs: number): boolean {
+  const code = mwaErrorCode(error);
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (typeof code === 'string' && /local association to be ready/i.test(code)) return true;
+  if (/local association to be ready/i.test(message)) return true;
+  return isAssociationCancel(code) && elapsedMs < EARLY_CANCEL_MS;
+}
+
+/** A "cancel" faster than this came from the launch itself, not from a person. */
+export const EARLY_CANCEL_MS = 1500;
 
 /** A 32-byte Solana address, base64 as MWA carries it, as base58. */
 export function base58FromMwaAddress(address: string): string {
@@ -154,19 +190,57 @@ export function mwaAddressFromBase58(address: string): string {
  * signature that does not verify, is refused here rather than sent to Privy.
  */
 export function detachedSignature(payload: Uint8Array, message: Uint8Array, address: string): Uint8Array {
-  let signature: Uint8Array | null = null;
-  if (payload.length === SIGNATURE_BYTES) {
-    signature = payload;
-  } else if (
-    payload.length === message.length + SIGNATURE_BYTES &&
-    Buffer.from(payload.subarray(0, message.length)).equals(Buffer.from(message))
-  ) {
-    signature = payload.subarray(message.length);
+  const key = new PublicKey(address).toBytes();
+  const candidates: Uint8Array[] = [];
+  if (payload.length === SIGNATURE_BYTES) candidates.push(payload);
+  if (payload.length === message.length + SIGNATURE_BYTES) {
+    const bytes = Buffer.from(message);
+    // message || signature (the spec) — or signature || message, which some wallets send.
+    if (Buffer.from(payload.subarray(0, message.length)).equals(bytes)) candidates.push(payload.subarray(message.length));
+    if (Buffer.from(payload.subarray(SIGNATURE_BYTES)).equals(bytes)) candidates.push(payload.subarray(0, SIGNATURE_BYTES));
   }
-  if (!signature || !ed25519.verify(signature, message, new PublicKey(address).toBytes())) {
-    throw new MwaError('invalid_response', 'The wallet returned a signature that does not match. Sign-in was not completed.');
+  const signature = candidates.find((candidate) => ed25519.verify(candidate, message, key));
+  if (!signature) {
+    throw new MwaError(
+      'invalid_response',
+      'The wallet returned a signature that does not match. Sign-in was not completed.',
+      true,
+      `signed payload of ${payload.length} bytes for a ${message.length}-byte message`,
+    );
   }
   return Uint8Array.from(signature);
+}
+
+/**
+ * The names wallets use for Solana's clusters in an account's `chains`. MWA 2.0
+ * says `solana:mainnet`, but wallets differ: Phantom's own APIs number them
+ * (`solana:101`), WalletConnect-style wallets use CAIP-2 (`solana:` + the first
+ * 32 characters of the genesis hash), and MWA 1.x used cluster names.
+ */
+const CHAIN_ALIASES: Readonly<Record<MwaChain, readonly string[]>> = {
+  'solana:mainnet': [
+    'solana:mainnet',
+    'solana:mainnet-beta',
+    'mainnet-beta',
+    'mainnet',
+    'solana:101',
+    'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+    'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d',
+  ],
+  'solana:devnet': ['solana:devnet', 'devnet', 'solana:103', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'],
+  'solana:testnet': ['solana:testnet', 'testnet', 'solana:102', 'solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z'],
+};
+
+/**
+ * Whether an account's `chains` positively rule out `wanted`: every chain it
+ * lists is a known name for another cluster. Missing, empty or unrecognised
+ * lists do not — the match server checks the network of every payment anyway.
+ */
+export function chainsRuleOut(chains: readonly string[] | undefined, wanted: MwaChain): boolean {
+  if (!chains || chains.length === 0) return false;
+  const known = (chain: string) => Object.values(CHAIN_ALIASES).some((aliases) => aliases.includes(chain));
+  const isWanted = (chain: string) => CHAIN_ALIASES[wanted].includes(chain);
+  return !chains.some(isWanted) && chains.every(known);
 }
 
 /**
@@ -271,6 +345,14 @@ function parseStored(raw: string | null): StoredAuthorization | null {
   }
 }
 
+/** Failures from a session that never got going, which session() retries once. */
+const retryableAssociation = new WeakSet<MwaError>();
+
+/** Every wallet failure reaches the device log (adb logcat, tag ReactNativeJS) with the wallet's own words. */
+function logFailure(error: MwaError): void {
+  console.warn(`[mwa] ${error.kind}${error.detail ? ` — ${error.detail}` : ''}`);
+}
+
 export function createMwaService(deps: MwaDeps) {
   let active = false;
   /** Bumped by clear(): a session opened before it may not save or use anything after. */
@@ -319,7 +401,27 @@ export function createMwaService(deps: MwaDeps) {
     await queueWrite(() => deps.write(JSON.stringify(value)));
   }
 
+  /**
+   * One wallet session, retried once when it never got going (see
+   * associationFailed): the wallet app had not connected back, so nothing was
+   * asked of it. The retry drops a cached `baseUri`, in case that link is what
+   * failed to open the wallet.
+   */
   async function session<T>(
+    body: (wallet: Web3MobileWallet, context: SessionContext) => Promise<T>,
+    baseUri?: string | null,
+  ): Promise<T> {
+    try {
+      return await sessionOnce(body, baseUri);
+    } catch (error) {
+      if (!(error instanceof MwaError) || !retryableAssociation.has(error)) throw error;
+      // The failed session's lock is released as it settles; let that land.
+      if (active) await new Promise((resolve) => setTimeout(resolve, 0));
+      return sessionOnce(body, null);
+    }
+  }
+
+  async function sessionOnce<T>(
     body: (wallet: Web3MobileWallet, context: SessionContext) => Promise<T>,
     baseUri?: string | null,
   ): Promise<T> {
@@ -327,6 +429,8 @@ export function createMwaService(deps: MwaDeps) {
     if (!deps.isForeground()) throw new MwaError('background', 'Return to the game before opening your wallet.');
     active = true;
     const opened = generation;
+    const started = deps.now();
+    let entered = false;
     let sending = false;
     let timedOut = false;
     const context: SessionContext = {
@@ -342,7 +446,10 @@ export function createMwaService(deps: MwaDeps) {
     };
     let operation: Promise<T>;
     try {
-      operation = deps.transact((wallet) => body(wallet, context), baseUri ?? undefined);
+      operation = deps.transact((wallet) => {
+        entered = true;
+        return body(wallet, context);
+      }, baseUri ?? undefined);
     } catch (error) {
       active = false;
       throw toMwaError(error, false);
@@ -366,7 +473,10 @@ export function createMwaService(deps: MwaDeps) {
     try {
       return await Promise.race([operation, backstop]);
     } catch (error) {
-      throw toMwaError(error, sending);
+      const failure = toMwaError(error, sending);
+      if (!entered && !timedOut && associationFailed(error, deps.now() - started)) retryableAssociation.add(failure);
+      logFailure(failure);
+      throw failure;
     } finally {
       clearTimeout(timer);
     }
@@ -383,6 +493,7 @@ export function createMwaService(deps: MwaDeps) {
     cached: StoredAuthorization | null,
     expected?: string,
   ): Promise<Authorized> {
+    // Sign-in never touches a cluster; only a payment needs the wallet on ours.
     const request = { chain: deps.chain, identity: MWA_IDENTITY };
     let result: Awaited<ReturnType<Web3MobileWallet['authorize']>>;
     try {
@@ -409,8 +520,13 @@ export function createMwaService(deps: MwaDeps) {
       );
     }
     const chains = 'chains' in picked.account ? picked.account.chains : undefined;
-    if (Array.isArray(chains) && chains.length > 0 && !chains.includes(deps.chain)) {
-      throw new MwaError('chain_unsupported', `That wallet account is not enabled for ${deps.chain}. Nothing was sent.`);
+    if (expected && chainsRuleOut(Array.isArray(chains) ? chains.map(String) : undefined, deps.chain)) {
+      throw new MwaError(
+        'chain_unsupported',
+        `That wallet account is set to another Solana network, not ${deps.chain}. Switch it to mainnet in the wallet. Nothing was sent.`,
+        true,
+        `account chains: ${(chains ?? []).join(', ')}`,
+      );
     }
     const label = 'label' in picked.account && typeof picked.account.label === 'string' ? picked.account.label : null;
     return {

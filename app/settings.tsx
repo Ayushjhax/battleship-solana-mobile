@@ -215,10 +215,10 @@ export default function SettingsScreen() {
         source={SETTINGS_ART.logo}
         style={styles.logo}
         contentFit="contain"
-        accessibilityLabel="Ocean Warfare. An Empire of Bits game. On Indies on Solana Season 2."
+        accessibilityLabel="Battleship, an Empire of Bits game."
       />
 
-      <Text style={styles.version}>Empire of Bits: Ocean Warfare v{version}</Text>
+      <Text style={styles.version}>Battleship v{version}</Text>
       <Art source={SETTINGS_ART.waveDivider} style={styles.wave} />
     </Scale>
   );
@@ -274,9 +274,9 @@ const styles = StyleSheet.create({
   },
   logo: {
     position: 'absolute',
-    left: RIGHT.x + (RIGHT.w - LOGO_H * (486 / 294)) / 2,
+    left: RIGHT.x + (RIGHT.w - LOGO_H) / 2,
     top: ABOUT.y + (ABOUT.h - LOGO_H) / 2,
-    width: LOGO_H * (486 / 294),
+    width: LOGO_H,
     height: LOGO_H,
   },
   version: {

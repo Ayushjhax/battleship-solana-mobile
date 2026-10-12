@@ -1,4 +1,52 @@
-.git/
+# What `eas build` must NOT upload to Expo's build servers.
+#
+# When this file exists, EAS CLI uses it INSTEAD of .gitignore, so it has to
+# repeat everything .gitignore keeps out — above all every .env file, which
+# hold the treasury's private key and the Supabase, Privy and RPC secrets. The
+# cloud build gets its public EXPO_PUBLIC_* values from eas.json and from EAS
+# environment variables, never from a local .env file.
+# tests/tooling/easignore.test.ts checks this file against .gitignore.
+
+# ---- secrets: never uploaded ----
+.env*
+server/.env
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+
+# ---- everything .gitignore ignores ----
 node_modules/
-android/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+__pycache__/
+*.pyc
+.DS_Store
+*.tsbuildinfo
+coverage/
+example
+/ios
+/android
+
+# ---- not needed to build the app ----
+.git/
+.claude/
+.superstack/
+.vscode/
 server/
+launch-film/
+demo-assets/
+*.apk
+*.aab

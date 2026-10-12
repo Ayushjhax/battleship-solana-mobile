@@ -5,6 +5,9 @@ import { ensureSession } from './auth';
 
 const NetworkSchema = z.enum(['mainnet-beta', 'devnet', 'testnet', 'unknown']);
 
+/** 100 points cost exactly this (0.001 SOL); the server's quote and orders are held to it. */
+export const POINT_PRICE_LAMPORTS = 1_000_000;
+
 /**
  * The wallet that pays for points and receives a sale (0018): the embedded
  * wallet, or an external one Privy verified. `problem` set means none can be
@@ -28,7 +31,7 @@ const QuoteSchema = z.object({
     sellableBalance: z.number().int().nonnegative().optional(),
     lockedBalance: z.number().int().nonnegative().optional(),
     points: z.literal(100),
-    lamports: z.literal(1_000_000),
+    lamports: z.literal(POINT_PRICE_LAMPORTS),
     sol: z.string(),
     treasuryAddress: z.string().min(32),
     /** Optional: a server from before 0018 sends neither. */
@@ -42,7 +45,7 @@ const OrderSchema = z.object({
     requestId: z.string().uuid(),
     status: z.enum(['awaiting_payment', 'confirmed']),
     points: z.literal(100),
-    lamports: z.literal(1_000_000),
+    lamports: z.literal(POINT_PRICE_LAMPORTS),
     sol: z.string(),
     treasuryAddress: z.string().min(32),
     network: NetworkSchema,

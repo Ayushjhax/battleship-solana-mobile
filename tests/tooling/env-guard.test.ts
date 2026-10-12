@@ -5,8 +5,9 @@
  * scripts/env-guard.cjs makes Metro refuse to bundle when a public variable
  * the app reads carries a server-only secret.
  */
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -17,6 +18,7 @@ const require = createRequire(import.meta.url);
 interface EnvGuard {
   referencedPublicVars(root: string): Set<string>;
   publicEnvLeaks(env: Record<string, string | undefined>, referenced: Iterable<string>): string[];
+  assertNoServerSecretsInPublicEnv(root: string, env: Record<string, string | undefined>): void;
 }
 
 function guard(): EnvGuard {
@@ -76,5 +78,56 @@ describe('the public env guard', () => {
         .map(([key]) => `${profile}.${key}`),
     );
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * The server's key lives in server/.env, which Expo never loads — so the
+   * guard above could not see an app .env.local that repeated it, and the
+   * server's Helius key shipped in the 2026-10-06 and -10 APKs.
+   */
+  describe('against the match server’s own env file', () => {
+    function project(serverEnv: string | null): string {
+      const root = mkdtempSync(join(tmpdir(), 'eob-env-guard-'));
+      mkdirSync(join(root, 'src'));
+      writeFileSync(join(root, 'src', 'rpc.ts'), 'export const url = process.env.EXPO_PUBLIC_SOLANA_APP_RPC_URL;\n');
+      if (serverEnv !== null) {
+        mkdirSync(join(root, 'server'));
+        writeFileSync(join(root, 'server', '.env'), serverEnv);
+      }
+      return root;
+    }
+
+    it('refuses to bundle an app RPC URL that is the server’s', () => {
+      const root = project(`PORT=8080\nSOLANA_RPC_URL="${SERVER_RPC}"\n`);
+      try {
+        expect(() => guard().assertNoServerSecretsInPublicEnv(root, { EXPO_PUBLIC_SOLANA_APP_RPC_URL: SERVER_RPC })).toThrow(
+          /EXPO_PUBLIC_SOLANA_APP_RPC_URL carries the value of server\/\.env SOLANA_RPC_URL/,
+        );
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('bundles an app key of its own', () => {
+      const root = project(`SOLANA_RPC_URL=${SERVER_RPC}\n`);
+      try {
+        expect(() =>
+          guard().assertNoServerSecretsInPublicEnv(root, {
+            EXPO_PUBLIC_SOLANA_APP_RPC_URL: 'https://mainnet.rpc.example.test/?api-key=app-restricted',
+          }),
+        ).not.toThrow();
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('bundles where there is no server checkout (EAS)', () => {
+      const root = project(null);
+      try {
+        expect(() => guard().assertNoServerSecretsInPublicEnv(root, { EXPO_PUBLIC_SOLANA_APP_RPC_URL: SERVER_RPC })).not.toThrow();
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
   });
 });

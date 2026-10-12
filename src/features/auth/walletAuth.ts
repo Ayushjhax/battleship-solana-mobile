@@ -86,11 +86,24 @@ const MWA_COPY: Partial<Record<MwaError['kind'], string>> = {
   authorization_failed: 'Your wallet did not approve the connection.',
 };
 
+/** Kinds that are the player's own choice or the app's own state: no wallet detail to add. */
+const NO_DETAIL: readonly MwaError['kind'][] = ['declined', 'busy', 'background', 'unsupported', 'no_wallet'];
+
+/** "(…)" with what the wallet or Privy itself reported, so a failure on any phone says why. */
+function withDetail(message: string, detail: string | null | undefined): string {
+  return detail ? `${message} (${detail.slice(0, 70)})` : message;
+}
+
 /** Words for any failure of the flow. */
 export function walletAuthError(error: unknown): WalletAuthError {
   if (error instanceof WalletAuthError) return error;
   if (error instanceof MwaError) {
-    return new WalletAuthError(MWA_COPY[error.kind] ?? error.message, !['unsupported', 'no_wallet'].includes(error.kind), `mwa_${error.kind}`);
+    const base = MWA_COPY[error.kind] ?? error.message;
+    return new WalletAuthError(
+      NO_DETAIL.includes(error.kind) ? base : withDetail(base, error.detail),
+      !['unsupported', 'no_wallet'].includes(error.kind),
+      `mwa_${error.kind}`,
+    );
   }
   const code = (error as { code?: unknown } | null)?.code;
   if (typeof code === 'string' && PRIVY_COPY[code]) {
@@ -105,7 +118,12 @@ export function walletAuthError(error: unknown): WalletAuthError {
     // Privy checks the SIWS domain against the app's allowed domains.
     return new WalletAuthError(`Wallet sign-in is not set up for ${APP_DOMAIN} yet. Use Google or email for now.`, false, 'domain');
   }
-  return new WalletAuthError('The wallet sign-in could not be completed. Try again.', true, 'unknown');
+  return new WalletAuthError(
+    // Privy's own error code helps; a raw internal message does not belong on screen.
+    withDetail('The wallet sign-in could not be completed. Try again.', typeof code === 'string' ? code : null),
+    true,
+    'unknown',
+  );
 }
 
 /** Runs one login or link. Resolves with the wallet account Privy accepted. */
@@ -123,7 +141,10 @@ export async function connectWallet(mode: WalletAuthMode, deps: WalletAuthDeps):
       complete: (proof) => (mode === 'link' ? deps.link(proof) : deps.login(proof)),
     });
   } catch (error) {
-    throw walletAuthError(error);
+    const failure = walletAuthError(error);
+    // The device log (adb logcat, tag ReactNativeJS) keeps the full story.
+    console.warn(`[wallet-auth] ${mode} failed: ${failure.code} — ${failure.message}`);
+    throw failure;
   }
   if (mode === 'link') {
     // Login needs neither: Privy's new session mounts the app, whose

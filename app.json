@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Empire of Bits: Ocean Warfare",
+    "name": "Battleship",
     "slug": "empire-of-bits-seabattle",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "platforms": [
       "ios",
       "android"
@@ -19,12 +19,12 @@
     },
     "android": {
       "package": "com.empireofbits.seabattle",
-      "versionCode": 2,
+      "versionCode": 7,
       "softwareKeyboardLayoutMode": "pan",
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/ink/brand/adaptive-icon-hero.png",
-        "backgroundColor": "#828B94"
+        "backgroundColor": "#011D43"
       },
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS"
@@ -62,7 +62,8 @@
         {
           "android": {
             "enableMinifyInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "minSdkVersion": 28
           }
         }
       ],

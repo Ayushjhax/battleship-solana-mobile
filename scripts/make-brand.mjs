@@ -1,9 +1,10 @@
 /**
- * Builds the colour brand art from assets/gamestartlogo.jpeg:
+ * Builds the colour brand art from the game's logo, assets/logo/new_logo.png:
  *
  *   splash-hero.png        the launch screen — a porthole on the game's paper
  *   icon-hero.png          full bleed, for iOS and the legacy Android icon
  *   adaptive-icon-hero.png the Android adaptive foreground
+ *   porthole-hero.png      the splash's porthole on its own, for the settings About panel
  *
  * Why this is not in scripts/ink-assets.sh: that script needs ImageMagick and
  * turns line art into ink masks, which is the wrong treatment for a full
@@ -23,11 +24,12 @@ const require = createRequire(import.meta.url);
 const Jimp = require('jimp-compact');
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const SOURCE = path.join(ROOT, 'assets', 'gamestartlogo.jpeg');
+const SOURCE = path.join(ROOT, 'assets', 'logo', 'new_logo.png');
 const BRAND = path.join(ROOT, 'assets', 'ink', 'brand');
 const SPLASH_OUT = path.join(BRAND, 'splash-hero.png');
 const ICON_OUT = path.join(BRAND, 'icon-hero.png');
 const ADAPTIVE_OUT = path.join(BRAND, 'adaptive-icon-hero.png');
+const PORTHOLE_OUT = path.join(BRAND, 'porthole-hero.png');
 
 // src/ui/tokens.ts — the same paper the menu draws.
 const PAPER = [0xfb, 0xfc, 0xfe];
@@ -50,8 +52,8 @@ const RULE_Y = Math.round(SIZE * 0.094);
  * that must survive lives inside SAFE_R of the centre; the graph paper fills
  * the whole square so it reaches the mask edge whatever shape that is.
  *
- * The portrait is cut to a circle of its own: a porthole on the sheet, which
- * also means the mask can never slice a corner off the captain.
+ * The logo is cut to a circle of its own: a porthole on the sheet, which
+ * also means the mask can never slice a corner off the battleship.
  */
 const CENTRE = SIZE / 2;
 const SAFE_R = Math.round((SIZE * 0.66) / 2);
@@ -177,6 +179,16 @@ async function main() {
 
   await write(sheet, SPLASH_OUT);
   console.log(`splash → ${path.relative(ROOT, SPLASH_OUT)} (${SIZE}x${SIZE})`);
+
+  // The same porthole, transparent around it, drawn in the same order.
+  const outer = PORTHOLE_R + RING;
+  const portholeSize = outer * 2 + SHADOW_OFFSET;
+  const porthole = new Jimp(portholeSize, portholeSize, 0x00000000);
+  fillCircle(porthole, outer + SHADOW_OFFSET, outer + SHADOW_OFFSET, outer, INK_FAINT);
+  fillCircle(porthole, outer, outer, outer, INK);
+  porthole.composite(art, outer - PORTHOLE_R, outer - PORTHOLE_R);
+  await write(porthole, PORTHOLE_OUT);
+  console.log(`logo   → ${path.relative(ROOT, PORTHOLE_OUT)} (${portholeSize}x${portholeSize})`);
 }
 
 main().catch((error) => {

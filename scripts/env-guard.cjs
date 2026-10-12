@@ -62,8 +62,27 @@ function publicEnvLeaks(env, referenced) {
   return leaks;
 }
 
+/**
+ * The server-only entries of the match server's own env file. Expo never loads
+ * server/.env, so without this the guard could not see a public variable that
+ * repeats the server's key — which is how the server's RPC key kept shipping
+ * in the APK after BUG-009 (the app's .env.local had the same Helius URL).
+ * Absent on machines without a server checkout, such as EAS builders.
+ */
+function serverEnvSecrets(root) {
+  const file = path.join(root, 'server', '.env');
+  if (!fs.existsSync(file)) return {};
+  const secrets = {};
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const match = /^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(.*)$/.exec(line);
+    if (!match || match[1].startsWith('EXPO_PUBLIC_') || !SERVER_ONLY.test(match[1])) continue;
+    secrets[`server/.env ${match[1]}`] = match[2].trim().replace(/^(['"])(.*)\1$/, '$2');
+  }
+  return secrets;
+}
+
 function assertNoServerSecretsInPublicEnv(root = path.join(__dirname, '..'), env = process.env) {
-  const leaks = publicEnvLeaks(env, referencedPublicVars(root));
+  const leaks = publicEnvLeaks({ ...serverEnvSecrets(root), ...env }, referencedPublicVars(root));
   if (leaks.length > 0) {
     throw new Error(
       `Refusing to bundle: ${leaks.join('; ')}. Public (EXPO_PUBLIC_*) values are compiled ` +
@@ -73,4 +92,10 @@ function assertNoServerSecretsInPublicEnv(root = path.join(__dirname, '..'), env
   }
 }
 
-module.exports = { SERVER_ONLY, referencedPublicVars, publicEnvLeaks, assertNoServerSecretsInPublicEnv };
+module.exports = {
+  SERVER_ONLY,
+  referencedPublicVars,
+  publicEnvLeaks,
+  serverEnvSecrets,
+  assertNoServerSecretsInPublicEnv,
+};

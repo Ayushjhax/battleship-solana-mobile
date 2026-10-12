@@ -5,6 +5,7 @@
   },
   "build": {
     "development": {
+      "node": "24.10.0",
       "developmentClient": true,
       "distribution": "internal",
       "android": {
@@ -12,6 +13,7 @@
       }
     },
     "preview": {
+      "node": "24.10.0",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
@@ -30,6 +32,7 @@
       }
     },
     "production": {
+      "node": "24.10.0",
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
@@ -45,6 +48,13 @@
         "TREASURY_PUBLIC_KEY": "HfYqSJrCeWwzKU2JMboEb7dPmQhT23Trqat1ch4ZwiUd",
         "SELL_POINTS_COST": "100",
         "SELL_SOL_PAYOUT": "0.001"
+      }
+    },
+    "dapp-store": {
+      "extends": "production",
+      "environment": "production",
+      "android": {
+        "buildType": "apk"
       }
     }
   },

@@ -355,7 +355,8 @@ export const SETTINGS_ART = {
   waveDivider: require('../../assets/images/settings/wave-divider.png') as Asset,
   changeName: require('../../assets/images/settings/change-name.png') as Asset,
   changeAvatar: require('../../assets/images/settings/change-avatar.png') as Asset,
-  logo: require('../../assets/images/settings/ocean-warfare-logo.png') as Asset,
+  /** The game's logo in the splash's porthole (scripts/make-brand.mjs). */
+  logo: require('../../assets/ink/brand/porthole-hero.png') as Asset,
   minus: require('../../assets/images/settings/minus-button.png') as Asset,
   plus: require('../../assets/images/settings/plus-button.png') as Asset,
   soundIcon: require('../../assets/images/settings/sound-effects-icon.png') as Asset,

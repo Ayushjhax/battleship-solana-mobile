@@ -144,7 +144,9 @@ function walletAppError(error: MwaError): string {
   if (error.mayHaveSent) {
     return 'Your wallet did not confirm. If you approved, tap “Finish credit”: the server finds it, and you won’t pay twice.';
   }
-  return error.message;
+  return error.detail && !['busy', 'background', 'unsupported', 'no_wallet'].includes(error.kind)
+    ? `${error.message} (${error.detail.slice(0, 60)})`
+    : error.message;
 }
 
 function friendlyError(error: unknown): string {

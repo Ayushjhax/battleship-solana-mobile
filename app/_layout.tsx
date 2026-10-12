@@ -21,6 +21,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initializeAudio, refreshAudioSettings, setAudioActive, setMusic } from '@/audio';
 import { AuthErrorScreen, AuthLoadingScreen } from '@/features/auth/AuthStatusScreen';
 import { BackendWakeGate } from '@/features/auth/BackendWakeGate';
+import { EnsureGameWallet } from '@/features/auth/EnsureGameWallet';
 import { PrivyLoginScreen } from '@/features/auth/PrivyLoginScreen';
 import { PrivyProfileSync } from '@/features/auth/PrivyProfileSync';
 import { ResumeMatchPrompt } from '@/features/battle/ResumeMatchPrompt';
@@ -136,7 +137,10 @@ export default function RootLayout() {
             <PrivyProvider
               appId={appId}
               clientId={clientId}
-              config={{ embedded: { solana: { createOnLogin: 'users-without-wallets' } } }}
+              // 'all-users': a Solana wallet sign-in gets its game wallet at once too
+              // ('users-without-wallets' skipped it — the external wallet counted).
+              // EnsureGameWallet covers accounts that signed in before this.
+              config={{ embedded: { solana: { createOnLogin: 'all-users' } } }}
             >
               <AuthBoundary
                 loading={<AuthLoadingScreen />}
@@ -227,6 +231,7 @@ function AuthenticatedApp() {
   return (
     <>
       <PrivyProfileSync />
+      <EnsureGameWallet />
       <Stack
         screenOptions={{
           headerShown: false,
