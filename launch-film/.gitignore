@@ -1,0 +1,7 @@
+node_modules/
+.cache/
+# heavy intermediates are rebuilt by `npm run prepare-media` / `npm run cast`
+build/
+out/draft*
+out/frames/
+out/*.log

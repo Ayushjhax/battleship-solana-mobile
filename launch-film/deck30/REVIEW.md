@@ -1,0 +1,134 @@
+# REVIEW — Deck30 quality gate
+
+Each round: render a half-res draft (`npm run deck30:draft`), `npm run deck30:review -- <draft> build/deck30/qaN`
+(a still every 0.25 s with time / frame / beat burned in, the same sheets with the blacks lifted to ~10 % for the
+projector test, a 640×360 phone copy + a phone check of every card, and a sound check: loudness + spectrogram with the
+sections and cues overlaid, silence / clipping / transient measurements), look at every sheet, write the critique
+here, fix, repeat.
+
+## Round 1 — the animatic (`deck30/review/animatic.mp4`)
+
+Drop plates were still Lanczos stand-ins (the Real-ESRGAN upscale was running).
+
+### Wow audit
+
+| # | Wow | At | Score | Notes |
+|---|---|---|---|---|
+| 1 | The poster comes alive | 0:00.43 | 4 | The unfreeze is clean (same prepared clip, zero jump); flash, punch, shake, soft shockwave ring, fireball → mushroom. The logo's bits fly off small and low: the blast reads, the bits don't. **Redesign:** a third of the bits are blown at the camera (they swell up to 5×) and every bit draws a light trail. |
+| 2 | The bit becomes the logo | 0:05.57 | 4 | Black, the ping, the BOOM on the −16 hit, the bits lock, the sweep: right shape, but the rush is a soft converge. **Redesign:** the bits stream home with light trails, a warp-speed burst into the logo. |
+| 3 | The flip | 0:07.29 | 4 | Flips land face-on on 17/19/21/23 with motion blur; ships and weapons rise out of the glass; the base's pieces snap around it. The landings are soft. **Redesign:** every landing gets a 4-frame punch and a specular glint across the glass. |
+| 4 | FIRE in target locks | 0:10.71 | 5 | Bold ink pixels on the game's two boards, brackets at 8ths → 16ths → 32nds, the letterbox, the silent hang, the period on the downbeat. |
+| 5 | The drop | 0:12.43 | 4 | The period's bloom into the game's own white flash is the best cut in the film; HIT., the burst, "Shot down!", the split, SUNK., the suck-out all land. The last ship's explosion is small (60 px at native). Kept: it IS the last ship; the freeze, bloom and SUNK. carry it. Fixed below: the split's HUD. |
+| 6 | VICTORY as a window | 0:19.29 | 5 | Bright sea-and-ship art inside crisp glyphs, hairline edges, the sweep, the fly through a true counter hole into the leaderboard tile. |
+| 7 | One becomes all | 0:23.57 | 4 | Divisions read; the sculpt into a blocky EMPIRE OF BITS and the crisp lock work. The divisions are polite and the wall sits still. **Redesign:** every new tile flashes as it divides off, a light sweep crosses the 256 wall, and the whole wall pushes in to arrive exactly on the lock. |
+| — | Landing | 0:27.86 | 5 | The trailer's end card, held 3.0 s (from 0:27.0) to the last frame. |
+
+Longest stretch without a wow or a big hit: < 2 s everywhere (strobe hits every 0.43 s, the BOOM 5.6, flips every
+0.86 s from 7.3, FIRE 10.7, the drop's hits 12.4–17.1, VICTORY 19.3, the fly 20.6, the bento ticks to 22.1, the
+punch 23.1, the divisions 23.6–24.4, the lock 26.1, the ping 27.9).
+
+### Tests
+
+| Test | Result |
+|---|---|
+| Slide test | Frame 0: the fireball, deep ink edges, an anamorphic streak, the lockup — a finished poster. Last frame: the trailer's end card. ✅ |
+| Sound-off | build → fleet → arsenal → rival → (FIRE) → battle → win → economy → players → live: every step has its card or label. ✅ |
+| Projector (+10 % blacks) | Every card, the logo and the key action still read. ✅ |
+| Phone (640×360) | Every card and the end card read; the bento labels (46 px) were the smallest. ⚠️ |
+| Sound | **The render was 42.7 ms late.** Remotion's AAC carries 2048 samples of encoder priming without an edit list; the silence measured −39 dBFS rms (the music's tail sliding in) and every transient was +47–57 ms. ❌ |
+| Rhythm | Cuts and cards on the burned-in beats; anchors on downbeats (f13, f167, f373, f579, f784, f836). ✅ |
+| Cast | Faces whole; one grade. **The VS screen showed "Ayush 1175 pts / Saad 1125 pts" next to the rival's facecam** (found on the style frames). ❌ The split screen showed the enemy HUD ("Saad 1115") beside the Hunter. ❌ |
+| Honesty | Names from the game's code; no quotes; leaderboard names/points and the wallet address blurred at prep. ✅ |
+| Runtime | 900 frames = 30.0 s; end card held 3.0 s. ✅ |
+
+### Fixes made
+
+1. **Audio sync:** `scripts/deck30/render.mjs` now renders picture only (`--muted`) and muxes the score WAV with
+   ffmpeg (proper priming). Re-measured: 0 samples offset (cross-correlation 0.9998), silence −99 dBFS rms, every
+   transient within half a frame of its hit.
+2. **No names next to people:** the VS clip is frozen at 3.07 s (the plates arrive at 3.12); the split's camera stays
+   low enough that the HUD sits behind the top bar. The rival's tile was recut to his profile + the game on his phone.
+3. Wows 1, 2, 3, 7 redesigned as above (light trails and camera-bound bits in `BitShatter`; landing punch + glint in
+   `FlipScreen`; division flashes, a wall sweep and a push-to-lock in `Mosaic`/`Finale`).
+4. The strobe's battle hits re-picked for impact: the white flash, "Shot down!", the 3×3 burst, the fireball forming
+   and the mushroom (both from the 4× poster plate), the plane hit.
+5. Bento labels 46 → 58 px.
+6. Wrong-frame scare at 3.75 s checked frame by frame: it is the intended hard cut to black (frame 116).
+
+## Round 2 — draft 2 (`build/deck30/draft2.mp4`, atomic plate now Real-ESRGAN)
+
+### Wow audit
+
+| # | Wow | At | Score | Notes |
+|---|---|---|---|---|
+| 1 | The poster comes alive | 0:00.43 | 5 | The blast now throws a third of the logo's bits at the camera (they swell 5×) and every bit streaks; with the flash, punch, shake and the ring it reads as one detonation through the slide. |
+| 2 | The bit becomes the logo | 0:05.57 | 5 | On the BOOM the scattered bits converge in a warp-speed starburst of trails and lock; the sweep crosses; the logo now drifts 3 % until it collapses. |
+| 3 | The flip | 0:07.29 | 5 | Each landing punches and throws a specular glint across the glass; the pieces breaking the frame read clearly. |
+| 4 | FIRE | 0:10.71 | 5 | Unchanged; the push now stops at 1.85× so the period stays inside title-safe. |
+| 5 | The drop | 0:12.43 | 5 | Same cut; the split screen is now clean of names; the strike plays from the Real-ESRGAN plate (line art and HUD crisp at full bleed). |
+| 6 | VICTORY | 0:19.29 | 5 | Unchanged. |
+| 7 | One becomes all | 0:23.57 | 5 | Every division flashes its new daughters; a light sweep crosses the 256; the wall pushes in and lands exactly on the lock. |
+| — | Landing | 0:27.86 | 5 | Unchanged. |
+
+### Tests
+
+All round-1 failures pass: sync 0 samples, silence −99 dBFS rms (AAC noise floor only, the WAV is digital zero),
+peak −1.2 dBFS, no clipped samples, transients +3…+22 ms of their frames (the onset detector's own latency included);
+no name or score beside any face (VS frozen at 3.07, split camera low, leaderboard blurred). Phone: bento labels now
+legible at 640×360. Projector: unchanged pass.
+
+### The weakest second
+
+**0:23.4–0:23.6**, the #1 row collapsing into the bit: the leaderboard faded fully to black around the bar, leaving
+~6 near-empty frames between the punch and the mitosis. **Fixed:** the table stays at ~30 % behind the collapsing bar
+until the cut, so the bit is born out of the leaderboard rather than out of nothing.
+
+## Round 3 — draft 3 (`build/deck30/draft3.mp4`; strike and poster plates Real-ESRGAN, raid/defense still upscaling)
+
+The cut is locked; this round looked hardest at what a stranger would catch on a big screen: anything readable,
+anything dead.
+
+### Wow audit
+
+| # | Wow | At | Score | Notes |
+|---|---|---|---|---|
+| 1 | The poster comes alive | 0:00.43 | 5 | Unchanged: flash, punch, shake, ring, a third of the bits thrown at the lens with trails. |
+| 2 | The bit becomes the logo | 0:05.57 | 5 | The run-up was the weak part (see the weakest second); the BOOM, the starburst lock and the sweep are unchanged. |
+| 3 | The flip | 0:07.29 | 5 | Four landings on 17/19/21/23, punch + glint each, pieces breaking the glass; the VS lands with the rival locked on. |
+| 4 | FIRE | 0:10.71 | 5 | Strokes lock at 8ths → 16ths → 32nds under the letterbox; the hang is silent (digital zero). |
+| 5 | The drop | 0:12.43 | 5 | The period's bloom → the game's flash → HIT. on the mushroom; the facecams, "Shot down!", the grid wipe into the split, the last ship's freeze and SUNK. |
+| 6 | VICTORY | 0:19.29 | 5 | Crisp counters, the sweep, the fly-through. |
+| 7 | One becomes all | 0:23.57 | 5 | The bit is born out of the dimmed table (f707), divides with flashes, the wall sweeps and lands on the lock. |
+| — | Landing | 0:27.86 | 5 | Ping on the downbeat, the end card held from 0:27.0 to the last frame (3.0 s), no fade. |
+
+### Tests
+
+| Test | Result |
+|---|---|
+| Slide test | Frame 0: the poster (fireball, lockup). Last frame: the end card. ✅ |
+| Sound-off | build → fleet → arsenal → rival → FIRE → battle → win → economy → players → live, every step carded or labelled. ✅ |
+| Projector (+10 % blacks) | Every card and the key action read; the FIRE board and VICTORY hold their contrast. ✅ |
+| Phone (640×360) | All 22 checkpoints legible, including the bento labels and "Your move.". ✅ |
+| Sound | Silence beats 28–29: −99 dBFS rms (AAC floor; the WAV is digital zero). Peak −1.21 dBFS, 0 clipped samples. Transients on their frames: ALIVE +22 ms, BOOM +3, drop +7, HIT. +8, burst +10, "Shot down!" +15, last ship +12, VICTORY +5, lock +12, end ping +8, end BOOM +15 (onset-detector latency included; a frame is 33 ms). ✅ |
+| Rhythm | `check_timeline.mjs`: 70 beats @ 140 = 900 frames; anchors on downbeats (f13, f167, f373, f579, f784, f836); the music edit on bar lines. ✅ |
+| Cast | Faces whole, one grade, nobody beside a name or a number. ✅ |
+| Honesty | ❌ **Found:** the battle HUD — each player's rank ("Chief Ship Petty Officer"), captain name and points — was readable in three places: the white-flash strobe frame (0:01.5, "1115 Saad" under REAL PLAYERS.), the strike (0:12.5–0:12.8) and right through the last ship's freeze (0:17.2–0:19.2, "1115 Saad" above SUNK.). Neither name is in the filenames, and a name + points over a sinking reads as a specific player's result. The STORE tile's profile chip (name, rank, XP 175/2000) was borderline legible too. |
+| Runtime | 30.000 s; the end card holds 3.0 s. ✅ |
+
+### Fixes made
+
+1. **Honesty:** `scripts/deck30/prepare_media.py` now blurs both HUD text panels (rank, name, points) into every
+   battle plate at its own resolution (the avatars, flags and panel frames stay sharp), and the store's profile chip
+   (name, rank, XP) — baked in, like the leaderboard and the wallet, so no push can reveal them. The white-flash strobe
+   frame's camera also moved below the panels (y 300 → 330).
+2. **The weakest second** (below).
+
+### The weakest second
+
+**0:04.0–0:05.0**, the black before the BOOM. The brief's "hard cut to black, the bit fades up and pings" is one
+second at 120 BPM; on the 140-BPM grid the bar it lives in runs 1.7 s, and nothing moved but a static dot and a
+barely visible scatter — on a projector it read as dead air. **Fixed, not cut** (the BOOM must stay on the downbeat and
+the strobe can't grow without reusing faces): the black now breathes. The camera pushes 10 % into the bit, the
+scattered bits brighten and twinkle as a glow feathered around it, the bit throbs on beats 10 and 12 around the ping on
+11, and on the last beat the whole field draws in toward the bit with faint trails — the inhale — so the BOOM is a
+release. The rush into the logo starts exactly where the inhale left every bit.
