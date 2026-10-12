@@ -47,6 +47,7 @@ example
 .vscode/
 server/
 launch-film/
+launch-film-2min/
 demo-assets/
 *.apk
 *.aab

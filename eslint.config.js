@@ -34,6 +34,7 @@ module.exports = [
       'expo-env.d.ts',
       // Separate Remotion video projects with their own configs and toolchains.
       'launch-film/**',
+      'launch-film-2min/**',
       'demo-assets/**',
     ],
   },
