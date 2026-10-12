@@ -3,11 +3,14 @@
 # Empire of Bits: Ocean Warfare
 
 Battleship clone in a ballpoint-pen-on-graph-paper style. Expo SDK 57, TypeScript
-strict, Android-first, **landscape only**. Full spec in [docs/brief.md](docs/brief.md);
-the build is sequenced in [docs/prompts.md](docs/prompts.md); art and audio drop points
-are in [docs/assets.md](docs/assets.md).
+strict, Android-first, **landscape only**. The rules, the economy and setup
+are in [README.md](README.md); every rule decision is in the header comment of the engine
+module that makes it.
 
-Bundle id `com.empireofbits.seabattle` · scheme `empireofbits`.
+Bundle id `com.empireofbits.seabattle` · scheme `empireofbits`. Installed and listed as
+**Battleship** (`app.json` `name`); the launcher icon, adaptive icon, splash and settings logo
+are built from `assets/logo/new_logo.png` by `npm run brand` (`scripts/make-brand.mjs`). Keep
+the bundle id and slug — they tie installs, signing and EAS to this app.
 
 ---
 
@@ -44,7 +47,7 @@ hidden-information game.
 
 The engine is complete (P03): `reduce()` handles SUBMIT_LAYOUT / FIRE / USE_ARSENAL /
 TIMEOUT / RESIGN and returns `{ state, events }`; events are the animation script the UI
-replays. Every place docs/brief.md is silent, the choice is written in the header comment
+replays. Every place the original design brief was silent, the choice is written in the header comment
 of the module that makes it (`shots.ts`, `arsenal.ts`, `match.ts`) — change the comment
 when you change the rule. `src/engine/__tests__/view.test.ts` greps the enemy half of
 every view for ship coordinates; keep it green whenever `PlayerView` grows a field.
@@ -209,7 +212,7 @@ that looks like a rectangle from a UI kit.
   (`replace()`). 56 players at the 500 ms default were one reason long sessions ran hot;
   `tests/regression/audio-pool.test.ts` pins it.
 - **No endless animation on a screen a match lives on** — the battle, boards, HUD, placement,
-  menu, reveal, result (docs/brief.md: "no ambient idle animation"). An endless loop redraws the
+  menu, reveal, result (the design brief: "no ambient idle animation"). An endless loop redraws the
   whole screen every frame for as long as it is mounted; the sunk-ship smoke did that from the
   first sinking to the last shot. Loop a few times (`PUFF_CYCLES`, `BATTLE_BREATHS`) and stop;
   only transient pieces (a plane in flight, a pending "…", spinners) may loop.
@@ -352,7 +355,7 @@ that looks like a rectangle from a UI kit.
   `countries.ts`; `country_code` syncs like the name. The flag is pinned to the captain on the
   menu/store card, the profile ring, the battle portraits, the reveal, the result and the ladder.
 
-### Shipping and the demo (`eas.json`, `src/state/demo.ts`, `src/features/demo/`, `docs/DEMO.md`)
+### Shipping and the demo (`eas.json`, `src/state/demo.ts`, `src/features/demo/`)
 
 - **Five taps on the menu's version string open the demo menu.** It never writes to the
   profile or the server: "Force a win" / "Force a rank-up" pass `forced=pb,pa,cb,ca` to the
@@ -377,7 +380,7 @@ that looks like a rectangle from a UI kit.
   it again with `expo-screen-orientation`. Rotating the device must never change layout.
 - Android is the primary target; Privy's configured native client also supports iOS. Web
   is unsupported.
-- **Login identity and payment wallet are separate** (docs/SOLANA_WALLETS.md, migration 0018). The
+- **Login identity and payment wallet are separate** (migration 0018). The
   server records every Solana wallet Privy verified for an identity in `verified_wallets` (read from
   Privy, never from the app; one owner per address, conflicts never move anything) and the payment
   wallet — embedded by default, or a chosen verified external one — pays for points and receives
@@ -408,7 +411,7 @@ src/net/        supabase client, websocket client
 src/state/      zustand stores
 server/         Fastify + ws match server, imports @engine/* directly
 supabase/       SQL migrations
-docs/           brief, prompt pack, asset guide
+docs/media/     README screenshots and video posters
 ```
 
 ## 7. Commands

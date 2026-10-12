@@ -45,7 +45,7 @@ The secret key never appears under `app/` or `src/`; `server/src/db.ts` is the o
 | `privy_accounts` | server only | server-only verified Privy sync; clients have no grants or RLS policy |
 | `point_accounts`, `point_ledger` | server only | one balance per verified Privy DID (`locked_points` of it are welcome points: playable, never sellable — 0014); append-only welcome, wager and exchange ledger |
 | `point_wager_holds`, `point_trades` | server only | idempotent wager reservations and replay-protected SOL trades; since 0018 a buy is an order with a fixed `payer_address`, a sale has a fixed `destination_address` |
-| `verified_wallets` | server only | every Solana wallet Privy verified for an identity (embedded or external), one owner per address; `point_accounts.payment_wallet_address` is the chosen payment wallet (0018, docs/SOLANA_WALLETS.md) |
+| `verified_wallets` | server only | every Solana wallet Privy verified for an identity (embedded or external), one owner per address; `point_accounts.payment_wallet_address` is the chosen payment wallet (0018) |
 | `offline_results` | server only | server only: one receipt per offline/hot-seat result; coins only since 0015 (`ladder_points` 0) |
 | `offline_ladder_corrections` | server only | 0017's log: the ladder points, battles and wins it took back per captain |
 | `ranks` | public | — |

@@ -25,6 +25,11 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
+
+# Python (launch-film/audio, scripts)
+__pycache__/
+*.pyc
 
 # macOS
 .DS_Store
