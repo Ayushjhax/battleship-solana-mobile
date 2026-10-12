@@ -13,25 +13,37 @@ A server referees every shot. Stake points on a match, then trade them for SOL.
 ![Solana](https://img.shields.io/badge/Solana-mainnet-9945FF?style=flat-square&logo=solana&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/License-MIT-C7261C?style=flat-square)
 
-[Website](https://empireofbits.xyz) · [Launch trailer](#-launch-trailer-and-launch-film) · [How to play](#-how-to-play) · [Economy](#-the-economy) · [Run it yourself](#-getting-started) · [Contribute](#-contributing)
+[Website](https://empireofbits.xyz) · [Launch trailer](#the-launch-trailer-45-seconds) · [How to play](#-how-to-play) · [Economy](#-the-economy) · [Run it yourself](#-getting-started) · [Contribute](#-contributing)
 
 </div>
 
 ---
 
-## 🎬 Launch trailer and launch film
+## 🎬 The films
+
+Four films, all made in code with [Remotion](https://www.remotion.dev/) from real gameplay
+recordings and the game's own art and sound effects. Every name and number on screen comes
+from the game's code.
 
 <table>
 <tr>
 <td width="50%" align="center" valign="top">
-<a href="demo-assets/battleship-demo-video/out/empire-of-bits-demo-v2-1080p.mp4"><img src="docs/media/trailer-poster.jpg" alt="Watch the Empire of Bits launch trailer"></a>
-<br><b>Launch trailer</b> · 0:15 · 4K at 60 fps
-<br><a href="demo-assets/battleship-demo-video/out/empire-of-bits-demo-v2-1080p.mp4">1080p</a> · <a href="demo-assets/battleship-demo-video/out/empire-of-bits-demo-v2-4k.mp4">4K</a>
+<a href="launch-film/out/EmpireOfBits_Trailer45_1080p.mp4"><img src="docs/media/trailer-poster.jpg" alt="Watch the 45-second launch trailer"></a>
+<br><b>Launch trailer</b> · 0:45 · 1080p
 </td>
 <td width="50%" align="center" valign="top">
-<a href="launch-film/deliverables/EmpireOfBits_LaunchFilm_1080p.mp4"><img src="docs/media/launch-film-poster.jpg" alt="Watch the Empire of Bits launch film"></a>
-<br><b>Launch film</b> · 1:54 · 1080p at 30 fps
-<br><a href="launch-film/deliverables/EmpireOfBits_LaunchFilm_1080p.mp4">1080p</a> · <a href="launch-film/deliverables/poster.jpg">4K poster</a>
+<a href="launch-film-2min/deliverables/EmpireOfBits_LaunchFilm_1080p.mp4"><img src="docs/media/launch-film-poster.jpg" alt="Watch the 1:54 launch film"></a>
+<br><b>Launch film</b> · 1:54 · 1080p · <a href="launch-film-2min/deliverables/poster.jpg">4K poster</a>
+</td>
+</tr>
+<tr>
+<td width="50%" align="center" valign="top">
+<a href="launch-film/out/deck30/EmpireOfBits_Deck30_1080p.mp4"><img src="docs/media/deck30-poster.jpg" alt="Watch the 30-second deck film"></a>
+<br><b>Deck film</b> · 0:30 · 1080p · <a href="launch-film/out/deck30/EmpireOfBits_Deck30_1080p_deck.mp4">slide-ready file</a>
+</td>
+<td width="50%" align="center" valign="top">
+<a href="demo-assets/battleship-demo-video/out/empire-of-bits-demo-v2-1080p.mp4"><img src="docs/media/teaser-poster.jpg" alt="Watch the 15-second gameplay teaser"></a>
+<br><b>Gameplay teaser</b> · 0:15 · <a href="demo-assets/battleship-demo-video/out/empire-of-bits-demo-v2-1080p.mp4">1080p</a> · <a href="demo-assets/battleship-demo-video/out/empire-of-bits-demo-v2-4k.mp4">4K at 60 fps</a>
 </td>
 </tr>
 </table>
@@ -42,42 +54,74 @@ A server referees every shot. Stake points on a match, then trade them for SOL.
   GitHub only plays videos hosted there, not MP4s linked from the repository.
 -->
 
-Both videos were made entirely in code with [Remotion](https://www.remotion.dev/), from real
-gameplay recordings and the game's own art, music and sound effects. Every name and number on
-screen comes from the game's code.
+| Film | Length | Made for | Remotion project | Render |
+|---|---|---|---|---|
+| **Launch trailer** (`Trailer45`) | 0:45 | Feeds and store listings; reads with the sound off | `launch-film/` | `npm run render` |
+| **Launch film** (`LaunchFilm`) | 1:54 | The whole story, keynote-style | `launch-film-2min/` | `npm run final` |
+| **Deck film** (`Deck30`) | 0:30 | Pitch decks: frame 0 is a poster, the last frame is the end card | `launch-film/` | `npm run deck30:render` |
+| **Gameplay teaser** | 0:15 | Short loops, 4K at 60 fps | `demo-assets/battleship-demo-video/` | `npm run render:v2` |
 
-### The launch trailer: 15 seconds
+They share one campaign. Each ends on the Solana dApp Store end card, and two motifs recur: the
+glowing pixel ("the bit") with its sonar ping, and the last line, *"Your move."*
 
-`demo-assets/battleship-demo-video/` is a Remotion 4 project: 3840×2160, 60 fps, 900 frames.
-Version 2 (`src/v2/`) is "the board becomes a world". The gameplay runs full-bleed, the board's
-lighthouse opens into a layered Port City, and a battleship wipe cuts back into the raid.
+### The launch trailer: 45 seconds
 
-| Time | Caption | Footage |
+Netflix-trailer energy with Apple precision. The idea is that **the players are the empire**.
+Real players are cast as the stars and cut against the hardest-hitting gameplay. At the end,
+hundreds of player tiles swarm into the Empire of Bits logo, bit by bit, leaving one bit empty
+and glowing: the viewer's. Brief: [launch-film/BRIEF.md](launch-film/BRIEF.md).
+
+| Time | Section | On screen |
 |---|---|---|
-| 0:00–0:03 | *Choose your attack.* | The Atomic Bomber's 3×3 strike |
-| 0:03–0:06 | *Build your defense.* | An AA gun shoots a bomber down: "Shot down!" |
-| 0:06–0:08.5 | *Your home port.* | The Port City, rebuilt from the game's layout data |
-| 0:08.5–0:13 | *Take the fight to them.* | A bomber run, the last ship sinks, Victory |
-| 0:13–0:15 | End card | Solana dApp Store badge and `empireofbits.xyz` |
+| 0:00 | Hook | Frame 0 is already mid-explosion, so the autoplay thumbnail is the atomic strike |
+| 0:00.4 | Cast | Four players as character cards: THE ADMIRAL. THE TACTICIAN. THE HUNTER. THE CAPTAIN. |
+| 0:02 | Claim | REAL PLAYERS. REAL BATTLES. The bit pings and bursts into the EMPIRE OF BITS sting |
+| 0:06 | Build, fleet, arsenal | BUILD YOUR BASE. ASSEMBLE YOUR FLEET. LOAD YOUR ARSENAL. The Atomic Bomber lands centre |
+| 0:16 | Rival | FIND YOUR RIVAL. The radar, the VS screen, a rival's facecam |
+| 0:18 | Silence | Letterbox, black, one word: FIRE. |
+| 0:19.7 | The drop | The atomic strike, "Shot down!", a bomber run, HIT., SUNK., player reactions |
+| 0:28 | Victory | VICTORY. The game's result screen inside a grid of celebrating players |
+| 0:31.7 | Economy | BUY POINTS. SELL POINTS. GEAR UP. CLIMB. |
+| 0:35.6 | Swarm | Player tiles fly into the logo; one bit stays empty |
+| 0:39 | End card | The logo, the Solana dApp Store badge, *"Your move."* |
+
+The specs, from [out/REPORT.md](launch-film/out/REPORT.md): 45.06 s, 1920×1080, 30 fps, H.264
+and AAC at 48 kHz, −13.8 LUFS integrated, −1.2 dBTP true peak. It's cut on a 140 BPM grid of
+105 beats. Players' photos are cropped around detected faces, never through them, and every
+photo gets the same grade.
+
+### The deck film: 30 seconds
+
+Built to sit on a pitch-deck slide. **Frame 0 is a finished poster**: the biggest explosion,
+frozen, with the logo. When it plays, the shockwave blows the logo apart into bits, and one bit
+grows into a base, a fleet, a battle, a victory, and finally the players. It lands on the end
+card, which is the frame a deck shows once the video stops. Use the
+[slide-ready file](launch-film/out/deck30/EmpireOfBits_Deck30_1080p_deck.mp4) (under 25 MB) in
+slides. Specs: 30.0 s, 1080p at 30 fps, −13.8 LUFS, −1.2 dBTP. Brief:
+[launch-film/deck30/BRIEF.md](launch-film/deck30/BRIEF.md).
 
 ```bash
-cd demo-assets/battleship-demo-video
+cd launch-film
 npm install
-npm run studio       # live preview in Remotion Studio
-npm run render:v2    # out/empire-of-bits-demo-v2-{4k,1080p}.mp4
-npm run verify:v2    # checks frames, fps, duration, codecs, fast start
+npm run studio          # live preview of Trailer45 and Deck30
+npm run render          # Trailer45 → out/EmpireOfBits_Trailer45_1080p.mp4 + poster, thumbnail, REPORT.md
+npm run deck30:render   # Deck30 → out/deck30/: master, slide-ready file, poster frame, end card
 ```
 
-All editable values (trims, camera keyframes, captions, sound cues) live in `src/v2/configV2.ts`.
-See [its README](demo-assets/battleship-demo-video/README.md).
+On-screen text is in `src/trailer45/copy.ts`, the casting in `src/trailer45/cast.ts`, and the
+timing, in beats, in `src/trailer45/timeline.ts`. Deck30 follows the same pattern under
+`src/deck30/`. The render scripts point at a preinstalled Chromium; set `BX=/path/to/chrome` to
+use another. See [EDIT_NOTES.md](launch-film/EDIT_NOTES.md),
+[the storyboard](launch-film/review/storyboard.md), [CAST.md](launch-film/CAST.md) and
+[REVIEW.md](launch-film/REVIEW.md).
 
 ### The launch film: 1 minute 54 seconds
 
-`launch-film/` is a second Remotion project, made to the brief in
-[launch-film/BRIEF.md](launch-film/BRIEF.md): an Apple-keynote-style product film with no
-voiceover, carried by kinetic type, the game's music and frame-accurate sound design. The
-signature motif is **the bit**, a single glowing pixel. It opens the film, becomes the period in
-"…a single bit.", and pings once more as the period in "Your move."
+`launch-film-2min/` is a separate Remotion project, made to the brief in
+[launch-film-2min/BRIEF.md](launch-film-2min/BRIEF.md): an Apple-keynote-style product film
+with no voiceover, carried by kinetic type, the game's music and frame-accurate sound design.
+The signature motif is **the bit**, a single glowing pixel. It opens the film, becomes the
+period in "…a single bit.", and pings once more as the period in "Your move."
 
 | # | Time | Section | What you see |
 |---|---|---|---|
@@ -103,7 +147,7 @@ explosion is the snare. Wallet addresses, QR codes and transaction signatures ar
 at the source.
 
 ```bash
-cd launch-film
+cd launch-film-2min
 npm install
 npm run assets    # stage game art and fonts, prepare clips (CFR 30, blurs)
 npm run audio     # timeline → score → beat detection → sound design and mix
@@ -114,9 +158,35 @@ npm run studio    # live preview while editing
 The copy lives in `src/config/copy.ts`; timing, in beats, lives in `src/config/timeline.ts`.
 Change the BPM and every cut moves with it. The 4K master is 512 MB, which is over GitHub's
 file limit, so only the 1080p cut is committed. `npm run final` rebuilds the 4K. See
-[EDIT_NOTES.md](launch-film/EDIT_NOTES.md), the shot-by-shot
-[STORYBOARD.md](launch-film/review/STORYBOARD.md), and the review rounds in
-[REVIEW.md](launch-film/REVIEW.md).
+[EDIT_NOTES.md](launch-film-2min/EDIT_NOTES.md), the shot-by-shot
+[STORYBOARD.md](launch-film-2min/review/STORYBOARD.md), and the review rounds in
+[REVIEW.md](launch-film-2min/REVIEW.md).
+
+### The gameplay teaser: 15 seconds
+
+`demo-assets/battleship-demo-video/` is a Remotion project rendered at 3840×2160, 60 fps, 900
+frames. Version 2 (`src/v2/`) is "the board becomes a world". The gameplay runs full-bleed,
+the board's lighthouse opens into a layered Port City, and a battleship wipe cuts back into
+the raid.
+
+| Time | Caption | Footage |
+|---|---|---|
+| 0:00–0:03 | *Choose your attack.* | The Atomic Bomber's 3×3 strike |
+| 0:03–0:06 | *Build your defense.* | An AA gun shoots a bomber down: "Shot down!" |
+| 0:06–0:08.5 | *Your home port.* | The Port City, rebuilt from the game's layout data |
+| 0:08.5–0:13 | *Take the fight to them.* | A bomber run, the last ship sinks, Victory |
+| 0:13–0:15 | End card | Solana dApp Store badge and `empireofbits.xyz` |
+
+```bash
+cd demo-assets/battleship-demo-video
+npm install
+npm run studio       # live preview in Remotion Studio
+npm run render:v2    # out/empire-of-bits-demo-v2-{4k,1080p}.mp4
+npm run verify:v2    # checks frames, fps, duration, codecs, fast start
+```
+
+All editable values (trims, camera keyframes, captions, sound cues) live in `src/v2/configV2.ts`.
+See [its README](demo-assets/battleship-demo-video/README.md).
 
 ---
 
@@ -546,7 +616,7 @@ Some design rules hold everywhere:
 | Tests | Vitest 5, in-process Postgres (PGlite) for migrations, real sockets for netcode |
 | Builds | EAS Build (`preview`, `production`, `dapp-store` profiles), Gradle for local sideloads |
 | Films | Remotion 4, ffmpeg, Python (numpy, librosa, pedalboard, pyloudnorm) |
-| Type | Bitter in the game; Inter Tight and Inter in the launch film |
+| Type | Bitter in the game; Inter Tight, Inter and Anton in the films |
 
 ---
 
@@ -615,7 +685,8 @@ battleship-solana-mobile/
 ├── assets/                       ink line art, colour plates, FX strips, flags, avatars, Port City, audio
 ├── scripts/                      asset pipelines (ImageMagick, Python), env guard, bundle secret scan, APK signing
 ├── docs/media/                   screenshots and video posters used by this README
-├── launch-film/                  the 1:54 launch film (Remotion), its audio pipeline and deliverables
+├── launch-film/                  Remotion: the 45 s launch trailer (Trailer45) and the 30 s deck film (Deck30)
+├── launch-film-2min/             Remotion: the 1:54 launch film, its audio pipeline and deliverables
 ├── demo-assets/                  raw gameplay captures and the 15 s trailer (battleship-demo-video/)
 ├── app.json · eas.json           Expo config; EAS profiles: development, preview, production, dapp-store
 ├── metro.config.js               refuses to bundle if a public env var carries a server secret
@@ -792,7 +863,8 @@ public issue.
 | [supabase/README.md](supabase/README.md) | Schema, RLS, and what each table enforces |
 | [tests/README.md](tests/README.md) | How the suites are laid out and what is faked |
 | [BUG_REPORT.md](BUG_REPORT.md) | The audit log of shipped bugs |
-| [launch-film/](launch-film/) | BRIEF, STORYBOARD, EDIT_NOTES, REVIEW, FOOTAGE_LOG |
+| [launch-film/](launch-film/) | The launch trailer and deck film: BRIEF, CAST, EDIT_NOTES, REVIEW, storyboard |
+| [launch-film-2min/](launch-film-2min/) | The 1:54 launch film: BRIEF, STORYBOARD, EDIT_NOTES, REVIEW, FOOTAGE_LOG |
 | [demo-assets/battleship-demo-video/](demo-assets/battleship-demo-video/README.md) | The trailer's Remotion project |
 
 Source comments still cite sections of the original design brief (for example "brief 3.3").
@@ -850,11 +922,12 @@ Released under the [MIT License](LICENSE). © 2026 Ayush Jha.
 - The rules follow the classic pen-and-paper game and the house rules of *Ocean Warfare 2*
   by BYRIL. Game mechanics aren't copyrightable; this project ships under its own name and
   look.
-- Fonts: [Bitter](https://fonts.google.com/specimen/Bitter), Fredoka, Inter, Inter Tight and
-  Patrick Hand, all under the SIL Open Font License.
+- Fonts: [Bitter](https://fonts.google.com/specimen/Bitter), Fredoka, Inter, Inter Tight,
+  Patrick Hand, Anton and Bebas Neue, all under the SIL Open Font License.
 - Hand-drawn rendering by [Rough.js](https://roughjs.com/) (MIT).
 - Third-party packages keep their own licenses. See `package.json`, `server/package.json`,
-  `launch-film/package.json` and `demo-assets/battleship-demo-video/package.json`.
+  `launch-film/package.json`, `launch-film-2min/package.json` and
+  `demo-assets/battleship-demo-video/package.json`.
 
 <div align="center">
 
