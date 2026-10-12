@@ -25,8 +25,9 @@ export const HEIGHT = 2160;
 export const BPM = 120;
 /** Seconds into the music file where beat 0 falls. */
 export const BEAT_OFFSET = 0;
-/** The game's own music, arranged to this grid by audio/score_game.py (audio/score.py is the synth alternative). */
-export const MUSIC_FILE = 'audio/score_game.wav';
+/** The trailer score, composed to this grid by audio/score_trailer.py. Alternatives on the same grid:
+ *  'audio/score_game.wav' (the game's own music, audio/score_game.py) and 'audio/score.wav' (audio/score.py). */
+export const MUSIC_FILE = 'audio/score_trailer.wav';
 
 export const FRAMES_PER_BEAT = (FPS * 60) / BPM;
 /** Absolute (or relative) beats → frames. Rounds to the nearest frame. */
