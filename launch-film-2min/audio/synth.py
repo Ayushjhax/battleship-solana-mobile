@@ -6,7 +6,9 @@ import librosa
 import pedalboard as pb
 
 SR = 48000
-GAME_SFX = '/home/user/battleship-solana-mobile/assets/audio/sfx/'
+import os
+# the game's own sounds: <repo>/assets/audio/sfx (this file is <repo>/launch-film-2min/audio/synth.py)
+GAME_SFX = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'assets/audio/sfx/')
 
 
 def midi_hz(m):

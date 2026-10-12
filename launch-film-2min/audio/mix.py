@@ -29,6 +29,14 @@ if music.ndim == 1:
 music = np.pad(music, ((0, 0), (0, max(0, N - music.shape[1]))))[:, :N]
 
 
+# The trailer score (audio/score_trailer.py) sits ~4 dB hotter than the game-music arrangement the
+# LEVEL table below was set against, and it carries its own hits, so the cues come up a little and
+# the music ducks less under them. For audio/score_game.wav use SFX_TRIM = 0, DUCK_DB = 5.
+TRAILER = 'trailer' in T.get('musicFile', '')
+SFX_TRIM = 2.0 if TRAILER else 0.0  # dB on every cue
+DUCK_DB = 3.0 if TRAILER else 5.0  # max music duck under the key SFX
+
+
 def film_t(beat):
     """Cue beats are film beats: beat 0 = film frame 0."""
     return beat * 60 / BPM
@@ -208,9 +216,9 @@ for i, c in enumerate(T['cues']):
         x, pre = BANK[name]
     x = normalised(name, x)
     t = film_t(c['beat']) - pre
-    place(sfx, x, t, c.get('gain', 0))
+    place(sfx, x, t, c.get('gain', 0) + SFX_TRIM)
     if name in KEYS:
-        place(key, x, t, c.get('gain', 0))
+        place(key, x, t, c.get('gain', 0) + SFX_TRIM)
 
 # ── Duck the music 3–6 dB under the key SFX (envelope follower) ───────────────
 env = np.abs(key).max(0)
@@ -220,7 +228,7 @@ env = np.convolve(env, np.ones(win) / win, mode='same')
 rel = np.exp(-1 / (0.25 * SR))
 from scipy.signal import lfilter
 env = np.maximum(env, lfilter([1 - rel], [1, -rel], env))
-duck_db = -np.clip((20 * np.log10(env + 1e-6) + 30) / 20, 0, 1) * 5.0  # up to −5 dB
+duck_db = -np.clip((20 * np.log10(env + 1e-6) + 30) / 20, 0, 1) * DUCK_DB
 music_ducked = music * db(duck_db)
 
 # ── Hard silences: nothing rings through them, SFX tails included ────────────
@@ -237,6 +245,8 @@ def gate(b0, b1, keep_after=None, fade_ms=10):
 
 gate(SCN['victory']['start'] - 0.5, SCN['victory']['start'])
 gate(SCN['battle']['start'] - 0.5, SCN['battle']['start'])
+if TRAILER:  # the score's quarter-beat suck before the supercut
+    gate(SCN['supercut']['start'] - 0.25, SCN['supercut']['start'])
 # peak → hard cut to silence: kill the supercut's tails; re-place the finale's own cues
 fin = SCN['finale']['start']
 gate(fin, T['totalBeats'] + 8)
@@ -247,7 +257,7 @@ for i, c in enumerate(T['cues']):
             x, pre = metal(i), 0
         else:
             x, pre = BANK[c['sfx']]
-        place(sfx, normalised(c['sfx'], x), film_t(c['beat']) - pre, c.get('gain', 0))
+        place(sfx, normalised(c['sfx'], x), film_t(c['beat']) - pre, c.get('gain', 0) + SFX_TRIM)
 
 mix = music_ducked + sfx
 mix = mix[:, :N]
